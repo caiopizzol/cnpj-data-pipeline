@@ -431,3 +431,5 @@ Embora os dados sejam públicos, use-os com responsabilidade:
 [![LGPD Compliant](https://img.shields.io/badge/LGPD-Compliant-brightgreen)](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm)
 
 
+=======
+Made with ❤️ for the Brazilian tech community

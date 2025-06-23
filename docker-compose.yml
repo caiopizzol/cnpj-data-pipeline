@@ -70,35 +70,39 @@ services:
       - ./temp:/app/temp
       - ./logs:/app/logs
     environment:
-      # Database backend selection (must match profile)
-      DATABASE_BACKEND: ${DATABASE_BACKEND:-postgresql}
+      # All configuration from environment/secrets
+      DATABASE_BACKEND: ${DATABASE_BACKEND}
 
-      # PostgreSQL settings (when using postgres profile)
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_DB: ${POSTGRES_DB:-cnpj}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # PostgreSQL config
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
-      # MySQL settings (when using mysql profile)
-      MYSQL_HOST: ${MYSQL_HOST:-mysql}
-      MYSQL_PORT: ${MYSQL_PORT:-3306}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-cnpj_dev}
-      MYSQL_USER: ${MYSQL_USER:-cnpj}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cnpj}
+      # OR MySQL config
+      # MYSQL_HOST: ${MYSQL_HOST}
+      # MYSQL_PORT: ${MYSQL_PORT}
+      # MYSQL_DATABASE: ${MYSQL_DATABASE}
+      # MYSQL_USER: ${MYSQL_USER}
+      # MYSQL_PASSWORD: ${MYSQL_PASSWORD}
 
-      # BigQuery settings (when using bigquery profile)
-      # BQ_PROJECT_ID: ${BQ_PROJECT_ID:-test-project}
-      # BQ_DATASET: ${BQ_DATASET:-cnpj}
+      # OR BigQuery config
+      # BQ_PROJECT_ID: ${BQ_PROJECT_ID}
+      # BQ_DATASET: ${BQ_DATASET}
+      # GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
 
-      # Processing settings
-      PROCESSING_STRATEGY: ${PROCESSING_STRATEGY:-auto}
-      BATCH_SIZE: ${BATCH_SIZE:-50000}
-      MAX_MEMORY_PERCENT: ${MAX_MEMORY_PERCENT:-80}
-      DEBUG: ${DEBUG:-true}
+      # Processing config
+      PROCESSING_STRATEGY: ${PROCESSING_STRATEGY}
+      BATCH_SIZE: ${BATCH_SIZE}
+      MAX_MEMORY_PERCENT: ${MAX_MEMORY_PERCENT}
+      DEBUG: ${DEBUG:-false}
 
-      # File management
-      KEEP_DOWNLOADED_FILES: ${KEEP_DOWNLOADED_FILES:-false}
+      # Download config
+      DOWNLOAD_STRATEGY: ${DOWNLOAD_STRATEGY}
+      DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS}
+      KEEP_DOWNLOADED_FILES: ${KEEP_DOWNLOADED_FILES}
+
     restart: "no"  # This is a batch job
 
 volumes:
