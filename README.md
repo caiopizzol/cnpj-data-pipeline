@@ -399,3 +399,35 @@ Factory pattern for database adapters, intelligent resource detection, chunked p
 Processes 63M+ records in 1-12 hours depending on system resources.
 
 Made with engineering excellence for the Brazilian tech community.
+
+## 📋 Legalidade e Origem dos Dados
+
+### ✅ Dados 100% Legais e Oficiais
+
+Estes dados são **públicos e oficiais**, disponibilizados pela própria Receita Federal através do Portal de Dados Abertos do Governo Federal:
+
+- **Fonte oficial**: [Portal de Dados Abertos](https://dados.gov.br/dados/conjuntos-dados/cadastro-nacional-da-pessoa-juridica---cnpj)
+- **Base legal**: [Lei de Acesso à Informação (Lei 12.527/2011)](https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm)
+- **Atualização**: Mensal pela Receita Federal
+
+### ⚠️ O que NÃO são estes dados:
+- ❌ NÃO são dados vazados ou obtidos ilegalmente
+- ❌ NÃO contêm informações pessoais de pessoas físicas
+- ❌ NÃO são os "CDs de dados" vendidos ilegalmente
+- ❌ NÃO violam LGPD ou privacidade
+
+### 📌 Uso Responsável
+Embora os dados sejam públicos, use-os com responsabilidade:
+- ✅ Análises de mercado e econômicas
+- ✅ Pesquisa acadêmica
+- ✅ Desenvolvimento de produtos B2B
+- ✅ Jornalismo de dados
+- ⚠️ Sempre respeite limites éticos
+- ⚠️ Não use para spam ou assédio comercial
+- 🔒 Respeite sempre a [LGPD](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm).
+
+[![Dados Oficiais](https://img.shields.io/badge/Dados-Oficiais%20Receita%20Federal-green)](https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/dados-abertos)
+[![Lei de Acesso à Informação](https://img.shields.io/badge/LAI-12.527%2F2011-blue)](http://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm)
+[![LGPD Compliant](https://img.shields.io/badge/LGPD-Compliant-brightgreen)](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm)
+
+

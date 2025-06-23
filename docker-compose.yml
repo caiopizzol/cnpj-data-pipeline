@@ -74,11 +74,11 @@ services:
       DATABASE_BACKEND: ${DATABASE_BACKEND:-postgresql}
 
       # PostgreSQL settings (when using postgres profile)
-      DB_HOST: ${DB_HOST:-postgres}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-cnpj_dev}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-cnpj}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
 
       # MySQL settings (when using mysql profile)
       MYSQL_HOST: ${MYSQL_HOST:-mysql}
