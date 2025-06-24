@@ -147,18 +147,18 @@ class DownloadStrategy(ABC):
                     "SIMPLESCSV",
                 ]
 
-            for member in zip_ref.namelist():
-                # Remove pontos do nome do arquivo para facilitar a busca
-                member_upper = member.upper().replace(".", "")
-                is_cnpj_file = any(
-                    pattern in member_upper for pattern in known_patterns
-                )
+                for member in zip_ref.namelist():
+                    # Remove pontos do nome do arquivo para facilitar a busca
+                    member_upper = member.upper().replace(".", "")
+                    is_cnpj_file = any(
+                        pattern in member_upper for pattern in known_patterns
+                    )
 
-                if is_cnpj_file:
-                    extract_path = self.temp_path / member
-                    zip_ref.extract(member, self.temp_path)
-                    extracted_files.append(extract_path)
-                    logger.debug(f"Extracted CNPJ file: {member}")
+                    if is_cnpj_file:
+                        extract_path = self.temp_path / member
+                        zip_ref.extract(member, self.temp_path)
+                        extracted_files.append(extract_path)
+                        logger.debug(f"Extracted CNPJ file: {member}")
 
             logger.debug(f"Extracted {len(extracted_files)} CSV files from {filename}")
 
