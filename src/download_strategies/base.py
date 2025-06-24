@@ -148,7 +148,6 @@ class DownloadStrategy(ABC):
                 ]
 
                 for member in zip_ref.namelist():
-                    # Remove pontos do nome do arquivo para facilitar a busca
                     member_upper = member.upper().replace(".", "")
                     is_cnpj_file = any(
                         pattern in member_upper for pattern in known_patterns
