@@ -7,3 +7,11 @@ psutil>=5.9.0
 
 # Progress bars and utilities
 tqdm>=4.66.0
+
+# Data export functionality
+pandas>=2.0.0
+pyarrow>=14.0.0
+
+# For notebooks (optional)
+jupyter>=1.0.0
+plotly>=5.17.0

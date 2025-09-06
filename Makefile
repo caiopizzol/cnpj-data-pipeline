@@ -102,7 +102,19 @@ logs:
 	@echo "📋 Recent log entries:"
 	@tail -n 50 logs/cnpj_loader.log 2>/dev/null || echo "No logs found. Run 'make run' first."
 
+# Export sample for testing/demo
+export-sample:
+	@echo "📦 Exporting São Paulo sample (10k companies)..."
+	@python export.py sample
+	@echo "✅ Done! Check exports/ directory"
+
+# Export full São Paulo dataset
+export-sp-full:
+	@echo "🚀 Exporting ALL São Paulo companies (this will take time)..."
+	@python export.py sp_full
+	@echo "✅ Done! Check exports/ directory"
 
 .PHONY: help setup install env run \
 	docker-build docker-run docker-rund docker-db docker-stop docker-clean \
-	clean clean-data logs
+	clean clean-data logs \
+	export-sample export-sp-full

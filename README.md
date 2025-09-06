@@ -127,6 +127,44 @@ make clean          # Limpar temporários
 make clean-data     # Remover downloads (pede confirmação)
 ```
 
+## 📊 Exportação de Dados & Análise
+
+### Início Rápido
+
+```bash
+# Exportar empresas de São Paulo (3M+ linhas, ~500MB)
+python export.py sp_full
+
+# Ou apenas uma amostra (10k linhas, ~5MB)
+python export.py sample
+```
+
+### Acessar Dataset Pré-construído
+
+Baixe o dataset completo de São Paulo diretamente:
+- 📦 [sp_full.parquet](https://github.com/caiopizzol/cnpj-data-pipeline/releases/download/v1.0/sp_full_20241115.parquet) (500MB)
+- 📊 3+ milhões de empresas ativas
+- 📅 Atualizado Novembro 2024
+
+### Analisar em Python
+
+```python
+import pandas as pd
+
+# Carregar diretamente do GitHub
+df = pd.read_parquet('https://github.com/caiopizzol/cnpj-data-pipeline/releases/download/v1.0/sp_full_20241115.parquet')
+
+# Insights rápidos
+print(f"Total: {len(df):,} empresas")
+print(df['cnae_fiscal_principal'].value_counts().head())
+```
+
+### Demo ao Vivo
+
+Veja análise real: [`notebooks/sp_analysis.ipynb`](notebooks/sp_analysis.ipynb)
+
+Ou execute no Google Colab: [Abrir no Colab](https://colab.research.google.com/github/caiopizzol/cnpj-data-pipeline/blob/main/notebooks/sp_analysis.ipynb)
+
 ## Desenvolvimento
 
 ### Adicionando Novo Backend
@@ -266,6 +304,44 @@ make logs           # View recent logs
 make clean          # Clean temporary files
 make clean-data     # Remove downloads (asks confirmation)
 ```
+
+## 📊 Data Export & Analysis
+
+### Quick Start
+
+```bash
+# Export São Paulo companies (3M+ rows, ~500MB)
+python export.py sp_full
+
+# Or just a sample (10k rows, ~5MB)
+python export.py sample
+```
+
+### Access Pre-built Dataset
+
+Download the full São Paulo dataset directly:
+- 📦 [sp_full.parquet](https://github.com/caiopizzol/cnpj-data-pipeline/releases/download/v1.0/sp_full_20241115.parquet) (500MB)
+- 📊 3+ million active companies
+- 📅 Updated November 2024
+
+### Analyze in Python
+
+```python
+import pandas as pd
+
+# Load directly from GitHub
+df = pd.read_parquet('https://github.com/caiopizzol/cnpj-data-pipeline/releases/download/v1.0/sp_full_20241115.parquet')
+
+# Quick insights
+print(f"Total: {len(df):,} companies")
+print(df['cnae_fiscal_principal'].value_counts().head())
+```
+
+### Live Demo
+
+See real analysis: [`notebooks/sp_analysis.ipynb`](notebooks/sp_analysis.ipynb)
+
+Or run in Google Colab: [Open in Colab](https://colab.research.google.com/github/caiopizzol/cnpj-data-pipeline/blob/main/notebooks/sp_analysis.ipynb)
 
 ---
 
