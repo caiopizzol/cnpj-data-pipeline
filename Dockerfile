@@ -1,29 +1,18 @@
 FROM python:3.12-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY requirements/ ./requirements/
-RUN pip install --no-cache-dir -r requirements/postgres.txt
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Copy the application
-COPY src/ ./src/
-COPY main.py .
-COPY setup.py .
-COPY validate.py .
+# Copy project files
+COPY pyproject.toml .
+COPY config.py database.py downloader.py processor.py main.py ./
 
-# Set environment variables
-ENV TEMP_DIR=/app/temp
-ENV DATABASE_BACKEND=postgresql
-ENV PROCESSING_STRATEGY=auto
-ENV BATCH_SIZE=50000
-ENV MAX_MEMORY_PERCENT=80
-ENV DEBUG=false
+# Install dependencies
+RUN uv pip install --system -e .
 
-# Run the application
-ENTRYPOINT ["python", "main.py"]
+# Create temp directory
+RUN mkdir -p /app/temp
+
+CMD ["python", "main.py"]

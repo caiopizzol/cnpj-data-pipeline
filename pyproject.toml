@@ -1,0 +1,14 @@
+[project]
+name = "cnpj-data-pipeline"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg2-binary>=2.9.9",
+    "requests>=2.31.0",
+    "tqdm>=4.66.0",
+    "python-dotenv>=1.0.0",
+    "polars>=1.0.0",
+]
+
+[project.scripts]
+cnpj-pipeline = "main:main"

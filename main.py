@@ -1,218 +1,101 @@
 #!/usr/bin/env python3
 """
-CNPJ Data Pipeline - Main entry point
+CNPJ Data Pipeline - Download and process Brazilian company data from Receita Federal.
 
-Configurable, efficient processor for CNPJ data files with database abstraction.
-Supports multiple databases and intelligent processing strategies.
-
-Usage: python main.py
+Usage:
+    python main.py           # Run full pipeline
+    docker compose up        # Run with Docker
 """
 
 import logging
 import sys
-import time
-from pathlib import Path
 
-from dotenv import load_dotenv
-from src.config import Config
-from src.database.factory import create_database_adapter
-from src.downloader import Downloader
-from src.processor import Processor
+from config import config
+from database import Database
+from downloader import Downloader
+from processor import process_file, get_file_type
 
-# Load environment variables
-load_dotenv()
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+# Processing order (respects foreign key dependencies)
+PROCESSING_ORDER = [
+    "CNAECSV",      # cnaes
+    "MOTICSV",      # motivos
+    "MUNICCSV",     # municipios
+    "NATJUCSV",     # naturezas_juridicas
+    "PAISCSV",      # paises
+    "QUALSCSV",     # qualificacoes_socios
+    "EMPRECSV",     # empresas
+    "ESTABELE",     # estabelecimentos
+    "SOCIOCSV",     # socios
+    "SIMPLESCSV",   # dados_simples
+]
 
 
-def setup_logging(config: Config):
-    """Configure logging with enhanced output."""
-    log_level = logging.DEBUG if config.debug else logging.INFO
-
-    # Create logs directory
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_dir / "cnpj_loader.log"),
-            logging.StreamHandler(),
-        ],
-    )
-    return logging.getLogger(__name__)
+def get_file_priority(filename: str) -> int:
+    """Get processing priority for a file (lower = first)."""
+    file_type = get_file_type(filename)
+    if file_type in PROCESSING_ORDER:
+        return PROCESSING_ORDER.index(file_type)
+    return 999
 
 
 def main():
-    """Main processing function."""
-    # Initialize basic logging first (before config in case config fails)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler()],
-    )
-    logger = logging.getLogger(__name__)
+    """Main pipeline entry point."""
+    if not config.database_url:
+        logger.error("DATABASE_URL not set")
+        sys.exit(1)
+
+    db = Database(config.database_url)
+    downloader = Downloader(config)
 
     try:
-        # Initialize configuration
-        config = Config()
+        directory = downloader.get_latest_directory()
+        all_files = downloader.get_directory_files(directory)
+        processed = db.get_processed_files(directory)
+        pending_files = [f for f in all_files if f not in processed]
 
-        # Setup enhanced logging with config
-        logger = setup_logging(config)
-
-        logger.info("=" * 60)
-        logger.info("CNPJ Data Pipeline Starting")
-        logger.info(f"Database: {config.database_backend.value}")
-        logger.info(f"Processing Strategy: {config.processing_strategy.value}")
-
-        # Initialize components to get strategy info
-        downloader = Downloader(config)
-        processor = Processor(config)
-        db = create_database_adapter(config)
-
-        # Log download strategy (now that downloader is initialized)
-        logger.info(f"Download Strategy: {downloader.strategy.get_strategy_name()}")
-        logger.debug(f"Batch Size: {config.batch_size:,}")
-        logger.debug(f"Optimal Chunk Size: {config.optimal_chunk_size:,}")
-        logger.info("=" * 60)
-
-        # Connect to database and setup
-        logger.info(f"Connecting to {config.database_backend.value}...")
-        db.connect()
-        db.ensure_tracking_table()
-
-        logger.info("Starting CNPJ data processing")
-
-        # Get latest directory
-        directories = downloader.get_latest_directories()
-        if not directories:
+        if not pending_files:
+            print("All files already processed!")
             return
 
-        latest_dir = directories[0]
-        logger.info(f"Processing directory: {latest_dir}")
+        print(f"Processing {len(pending_files)} files from {directory}")
 
-        # Get files in latest directory
-        files = downloader.get_directory_files(latest_dir)
-        if not files:
-            return
+        # 4. Sort files by processing order
+        pending_files.sort(key=get_file_priority)
 
-        # Get all processed files for this directory
-        # Note: it won't check files that might be processed later during same run
-        processed_files = db.get_processed_files(latest_dir)
-        logger.info(
-            f"Found {len(processed_files)} already processed files in {latest_dir}"
-        )
+        # 5. Download and process files
+        for csv_path, zip_filename in downloader.download_files(directory, pending_files):
+            try:
+                # Process CSV in batches
+                for batch, table_name, columns in process_file(csv_path, config.batch_size):
+                    db.bulk_upsert(batch, table_name, columns)
 
-        # Organize files by database dependencies
-        ordered_files, categorization = downloader.organize_files_by_dependencies(files)
+                # Mark as processed
+                db.mark_processed(directory, zip_filename)
 
-        logger.info("Processing files in dependency order:")
-        logger.info(
-            f"  Reference tables: {len(categorization['reference_files'])} files"
-        )
-        for pattern, pattern_files in categorization["data_files"].items():
-            if pattern_files:
-                logger.info(f"  {pattern}: {len(pattern_files)} files")
+            except Exception as e:
+                logger.error(f"Error: {csv_path.name}: {e}")
 
-        if categorization["unmatched_files"]:
-            logger.warning(
-                f"  Unmatched files: {len(categorization['unmatched_files'])} files"
-            )
-            logger.warning(f"    Files: {categorization['unmatched_files']}")
+            finally:
+                if csv_path.exists() and not config.keep_files:
+                    csv_path.unlink()
 
-        # Filter out already processed files
-        files_to_process = [f for f in ordered_files if f not in processed_files]
-
-        if not files_to_process:
-            logger.info("All files already processed")
-            return
-
-        logger.info(f"Processing {len(files_to_process)} files...")
-
-        # Process files with parallel download strategy
-        total_start = time.time()
-        files_processed = 0
-        total_rows = 0
-
-        try:
-            # Download and extract all files using the configured strategy
-            logger.info("Downloading and extracting files...")
-            download_start = time.time()
-
-            all_extracted_files = downloader.download_files_batch(
-                latest_dir, files_to_process
-            )
-
-            download_duration = time.time() - download_start
-            logger.info(
-                f"✅ Downloaded {len(files_to_process)} files in {download_duration:.1f}s"
-            )
-
-            # Get download statistics
-            download_stats = downloader.get_download_stats()
-            if download_stats:
-                logger.debug(f"Download stats: {download_stats}")
-
-            # Process each extracted CSV file
-            for csv_file in all_extracted_files:
-                file_start = time.time()
-
-                try:
-                    result = processor.process_file(csv_file)
-
-                    if result is None:
-                        # File was processed in chunks directly to DB
-                        continue
-
-                    df, table_name = result
-
-                    # Insert/upsert data using bulk_upsert method
-                    # The PostgreSQL adapter automatically handles upsert vs insert logic
-                    db.bulk_upsert(df, table_name)
-
-                    total_rows += len(df) if df is not None else 0
-
-                    # Calculate duration
-                    duration = time.time() - file_start
-                    logger.info(f"✅ Processed {csv_file.name} in {duration:.1f}s")
-
-                except Exception as e:
-                    logger.error(f"❌ Error processing {csv_file.name}: {e}")
-                    if config.debug:
-                        logger.exception("Full traceback:")
-                    continue
-
-            # Mark all files as processed (only after successful processing)
-            for filename in files_to_process:
-                db.mark_processed(latest_dir, filename)
-                files_processed += 1
-
-            # Cleanup all temporary files
-            downloader.cleanup()
-
-        except Exception as e:
-            logger.error(f"❌ Error in batch processing: {e}")
-            if config.debug:
-                logger.exception("Full traceback:")
-            # Still try to mark successfully processed files
-            # (this could be enhanced to track which files succeeded)
-
-        # Summary
-        total_duration = time.time() - total_start
-        logger.info("\n" + "=" * 60)
-        logger.info("CNPJ Data Loading Complete!")
-        logger.info(f"Files processed: {files_processed}")
-        logger.info(f"Total rows: {total_rows:,}")
-        logger.info(f"Total time: {total_duration:.1f}s")
-        logger.info("=" * 60)
+        print("Done!")
 
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        if "config" in locals() and config.debug:
-            logger.exception("Full traceback:")
+        logger.error(f"Failed: {e}")
         sys.exit(1)
+
     finally:
-        if "db" in locals():
-            db.disconnect()
+        db.disconnect()
+        downloader.cleanup()
 
 
 if __name__ == "__main__":

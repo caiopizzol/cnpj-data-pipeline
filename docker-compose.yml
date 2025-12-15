@@ -1,110 +1,40 @@
-# CNPJ Data Pipeline - Development Environment
+# CNPJ Data Pipeline
 #
 # Usage:
-#   PostgreSQL (default): docker-compose --profile postgres up
-#   MySQL (future):       docker-compose --profile mysql up
-#   BigQuery (future):    docker-compose --profile bigquery up
-#
-# Run just the pipeline with external DB: docker-compose up pipeline
+#   docker compose up        # Run pipeline with local postgres
+#   docker compose up -d     # Run in background
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    profiles: ["postgres"]  # Only starts when postgres profile is active
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-cnpj}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-db/postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # MySQL Database (placeholder - adapter not yet implemented)
-  # mysql:
-  #   image: mysql:8.0
-  #   profiles: ["mysql"]  # Only starts when mysql profile is active
-  #   environment:
-  #     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql}
-  #     MYSQL_DATABASE: ${MYSQL_DATABASE:-cnpj_dev}
-  #     MYSQL_USER: ${MYSQL_USER:-cnpj}
-  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cnpj}
-  #   volumes:
-  #     - mysql_data:/var/lib/mysql
-  #     # - ./init-db/mysql.sql:/docker-entrypoint-initdb.d/init.sql:ro  # When available
-  #   ports:
-  #     - "3306:3306"
-  #   healthcheck:
-  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-
-  # BigQuery emulator for local development (future)
-  # bigquery-emulator:
-  #   image: ghcr.io/goccy/bigquery-emulator:latest
-  #   profiles: ["bigquery"]
-  #   ports:
-  #     - "9050:9050"
-
-  # CNPJ Data Pipeline
   pipeline:
     build: .
-    # Available in all profiles AND when no profile is specified
-    profiles: ["postgres", "mysql", "bigquery"]
+    env_file: .env
+    environment:
+      # Override DATABASE_URL for container networking
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/cnpj
     depends_on:
       postgres:
         condition: service_healthy
-        required: false  # Only required if postgres profile is active
-      # mysql:
-      #   condition: service_healthy
-      #   required: false  # Only required if mysql profile is active
     volumes:
       - ./temp:/app/temp
-      - ./logs:/app/logs
+    restart: "no"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: cnpj-pipeline-postgres
     environment:
-      # All configuration from environment/secrets
-      DATABASE_BACKEND: ${DATABASE_BACKEND}
-
-      # PostgreSQL config
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-      # OR MySQL config
-      # MYSQL_HOST: ${MYSQL_HOST}
-      # MYSQL_PORT: ${MYSQL_PORT}
-      # MYSQL_DATABASE: ${MYSQL_DATABASE}
-      # MYSQL_USER: ${MYSQL_USER}
-      # MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-
-      # OR BigQuery config
-      # BQ_PROJECT_ID: ${BQ_PROJECT_ID}
-      # BQ_DATASET: ${BQ_DATASET}
-      # GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
-
-      # Processing config
-      PROCESSING_STRATEGY: ${PROCESSING_STRATEGY}
-      BATCH_SIZE: ${BATCH_SIZE}
-      MAX_MEMORY_PERCENT: ${MAX_MEMORY_PERCENT}
-      DEBUG: ${DEBUG:-false}
-
-      # Download config
-      DOWNLOAD_STRATEGY: ${DOWNLOAD_STRATEGY}
-      DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS}
-      KEEP_DOWNLOADED_FILES: ${KEEP_DOWNLOADED_FILES}
-
-    restart: "no"  # This is a batch job
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cnpj
+    ports:
+      - "5435:5432"
+    volumes:
+      - cnpj_pipeline_data:/var/lib/postgresql/data
+      - ./initial.sql:/docker-entrypoint-initdb.d/initial.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  postgres_data:
-  # mysql_data:
+  cnpj_pipeline_data:

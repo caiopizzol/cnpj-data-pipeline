@@ -1,4 +1,0 @@
-# MySQL requirements
--r base.txt
-# mysql-connector-python>=8.0.0  # Uncomment when MySQL support is added
-# PyMySQL>=1.0.0  # Alternative MySQL driver

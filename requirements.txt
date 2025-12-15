@@ -1,7 +1,0 @@
-# CNPJ Data Pipeline Requirements
-# This is a convenience file that installs PostgreSQL dependencies by default
-# For other databases, use:
-#   pip install -r requirements/mysql.txt
-#   pip install -r requirements/bigquery.txt
-
--r requirements/postgres.txt
