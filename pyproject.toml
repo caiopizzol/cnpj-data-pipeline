@@ -12,3 +12,6 @@ dependencies = [
 
 [project.scripts]
 cnpj-pipeline = "main:main"
+
+[tool.setuptools]
+py-modules = ["config", "database", "downloader", "processor", "main"]
