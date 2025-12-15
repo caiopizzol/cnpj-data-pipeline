@@ -117,40 +117,44 @@ class Downloader:
         url = f"{self.config.base_url}/{directory}/{filename}"
         zip_path = self.temp_path / filename
 
-        # Download with retries
-        for attempt in range(self.config.retry_attempts):
-            try:
-                logger.debug(f"Downloading {filename} (attempt {attempt + 1})")
+        # Skip download if keeping files and valid ZIP already exists
+        if self.config.keep_files and zip_path.exists() and zipfile.is_zipfile(zip_path):
+            logger.info(f"Using cached: {filename}")
+        else:
+            # Download with retries
+            for attempt in range(self.config.retry_attempts):
+                try:
+                    logger.debug(f"Downloading {filename} (attempt {attempt + 1})")
 
-                response = requests.get(
-                    url,
-                    stream=True,
-                    timeout=(self.config.connect_timeout, self.config.read_timeout),
-                )
-                response.raise_for_status()
+                    response = requests.get(
+                        url,
+                        stream=True,
+                        timeout=(self.config.connect_timeout, self.config.read_timeout),
+                    )
+                    response.raise_for_status()
 
-                total_size = int(response.headers.get("content-length", 0))
+                    total_size = int(response.headers.get("content-length", 0))
 
-                with tqdm(
-                    total=total_size,
-                    unit="B",
-                    unit_scale=True,
-                    desc=f"Downloading {filename}",
-                    leave=False,
-                ) as pbar:
-                    with open(zip_path, "wb") as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                            pbar.update(len(chunk))
+                    with tqdm(
+                        total=total_size,
+                        unit="B",
+                        unit_scale=True,
+                        desc=f"Downloading {filename}",
+                        leave=False,
+                    ) as pbar:
+                        with open(zip_path, "wb") as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                                pbar.update(len(chunk))
 
-                break
+                    break
 
-            except Exception as e:
-                logger.warning(f"Download attempt {attempt + 1} failed: {e}")
-                if attempt < self.config.retry_attempts - 1:
-                    time.sleep(self.config.retry_delay)
-                else:
-                    raise
+                except Exception as e:
+                    logger.warning(f"Download attempt {attempt + 1} failed: {e}")
+                    if attempt < self.config.retry_attempts - 1:
+                        time.sleep(self.config.retry_delay)
+                    else:
+                        raise
 
         # Extract CSV files
         extracted_files = []
