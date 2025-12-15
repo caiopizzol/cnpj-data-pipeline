@@ -21,4 +21,6 @@ version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 commit_message = "chore(release): {version} [skip ci]"
 upload_to_pypi = false
-upload_to_release = false
+
+[tool.semantic_release.changelog]
+changelog_file = false
