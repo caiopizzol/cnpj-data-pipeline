@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.0 (2025-12-15)
+
+### Features
+
+- Process older months
+  ([`6dd3f6d`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/6dd3f6d19a6e74f72bf771d91272bc7ec8caee90))
+
+
 ## v1.1.0 (2025-12-15)
 
 ### Bug Fixes
