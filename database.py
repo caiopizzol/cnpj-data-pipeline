@@ -88,8 +88,8 @@ class Database:
 
         try:
             with self.conn.cursor() as cur:
-                # 1. Create temp table
-                cur.execute(f"CREATE TEMP TABLE {temp_table} (LIKE {table_name} INCLUDING DEFAULTS)")
+                # 1. Create temp table (auto-dropped on commit)
+                cur.execute(f"CREATE TEMP TABLE {temp_table} (LIKE {table_name} INCLUDING DEFAULTS) ON COMMIT DROP")
 
                 # 2. COPY to temp (Polars CSV is very fast)
                 self._copy_to_temp(cur, df, temp_table, columns)
