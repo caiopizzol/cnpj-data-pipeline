@@ -1,6 +1,7 @@
 """CSV processing and transformation for CNPJ data files using Polars."""
 
 import logging
+import tempfile
 from pathlib import Path
 from typing import Generator, List, Optional, Tuple
 
@@ -68,6 +69,16 @@ def get_file_type(filename: str) -> Optional[str]:
     return None
 
 
+def _convert_encoding(file_path: Path) -> Path:
+    """Convert ISO-8859-1 to UTF-8. Returns path to converted file."""
+    utf8_file = Path(tempfile.mktemp(suffix=".utf8.csv"))
+    with open(file_path, "r", encoding="ISO-8859-1") as infile:
+        with open(utf8_file, "w", encoding="UTF-8") as outfile:
+            for chunk in iter(lambda: infile.read(50 * 1024 * 1024), ""):  # 50MB chunks
+                outfile.write(chunk)
+    return utf8_file
+
+
 def process_file(
     file_path: Path, batch_size: int = 50000
 ) -> Generator[Tuple[pl.DataFrame, str, List[str]], None, None]:
@@ -80,25 +91,41 @@ def process_file(
     table_name = FILE_MAPPINGS[file_type]
     columns = COLUMNS[file_type]
 
-    # Read CSV with Polars (handles encoding, very fast)
-    df = pl.read_csv(
-        file_path,
-        separator=";",
-        has_header=False,
-        new_columns=columns,
-        encoding="ISO-8859-1",
-        infer_schema_length=0,  # All strings
-        null_values=[""],
-    )
+    # Convert encoding first (faster for Polars to read UTF-8)
+    utf8_file = _convert_encoding(file_path)
 
-    # Apply transformations
-    df = _transform(df, file_type)
+    try:
+        offset = 0
+        while True:
+            try:
+                df = pl.read_csv(
+                    utf8_file,
+                    separator=";",
+                    has_header=False,
+                    new_columns=columns,
+                    encoding="utf8",
+                    infer_schema_length=0,
+                    null_values=[""],
+                    ignore_errors=True,
+                    low_memory=False,
+                    skip_rows=offset,
+                    n_rows=batch_size,
+                )
+            except pl.exceptions.NoDataError:
+                break
 
-    # Yield batches
-    total_rows = len(df)
-    for start in range(0, total_rows, batch_size):
-        end = min(start + batch_size, total_rows)
-        yield df.slice(start, end - start), table_name, columns
+            if df.is_empty():
+                break
+
+            df = _transform(df, file_type)
+            yield df, table_name, columns
+
+            # End of file if we got fewer rows than requested
+            if len(df) < batch_size:
+                break
+            offset += len(df)
+    finally:
+        utf8_file.unlink(missing_ok=True)
 
 
 def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:

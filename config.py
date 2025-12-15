@@ -12,7 +12,7 @@ class Config:
     """Pipeline configuration with sensible defaults."""
 
     database_url: str
-    batch_size: int = 50000
+    batch_size: int = 500000
     temp_dir: str = "./temp"
     download_workers: int = 4
     retry_attempts: int = 3
@@ -27,7 +27,7 @@ class Config:
         """Create config from environment variables."""
         return cls(
             database_url=os.getenv("DATABASE_URL", ""),
-            batch_size=int(os.getenv("BATCH_SIZE", "50000")),
+            batch_size=int(os.getenv("BATCH_SIZE", "500000")),
             temp_dir=os.getenv("TEMP_DIR", "./temp"),
             download_workers=int(os.getenv("DOWNLOAD_WORKERS", "4")),
             retry_attempts=int(os.getenv("RETRY_ATTEMPTS", "3")),
