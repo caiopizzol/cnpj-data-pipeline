@@ -1,6 +1,6 @@
 [project]
 name = "cnpj-data-pipeline"
-version = "0.1.0"
+version = "1.0.0"
 requires-python = ">=3.11"
 dependencies = [
     "psycopg2-binary>=2.9.9",
@@ -15,3 +15,10 @@ cnpj-pipeline = "main:main"
 
 [tool.setuptools]
 py-modules = ["config", "database", "downloader", "processor", "main"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+commit_message = "chore(release): {version} [skip ci]"
+upload_to_pypi = false
+upload_to_release = false
