@@ -15,4 +15,7 @@ RUN uv pip install --system -e .
 # Create temp directory
 RUN mkdir -p /app/temp
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD python -c "print('ok')" || exit 1
+
 CMD ["python", "main.py"]
