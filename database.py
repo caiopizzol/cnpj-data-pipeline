@@ -78,6 +78,16 @@ class Database:
             )
             self.conn.commit()
 
+    def clear_processed_files(self, directory: str):
+        """Clear all processed file records for a directory (for force re-processing)."""
+        self.connect()
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM processed_files WHERE directory = %s",
+                (directory,),
+            )
+            self.conn.commit()
+
     def bulk_upsert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
         """Bulk upsert using temp table + COPY (fast)."""
         if df.is_empty():

@@ -36,8 +36,8 @@ class Downloader:
         self.temp_path = Path(config.temp_dir)
         self.temp_path.mkdir(exist_ok=True)
 
-    def get_latest_directory(self) -> str:
-        """Get the latest data directory from Receita Federal."""
+    def get_available_directories(self) -> List[str]:
+        """Get all available data directories from Receita Federal."""
         response = requests.get(
             self.config.base_url,
             timeout=(self.config.connect_timeout, self.config.read_timeout),
@@ -51,7 +51,11 @@ class Downloader:
         if not matches:
             raise ValueError("No data directories found")
 
-        return sorted(matches)[-1]
+        return sorted(matches)
+
+    def get_latest_directory(self) -> str:
+        """Get the latest data directory from Receita Federal."""
+        return self.get_available_directories()[-1]
 
     def get_directory_files(self, directory: str) -> List[str]:
         """Get list of ZIP files in a directory."""
@@ -119,7 +123,7 @@ class Downloader:
 
         # Skip download if keeping files and valid ZIP already exists
         if self.config.keep_files and zip_path.exists() and zipfile.is_zipfile(zip_path):
-            logger.info(f"Using cached: {filename}")
+            logger.debug(f"Using cached: {filename}")
         else:
             # Download with retries
             for attempt in range(self.config.retry_attempts):
