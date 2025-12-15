@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.0 (2025-12-15)
+
+### Features
+
+- Polars read from csv utf-8
+  ([`4376bdc`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/4376bdc2817530513d1fc35f7f6813816b824b78))
+
+
 ## v1.2.0 (2025-12-15)
 
 ### Features
