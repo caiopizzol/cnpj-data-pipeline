@@ -23,4 +23,7 @@ commit_message = "chore(release): {version} [skip ci]"
 upload_to_pypi = false
 
 [tool.semantic_release.changelog]
-changelog_file = false
+changelog_file = ""
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = true
