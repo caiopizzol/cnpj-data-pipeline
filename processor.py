@@ -63,6 +63,11 @@ COLUMNS = {
 def get_file_type(filename: str) -> Optional[str]:
     """Determine file type from filename."""
     filename_upper = filename.upper()
+    
+    # Special case for Simples files that have different naming pattern
+    if "SIMPLES" in filename_upper:
+        return "SIMPLESCSV"
+        
     for pattern in FILE_MAPPINGS:
         if pattern in filename_upper:
             return pattern
@@ -139,7 +144,7 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
             .str.replace(",", ".")
         )
 
-    # Date columns: "0" → null
+    # Date columns: "0" or "00000000" → null
     date_cols = {
         "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
         "SIMPLESCSV": ["data_opcao_pelo_simples", "data_exclusao_do_simples", "data_opcao_pelo_mei", "data_exclusao_do_mei"],
@@ -149,7 +154,11 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
         for col in date_cols[file_type]:
             if col in df.columns:
                 df = df.with_columns(
-                    pl.when(pl.col(col) == "0").then(None).otherwise(pl.col(col)).alias(col)
+                    pl.when(
+                        (pl.col(col) == "0") | 
+                        (pl.col(col) == "00000000") | 
+                        (pl.col(col).is_null())
+                    ).then(None).otherwise(pl.col(col)).alias(col)
                 )
 
     # Estabelecimentos: pad country code
