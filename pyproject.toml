@@ -10,12 +10,6 @@ dependencies = [
     "polars>=1.0.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-]
-
 [project.scripts]
 cnpj-pipeline = "main:main"
 
