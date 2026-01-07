@@ -5,3 +5,5 @@ __pycache__/
 temp/
 *.egg-info/
 .pytest_cache/
+.coverage
+coverage.xml

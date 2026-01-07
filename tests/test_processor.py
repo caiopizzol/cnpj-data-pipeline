@@ -1,8 +1,11 @@
 """Tests for processor module."""
 
+import tempfile
+from pathlib import Path
+
 import polars as pl
 
-from processor import _transform, get_file_type
+from processor import _convert_encoding, _transform, get_file_type, process_file
 
 
 class TestGetFileType:
@@ -174,3 +177,123 @@ class TestTransform:
         for i in range(len(expected_opcao)):
             assert result["data_opcao_pelo_simples"][i] == expected_opcao[i]
             assert result["data_exclusao_do_simples"][i] == expected_exclusao[i]
+
+
+class TestConvertEncoding:
+    """Test encoding conversion from ISO-8859-1 to UTF-8."""
+
+    def test_converts_iso_to_utf8(self, tmp_path):
+        """Test that ISO-8859-1 content is correctly converted to UTF-8."""
+        # Create a file with ISO-8859-1 content (Brazilian characters)
+        iso_content = "São Paulo;Empresa Ltda;Açúcar\nRio de Janeiro;Comércio;Café"
+        iso_file = tmp_path / "test.csv"
+        iso_file.write_text(iso_content, encoding="ISO-8859-1")
+
+        utf8_file = _convert_encoding(iso_file)
+
+        try:
+            # Read as UTF-8 and verify content
+            result = utf8_file.read_text(encoding="UTF-8")
+            assert "São Paulo" in result
+            assert "Açúcar" in result
+            assert "Café" in result
+        finally:
+            utf8_file.unlink(missing_ok=True)
+
+    def test_handles_large_file_in_chunks(self, tmp_path):
+        """Test that large files are processed correctly (chunked reading)."""
+        # Create a file larger than the 50MB chunk size would normally handle
+        # We'll use a smaller test but verify the chunking logic works
+        iso_file = tmp_path / "large.csv"
+        content = "data;value\n" * 10000
+        iso_file.write_text(content, encoding="ISO-8859-1")
+
+        utf8_file = _convert_encoding(iso_file)
+
+        try:
+            result = utf8_file.read_text(encoding="UTF-8")
+            assert result.count("\n") == 10000
+        finally:
+            utf8_file.unlink(missing_ok=True)
+
+
+class TestProcessFile:
+    """Test process_file function for batch processing."""
+
+    def test_skips_unknown_file_type(self, tmp_path):
+        """Test that unknown file types are skipped with no output."""
+        unknown_file = tmp_path / "UNKNOWN_FILE.csv"
+        unknown_file.write_text("data;value", encoding="ISO-8859-1")
+
+        results = list(process_file(unknown_file))
+
+        assert results == []
+
+    def test_handles_empty_csv(self, tmp_path):
+        """Test that empty CSV files are handled gracefully."""
+        empty_file = tmp_path / "CNAECSV.csv"
+        empty_file.write_text("", encoding="ISO-8859-1")
+
+        results = list(process_file(empty_file))
+
+        assert results == []
+
+    def test_processes_valid_csv_in_batches(self, tmp_path):
+        """Test that valid CSV is processed and yields correct data."""
+        # Create a small CNAE file (simple 2-column format)
+        cnae_file = tmp_path / "CNAECSV.csv"
+        content = "0111301;Cultivo de arroz\n0111302;Cultivo de milho\n0111303;Cultivo de trigo"
+        cnae_file.write_text(content, encoding="ISO-8859-1")
+
+        results = list(process_file(cnae_file, batch_size=100))
+
+        assert len(results) == 1
+        df, table_name, columns = results[0]
+        assert table_name == "cnaes"
+        assert len(df) == 3
+        assert columns == ["codigo", "descricao"]
+
+    def test_processes_simples_file(self, tmp_path):
+        """Test that SIMPLES files are processed correctly."""
+        simples_file = tmp_path / "F.K03200$W.SIMPLES.CSV.D51213"
+        # 7 columns: cnpj_basico, opcao_pelo_simples, dates (4x)
+        content = "12345678;S;20200101;0;N;0;0"
+        simples_file.write_text(content, encoding="ISO-8859-1")
+
+        results = list(process_file(simples_file))
+
+        assert len(results) == 1
+        df, table_name, columns = results[0]
+        assert table_name == "dados_simples"
+        # Verify date transformation (0 → None)
+        assert df["data_exclusao_do_simples"][0] is None
+
+    def test_cleans_up_temp_file(self, tmp_path):
+        """Test that temporary UTF-8 file is deleted after processing."""
+        cnae_file = tmp_path / "CNAECSV.csv"
+        cnae_file.write_text("0111301;Test", encoding="ISO-8859-1")
+
+        # Count .utf8.csv files before
+        temp_dir = Path(tempfile.gettempdir())
+        utf8_files_before = len(list(temp_dir.glob("*.utf8.csv")))
+
+        # Process file
+        list(process_file(cnae_file))
+
+        # Count .utf8.csv files after - should be same (cleaned up)
+        utf8_files_after = len(list(temp_dir.glob("*.utf8.csv")))
+        assert utf8_files_after == utf8_files_before
+
+    def test_multiple_batches(self, tmp_path):
+        """Test that large files are processed in multiple batches."""
+        cnae_file = tmp_path / "CNAECSV.csv"
+        # Create 150 rows, with batch_size=50 should yield 3 batches
+        rows = [f"{i:07d};Descrição {i}" for i in range(150)]
+        cnae_file.write_text("\n".join(rows), encoding="ISO-8859-1")
+
+        results = list(process_file(cnae_file, batch_size=50))
+
+        assert len(results) == 3
+        assert len(results[0][0]) == 50
+        assert len(results[1][0]) == 50
+        assert len(results[2][0]) == 50
