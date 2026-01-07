@@ -23,3 +23,19 @@ run:
 # Reset database (delete all data)
 reset:
     docker compose down -v && docker compose up -d postgres
+
+# Lint code
+lint:
+    uv run ruff check .
+
+# Format code
+format:
+    uv run ruff format .
+
+# Run tests
+test:
+    uv run pytest
+
+# Run all checks (lint, format, test)
+check:
+    uv run ruff check . && uv run ruff format --check . && uv run pytest

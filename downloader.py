@@ -17,14 +17,26 @@ logger = logging.getLogger(__name__)
 
 # Known CNPJ file patterns for extraction
 CNPJ_FILE_PATTERNS = [
-    "CNAECSV", "MOTICSV", "MUNICCSV", "NATJUCSV", "PAISCSV", "QUALSCSV",
-    "EMPRECSV", "ESTABELE", "SOCIOCSV", "SIMPLES",
+    "CNAECSV",
+    "MOTICSV",
+    "MUNICCSV",
+    "NATJUCSV",
+    "PAISCSV",
+    "QUALSCSV",
+    "EMPRECSV",
+    "ESTABELE",
+    "SOCIOCSV",
+    "SIMPLES",
 ]
 
 # Reference tables (must be processed first)
 REFERENCE_FILES = {
-    "Cnaes.zip", "Motivos.zip", "Municipios.zip",
-    "Naturezas.zip", "Paises.zip", "Qualificacoes.zip",
+    "Cnaes.zip",
+    "Motivos.zip",
+    "Municipios.zip",
+    "Naturezas.zip",
+    "Paises.zip",
+    "Qualificacoes.zip",
 }
 
 
@@ -103,8 +115,7 @@ class Downloader:
         """Download data files in parallel using ThreadPoolExecutor."""
         with ThreadPoolExecutor(max_workers=self.config.download_workers) as executor:
             future_to_filename = {
-                executor.submit(self._download_and_extract, directory, filename): filename
-                for filename in files
+                executor.submit(self._download_and_extract, directory, filename): filename for filename in files
             }
 
             for future in as_completed(future_to_filename):
@@ -166,9 +177,7 @@ class Downloader:
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 for member in zip_ref.namelist():
                     member_upper = member.upper()
-                    is_cnpj_file = any(
-                        pattern in member_upper for pattern in CNPJ_FILE_PATTERNS
-                    )
+                    is_cnpj_file = any(pattern in member_upper for pattern in CNPJ_FILE_PATTERNS)
 
                     if is_cnpj_file:
                         extract_path = self.temp_path / member

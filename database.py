@@ -45,7 +45,7 @@ class Database:
             except psycopg2.OperationalError:
                 if attempt == 3:
                     raise
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
 
     def disconnect(self):
         """Close database connection."""
@@ -99,7 +99,10 @@ class Database:
         try:
             with self.conn.cursor() as cur:
                 # 1. Create temp table
-                cur.execute(f"CREATE TEMP TABLE {temp_table} (LIKE {table_name} INCLUDING DEFAULTS INCLUDING STORAGE) ON COMMIT DROP")
+                cur.execute(
+                    f"CREATE TEMP TABLE {temp_table} "
+                    f"(LIKE {table_name} INCLUDING DEFAULTS INCLUDING STORAGE) ON COMMIT DROP"
+                )
 
                 # 2. COPY to temp
                 self._copy_to_temp(cur, df, temp_table, columns)
@@ -146,9 +149,7 @@ class Database:
         self._pk_cache[table_name] = primary_keys
         return primary_keys
 
-    def _upsert_from_temp(
-        self, cur, temp_table: str, target_table: str, columns: List[str], primary_keys: List[str]
-    ):
+    def _upsert_from_temp(self, cur, temp_table: str, target_table: str, columns: List[str], primary_keys: List[str]):
         """Upsert from temp to target table."""
         columns_str = ", ".join([f'"{col}"' for col in columns])
         pk_str = ", ".join([f'"{pk}"' for pk in primary_keys])

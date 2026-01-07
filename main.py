@@ -19,7 +19,7 @@ from tqdm import tqdm
 from config import config
 from database import Database
 from downloader import Downloader
-from processor import process_file, get_file_type
+from processor import get_file_type, process_file
 
 # Configure logging
 logging.basicConfig(
@@ -31,16 +31,16 @@ logger = logging.getLogger(__name__)
 
 # Processing order (respects foreign key dependencies)
 PROCESSING_ORDER = [
-    "CNAECSV",      # cnaes
-    "MOTICSV",      # motivos
-    "MUNICCSV",     # municipios
-    "NATJUCSV",     # naturezas_juridicas
-    "PAISCSV",      # paises
-    "QUALSCSV",     # qualificacoes_socios
-    "EMPRECSV",     # empresas
-    "ESTABELE",     # estabelecimentos
-    "SOCIOCSV",     # socios
-    "SIMPLESCSV",   # dados_simples
+    "CNAECSV",  # cnaes
+    "MOTICSV",  # motivos
+    "MUNICCSV",  # municipios
+    "NATJUCSV",  # naturezas_juridicas
+    "PAISCSV",  # paises
+    "QUALSCSV",  # qualificacoes_socios
+    "EMPRECSV",  # empresas
+    "ESTABELE",  # estabelecimentos
+    "SOCIOCSV",  # socios
+    "SIMPLESCSV",  # dados_simples
 ]
 
 
@@ -54,24 +54,10 @@ def get_file_priority(filename: str) -> int:
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="CNPJ Data Pipeline - Download and process Brazilian company data"
-    )
-    parser.add_argument(
-        "--list", "-l",
-        action="store_true",
-        help="List available months without processing"
-    )
-    parser.add_argument(
-        "--month", "-m",
-        type=str,
-        help="Specific month to process (format: YYYY-MM, e.g., 2024-11)"
-    )
-    parser.add_argument(
-        "--force", "-f",
-        action="store_true",
-        help="Force re-processing even if already processed"
-    )
+    parser = argparse.ArgumentParser(description="CNPJ Data Pipeline - Download and process Brazilian company data")
+    parser.add_argument("--list", "-l", action="store_true", help="List available months without processing")
+    parser.add_argument("--month", "-m", type=str, help="Specific month to process (format: YYYY-MM, e.g., 2024-11)")
+    parser.add_argument("--force", "-f", action="store_true", help="Force re-processing even if already processed")
     return parser.parse_args()
 
 

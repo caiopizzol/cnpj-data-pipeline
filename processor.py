@@ -32,29 +32,66 @@ COLUMNS = {
     "PAISCSV": ["codigo", "descricao"],
     "QUALSCSV": ["codigo", "descricao"],
     "EMPRECSV": [
-        "cnpj_basico", "razao_social", "natureza_juridica",
-        "qualificacao_responsavel", "capital_social", "porte",
+        "cnpj_basico",
+        "razao_social",
+        "natureza_juridica",
+        "qualificacao_responsavel",
+        "capital_social",
+        "porte",
         "ente_federativo_responsavel",
     ],
     "ESTABELE": [
-        "cnpj_basico", "cnpj_ordem", "cnpj_dv", "identificador_matriz_filial",
-        "nome_fantasia", "situacao_cadastral", "data_situacao_cadastral",
-        "motivo_situacao_cadastral", "nome_cidade_exterior", "pais",
-        "data_inicio_atividade", "cnae_fiscal_principal", "cnae_fiscal_secundaria",
-        "tipo_logradouro", "logradouro", "numero", "complemento", "bairro",
-        "cep", "uf", "municipio", "ddd_1", "telefone_1", "ddd_2", "telefone_2",
-        "ddd_fax", "fax", "correio_eletronico", "situacao_especial",
+        "cnpj_basico",
+        "cnpj_ordem",
+        "cnpj_dv",
+        "identificador_matriz_filial",
+        "nome_fantasia",
+        "situacao_cadastral",
+        "data_situacao_cadastral",
+        "motivo_situacao_cadastral",
+        "nome_cidade_exterior",
+        "pais",
+        "data_inicio_atividade",
+        "cnae_fiscal_principal",
+        "cnae_fiscal_secundaria",
+        "tipo_logradouro",
+        "logradouro",
+        "numero",
+        "complemento",
+        "bairro",
+        "cep",
+        "uf",
+        "municipio",
+        "ddd_1",
+        "telefone_1",
+        "ddd_2",
+        "telefone_2",
+        "ddd_fax",
+        "fax",
+        "correio_eletronico",
+        "situacao_especial",
         "data_situacao_especial",
     ],
     "SOCIOCSV": [
-        "cnpj_basico", "identificador_de_socio", "nome_socio", "cnpj_cpf_do_socio",
-        "qualificacao_do_socio", "data_entrada_sociedade", "pais",
-        "representante_legal", "nome_do_representante",
-        "qualificacao_do_representante_legal", "faixa_etaria",
+        "cnpj_basico",
+        "identificador_de_socio",
+        "nome_socio",
+        "cnpj_cpf_do_socio",
+        "qualificacao_do_socio",
+        "data_entrada_sociedade",
+        "pais",
+        "representante_legal",
+        "nome_do_representante",
+        "qualificacao_do_representante_legal",
+        "faixa_etaria",
     ],
     "SIMPLESCSV": [
-        "cnpj_basico", "opcao_pelo_simples", "data_opcao_pelo_simples",
-        "data_exclusao_do_simples", "opcao_pelo_mei", "data_opcao_pelo_mei",
+        "cnpj_basico",
+        "opcao_pelo_simples",
+        "data_opcao_pelo_simples",
+        "data_exclusao_do_simples",
+        "opcao_pelo_mei",
+        "data_opcao_pelo_mei",
         "data_exclusao_do_mei",
     ],
 }
@@ -63,11 +100,11 @@ COLUMNS = {
 def get_file_type(filename: str) -> Optional[str]:
     """Determine file type from filename."""
     filename_upper = filename.upper()
-    
+
     # Special case for Simples files that have different naming pattern
     if "SIMPLES" in filename_upper:
         return "SIMPLESCSV"
-        
+
     for pattern in FILE_MAPPINGS:
         if pattern in filename_upper:
             return pattern
@@ -138,39 +175,35 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
 
     # Capital social: "1.234,56" → "1234.56"
     if file_type == "EMPRECSV" and "capital_social" in df.columns:
-        df = df.with_columns(
-            pl.col("capital_social")
-            .str.replace_all(r"\.", "")
-            .str.replace(",", ".")
-        )
+        df = df.with_columns(pl.col("capital_social").str.replace_all(r"\.", "").str.replace(",", "."))
 
     # Date columns: "0" or "00000000" → null
     date_cols = {
         "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
-        "SIMPLESCSV": ["data_opcao_pelo_simples", "data_exclusao_do_simples", "data_opcao_pelo_mei", "data_exclusao_do_mei"],
+        "SIMPLESCSV": [
+            "data_opcao_pelo_simples",
+            "data_exclusao_do_simples",
+            "data_opcao_pelo_mei",
+            "data_exclusao_do_mei",
+        ],
         "SOCIOCSV": ["data_entrada_sociedade"],
     }
     if file_type in date_cols:
         for col in date_cols[file_type]:
             if col in df.columns:
                 df = df.with_columns(
-                    pl.when(
-                        (pl.col(col) == "0") | 
-                        (pl.col(col) == "00000000") | 
-                        (pl.col(col).is_null())
-                    ).then(None).otherwise(pl.col(col)).alias(col)
+                    pl.when((pl.col(col) == "0") | (pl.col(col) == "00000000") | (pl.col(col).is_null()))
+                    .then(None)
+                    .otherwise(pl.col(col))
+                    .alias(col)
                 )
 
     # Estabelecimentos: pad country code
     if file_type == "ESTABELE" and "pais" in df.columns:
-        df = df.with_columns(
-            pl.col("pais").str.zfill(3)
-        )
+        df = df.with_columns(pl.col("pais").str.zfill(3))
 
     # Socios: ensure cnpj_cpf_do_socio is not null (PK)
     if file_type == "SOCIOCSV" and "cnpj_cpf_do_socio" in df.columns:
-        df = df.with_columns(
-            pl.col("cnpj_cpf_do_socio").fill_null("00000000000000")
-        )
+        df = df.with_columns(pl.col("cnpj_cpf_do_socio").fill_null("00000000000000"))
 
     return df

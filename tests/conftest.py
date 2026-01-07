@@ -1,6 +1,5 @@
 """Test configuration and fixtures for CNPJ data pipeline tests."""
 
-import pytest
 import os
 
 
