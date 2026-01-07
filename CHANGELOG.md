@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.3.1 (2026-01-07)
+
+### Bug Fixes
+
+- Resolve Simples.zip processing issue
+  ([`27d8fb3`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/27d8fb3ea2256670e5d8b2e86964fbb454adfbf8))
+
+### Refactoring
+
+- Clean up test fixtures and remove redundant tests
+  ([`fa8a236`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/fa8a236f36f2afa3491d86520d69628128981ca6))
+
+### Testing
+
+- Add regression tests for Simples.zip processing
+  ([`dca665e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/dca665e0e9b7aa15a4ea75f99e38b7bd2534d00e))
+
+
 ## v1.3.0 (2025-12-15)
 
 ### Features
