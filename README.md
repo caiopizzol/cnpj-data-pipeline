@@ -3,6 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/cnpj-chat/cnpj-data-pipeline)](https://github.com/cnpj-chat/cnpj-data-pipeline/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![codecov](https://codecov.io/gh/cnpj-chat/cnpj-data-pipeline/graph/badge.svg)](https://codecov.io/gh/cnpj-chat/cnpj-data-pipeline)
 
 Baixa e processa dados de empresas brasileiras da Receita Federal para PostgreSQL.
 

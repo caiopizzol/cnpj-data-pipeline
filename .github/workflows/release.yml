@@ -22,8 +22,14 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
-      - name: Test
-        run: uv run pytest
+      - name: Test with coverage
+        run: uv run pytest --cov --cov-branch --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   release:
     needs: check
