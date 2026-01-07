@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Known CNPJ file patterns for extraction
 CNPJ_FILE_PATTERNS = [
     "CNAECSV", "MOTICSV", "MUNICCSV", "NATJUCSV", "PAISCSV", "QUALSCSV",
-    "EMPRECSV", "ESTABELE", "SOCIOCSV", "SIMPLESCSV",
+    "EMPRECSV", "ESTABELE", "SOCIOCSV", "SIMPLES",
 ]
 
 # Reference tables (must be processed first)
@@ -167,7 +167,7 @@ class Downloader:
                 for member in zip_ref.namelist():
                     member_upper = member.upper()
                     is_cnpj_file = any(
-                        member_upper.endswith(pattern) for pattern in CNPJ_FILE_PATTERNS
+                        pattern in member_upper for pattern in CNPJ_FILE_PATTERNS
                     )
 
                     if is_cnpj_file:
