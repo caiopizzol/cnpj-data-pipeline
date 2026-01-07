@@ -17,8 +17,8 @@ db:
     docker exec -it cnpj-pipeline-postgres psql -U postgres -d cnpj
 
 # Run pipeline
-run:
-    uv run python main.py
+run *ARGS:
+    uv run python main.py {{ARGS}}
 
 # Reset database (delete all data)
 reset:

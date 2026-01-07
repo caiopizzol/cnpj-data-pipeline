@@ -30,17 +30,38 @@ just down    # Parar PostgreSQL
 just db      # Entrar no banco (psql)
 just run     # Executar pipeline
 just reset   # Limpar e reiniciar banco
+just lint    # Verificar código
+just format  # Formatar código
+just test    # Rodar testes
+just check   # Rodar todos (lint, format, test)
+```
+
+## Uso
+
+```bash
+just run                          # Processar mês mais recente
+just run --list                   # Listar meses disponíveis
+just run --month 2024-11          # Processar mês específico
+just run --month 2024-11 --force  # Forçar reprocessamento
 ```
 
 ## Configuração
 
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5435/cnpj
-BATCH_SIZE=50000
+BATCH_SIZE=500000
+TEMP_DIR=./temp
 DOWNLOAD_WORKERS=4
+RETRY_ATTEMPTS=3
+RETRY_DELAY=5
+CONNECT_TIMEOUT=30
+READ_TIMEOUT=300
+KEEP_DOWNLOADED_FILES=false
 ```
 
 ## Schema
+
+> Documentação completa: [docs/data-schema.md](docs/data-schema.md)
 
 ```
 EMPRESAS (1) ─── (N) ESTABELECIMENTOS
@@ -48,47 +69,7 @@ EMPRESAS (1) ─── (N) ESTABELECIMENTOS
          └─── (1) DADOS_SIMPLES
 ```
 
-### empresas
-
-| Campo             | Descrição                |
-| ----------------- | ------------------------ |
-| cnpj_basico       | PK - 8 primeiros dígitos |
-| razao_social      | Nome empresarial         |
-| natureza_juridica | FK → naturezas_juridicas |
-| capital_social    | Capital em R$            |
-| porte             | 01=ME, 03=EPP, 05=Demais |
-
-### estabelecimentos
-
-| Campo                            | Descrição                                    |
-| -------------------------------- | -------------------------------------------- |
-| cnpj_basico, cnpj_ordem, cnpj_dv | PK composta (CNPJ completo)                  |
-| identificador_matriz_filial      | 1=Matriz, 2=Filial                           |
-| situacao_cadastral               | 02=Ativa, 03=Suspensa, 04=Inapta, 08=Baixada |
-| cnae_fiscal_principal            | FK → cnaes                                   |
-| municipio                        | FK → municipios                              |
-
-### socios
-
-| Campo                  | Descrição                    |
-| ---------------------- | ---------------------------- |
-| cnpj_basico            | FK → empresas                |
-| identificador_de_socio | 1=PJ, 2=PF, 3=Estrangeiro    |
-| cnpj_cpf_do_socio      | CPF mascarado (**\*XXXXXX**) |
-| qualificacao_do_socio  | FK → qualificacoes_socios    |
-
-### dados_simples
-
-| Campo              | Descrição         |
-| ------------------ | ----------------- |
-| cnpj_basico        | PK, FK → empresas |
-| opcao_pelo_simples | S=Sim, N=Não      |
-| opcao_pelo_mei     | S=Sim, N=Não      |
-
 ## Fonte de Dados
 
 - **URL**: https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj
-- **Encoding**: ISO-8859-1
-- **Separador**: `;`
-- **Datas nulas**: `0` ou `00000000`
 - **Atualização**: Mensal
