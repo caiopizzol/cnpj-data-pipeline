@@ -8,15 +8,18 @@ Layout dos arquivos CSV disponibilizados pela Receita Federal.
 erDiagram
     EMPRESAS ||--o{ ESTABELECIMENTOS : possui
     EMPRESAS ||--o{ SOCIOS : tem
-    EMPRESAS ||--o| SIMPLES : "opta por"
-
-    ESTABELECIMENTOS }o--|| MUNICIPIOS : "localizado em"
-    ESTABELECIMENTOS }o--|| MOTIVOS : "tem status"
-    ESTABELECIMENTOS }o--|| CNAES : "exerce atividade"
+    EMPRESAS ||--o| DADOS_SIMPLES : "opta por"
 
     EMPRESAS }o--|| NATUREZAS_JURIDICAS : "tem tipo"
-    SOCIOS }o--|| QUALIFICACOES : "tem papel"
-    SOCIOS }o--|| PAISES : "originário de"
+    EMPRESAS }o--|| QUALIFICACOES_SOCIOS : "responsável"
+
+    ESTABELECIMENTOS }o--|| MUNICIPIOS : "localizado em"
+    ESTABELECIMENTOS }o--|| MOTIVOS : "situação"
+    ESTABELECIMENTOS }o--|| CNAES : "atividade"
+    ESTABELECIMENTOS }o--|| PAISES : "exterior"
+
+    SOCIOS }o--|| QUALIFICACOES_SOCIOS : "papel"
+    SOCIOS }o--|| PAISES : "origem"
 ```
 
 > **Nota:** Dados históricos podem ter inconsistências legítimas (códigos de município antigos, CNAEs desativados, etc.). Evite forçar integridade referencial completa.
