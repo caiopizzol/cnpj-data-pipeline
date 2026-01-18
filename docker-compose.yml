@@ -1,12 +1,15 @@
 # CNPJ Data Pipeline
 #
 # Usage:
-#   docker compose up        # Run pipeline with local postgres
-#   docker compose up -d     # Run in background
+#   docker compose up -d                              # Start services
+#   docker exec cnpj-pipeline python main.py --list   # List available months
+#   docker exec cnpj-pipeline python main.py          # Process latest month
+#   docker compose down                               # Stop services
 
 services:
   pipeline:
     build: .
+    container_name: cnpj-pipeline
     env_file: .env
     environment:
       # Override DATABASE_URL for container networking
