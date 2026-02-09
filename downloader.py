@@ -7,6 +7,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterator, List, Tuple
+from xml.etree import ElementTree
 
 import requests
 from tqdm import tqdm
@@ -39,6 +40,9 @@ REFERENCE_FILES = {
     "Qualificacoes.zip",
 }
 
+# WebDAV XML namespace
+DAV_NS = {"d": "DAV:"}
+
 
 class Downloader:
     """Download and extract CNPJ data files with parallel support."""
@@ -47,23 +51,37 @@ class Downloader:
         self.config = config
         self.temp_path = Path(config.temp_dir)
         self.temp_path.mkdir(exist_ok=True)
+        self.auth = (config.share_token, "")
 
-    def get_available_directories(self) -> List[str]:
-        """Get all available data directories from Receita Federal."""
-        response = requests.get(
-            self.config.base_url,
+    def _propfind(self, path: str = "") -> ElementTree.Element:
+        """Execute a WebDAV PROPFIND request and return parsed XML."""
+        url = f"{self.config.base_url}/{path}".rstrip("/") + "/"
+        response = requests.request(
+            "PROPFIND",
+            url,
+            auth=self.auth,
+            headers={"Depth": "1"},
             timeout=(self.config.connect_timeout, self.config.read_timeout),
         )
         response.raise_for_status()
+        return ElementTree.fromstring(response.content)
 
-        # Parse HTML to find directories (format: YYYY-MM)
-        pattern = r'href="(\d{4}-\d{2})/"'
-        matches = re.findall(pattern, response.text)
+    def get_available_directories(self) -> List[str]:
+        """Get all available data directories from Receita Federal."""
+        root = self._propfind()
 
-        if not matches:
+        directories = []
+        for response in root.findall("d:response", DAV_NS):
+            href = response.find("d:href", DAV_NS).text
+            # Match YYYY-MM directory pattern from href path
+            match = re.search(r"(\d{4}-\d{2})/?$", href)
+            if match:
+                directories.append(match.group(1))
+
+        if not directories:
             raise ValueError("No data directories found")
 
-        return sorted(matches)
+        return sorted(directories)
 
     def get_latest_directory(self) -> str:
         """Get the latest data directory from Receita Federal."""
@@ -71,16 +89,17 @@ class Downloader:
 
     def get_directory_files(self, directory: str) -> List[str]:
         """Get list of ZIP files in a directory."""
-        url = f"{self.config.base_url}/{directory}"
-        response = requests.get(
-            url,
-            timeout=(self.config.connect_timeout, self.config.read_timeout),
-        )
-        response.raise_for_status()
+        root = self._propfind(directory)
 
-        # Parse HTML to find ZIP files
-        pattern = r'href="([^"]+\.zip)"'
-        return re.findall(pattern, response.text, re.IGNORECASE)
+        files = []
+        for response in root.findall("d:response", DAV_NS):
+            href = response.find("d:href", DAV_NS).text
+            # Extract .zip filenames from href
+            match = re.search(r"/([^/]+\.zip)$", href, re.IGNORECASE)
+            if match:
+                files.append(match.group(1))
+
+        return files
 
     def download_files(self, directory: str, files: List[str]) -> Iterator[Tuple[Path, str]]:
         """
@@ -143,6 +162,7 @@ class Downloader:
 
                     response = requests.get(
                         url,
+                        auth=self.auth,
                         stream=True,
                         timeout=(self.config.connect_timeout, self.config.read_timeout),
                     )

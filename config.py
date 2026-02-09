@@ -21,7 +21,8 @@ class Config:
     connect_timeout: int = 30
     read_timeout: int = 300
     keep_files: bool = False
-    base_url: str = "https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj"
+    base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
+    share_token: str = "YggdBLfdninEJX9"
 
     @classmethod
     def from_env(cls) -> "Config":

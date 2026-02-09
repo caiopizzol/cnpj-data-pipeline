@@ -10,6 +10,19 @@ from config import Config
 from downloader import CNPJ_FILE_PATTERNS, Downloader
 
 
+def _webdav_xml(entries: list[str]) -> bytes:
+    """Build a minimal WebDAV PROPFIND XML response."""
+    responses = ""
+    for href in entries:
+        responses += (
+            f"<d:response><d:href>{href}</d:href>"
+            "<d:propstat><d:prop/>"
+            "<d:status>HTTP/1.1 200 OK</d:status>"
+            "</d:propstat></d:response>"
+        )
+    return (f'<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">{responses}</d:multistatus>').encode()
+
+
 @pytest.fixture
 def config(tmp_path):
     """Create a test config with temp directory."""
@@ -59,20 +72,21 @@ class TestFilePatternMatching:
 
 
 class TestGetAvailableDirectories:
-    """Test HTTP directory listing functionality."""
+    """Test WebDAV directory listing functionality."""
 
     def test_parses_directory_list(self, downloader):
-        """Test that directory links are correctly parsed from HTML."""
-        html = """
-        <html><body>
-        <a href="2024-01/">2024-01/</a>
-        <a href="2024-02/">2024-02/</a>
-        <a href="2024-03/">2024-03/</a>
-        </body></html>
-        """
-        with patch("requests.get") as mock_get:
-            mock_get.return_value = MagicMock(text=html, status_code=200)
-            mock_get.return_value.raise_for_status = MagicMock()
+        """Test that directory entries are correctly parsed from WebDAV XML."""
+        xml = _webdav_xml(
+            [
+                "/public.php/webdav/",
+                "/public.php/webdav/2024-01/",
+                "/public.php/webdav/2024-02/",
+                "/public.php/webdav/2024-03/",
+            ]
+        )
+        with patch("requests.request") as mock_req:
+            mock_req.return_value = MagicMock(content=xml, status_code=207)
+            mock_req.return_value.raise_for_status = MagicMock()
 
             result = downloader.get_available_directories()
 
@@ -80,27 +94,27 @@ class TestGetAvailableDirectories:
 
     def test_raises_on_network_error(self, downloader):
         """Test that network errors are propagated."""
-        with patch("requests.get") as mock_get:
-            mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
+        with patch("requests.request") as mock_req:
+            mock_req.side_effect = requests.exceptions.ConnectionError("Network error")
 
             with pytest.raises(requests.exceptions.ConnectionError):
                 downloader.get_available_directories()
 
     def test_raises_on_empty_response(self, downloader):
-        """Test that empty HTML raises ValueError."""
-        html = "<html><body>No directories here</body></html>"
-        with patch("requests.get") as mock_get:
-            mock_get.return_value = MagicMock(text=html, status_code=200)
-            mock_get.return_value.raise_for_status = MagicMock()
+        """Test that empty listing raises ValueError."""
+        xml = _webdav_xml(["/public.php/webdav/"])
+        with patch("requests.request") as mock_req:
+            mock_req.return_value = MagicMock(content=xml, status_code=207)
+            mock_req.return_value.raise_for_status = MagicMock()
 
             with pytest.raises(ValueError, match="No data directories found"):
                 downloader.get_available_directories()
 
     def test_raises_on_http_error(self, downloader):
         """Test that HTTP errors (404, 500) are propagated."""
-        with patch("requests.get") as mock_get:
-            mock_get.return_value = MagicMock()
-            mock_get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
+        with patch("requests.request") as mock_req:
+            mock_req.return_value = MagicMock()
+            mock_req.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
 
             with pytest.raises(requests.exceptions.HTTPError):
                 downloader.get_available_directories()
@@ -123,17 +137,18 @@ class TestGetDirectoryFiles:
     """Test file listing from directory."""
 
     def test_parses_zip_files(self, downloader):
-        """Test that ZIP file links are correctly parsed."""
-        html = """
-        <html><body>
-        <a href="Empresas0.zip">Empresas0.zip</a>
-        <a href="Empresas1.zip">Empresas1.zip</a>
-        <a href="Cnaes.zip">Cnaes.zip</a>
-        </body></html>
-        """
-        with patch("requests.get") as mock_get:
-            mock_get.return_value = MagicMock(text=html, status_code=200)
-            mock_get.return_value.raise_for_status = MagicMock()
+        """Test that ZIP file entries are correctly parsed from WebDAV XML."""
+        xml = _webdav_xml(
+            [
+                "/public.php/webdav/2024-03/",
+                "/public.php/webdav/2024-03/Empresas0.zip",
+                "/public.php/webdav/2024-03/Empresas1.zip",
+                "/public.php/webdav/2024-03/Cnaes.zip",
+            ]
+        )
+        with patch("requests.request") as mock_req:
+            mock_req.return_value = MagicMock(content=xml, status_code=207)
+            mock_req.return_value.raise_for_status = MagicMock()
 
             result = downloader.get_directory_files("2024-03")
 
@@ -142,9 +157,9 @@ class TestGetDirectoryFiles:
 
     def test_raises_on_http_error(self, downloader):
         """Test that HTTP errors are propagated."""
-        with patch("requests.get") as mock_get:
-            mock_get.return_value = MagicMock()
-            mock_get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
+        with patch("requests.request") as mock_req:
+            mock_req.return_value = MagicMock()
+            mock_req.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
 
             with pytest.raises(requests.exceptions.HTTPError):
                 downloader.get_directory_files("2024-03")
