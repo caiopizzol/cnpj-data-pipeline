@@ -2,6 +2,44 @@
 
 <!-- version list -->
 
+## v1.3.2 (2026-02-09)
+
+### Bug Fixes
+
+- Adjust downloader to new url
+  ([`b1cd64a`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/b1cd64a233d7d02109451d4017f361a445182b1f))
+
+### Chores
+
+- Add badges
+  ([`60b3c63`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/60b3c63376dd33b8bdc9edbc2437a18f1bda5941))
+
+- Add codecov
+  ([`3a050df`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/3a050df5b86c3edc520b05a862b2f7be05a135bf))
+
+- Fix badge repo
+  ([`0f91ae7`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0f91ae773381823cf59c48867771fb96cdf158a9))
+
+- Long lived container
+  ([`29dfeb8`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/29dfeb816124f429ee491d9bfdfc30de6bd2f5db))
+
+- Pre-commit and ci for lint, format and test
+  ([`0bfcb0c`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0bfcb0c003fc5a92988f1e317fb7693220bf364c))
+
+### Documentation
+
+- Fix tables relationship
+  ([`4e4c062`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/4e4c062d873a8f9e2f2560151e5bf4306d747e63))
+
+- Update readme + new data-schema docs
+  ([`02f4cd8`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/02f4cd8c0748ac7249d342648b35ffb241a3d011))
+
+### Testing
+
+- Add tests for processor and downloader modules
+  ([`6ad6d65`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/6ad6d650427da578b6a08a55629ce149e817162b))
+
+
 ## v1.3.1 (2026-01-07)
 
 ### Bug Fixes

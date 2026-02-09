@@ -1,6 +1,6 @@
 [project]
 name = "cnpj-data-pipeline"
-version = "1.3.1"
+version = "1.3.2"
 requires-python = ">=3.11"
 dependencies = [
     "psycopg2-binary>=2.9.9",
