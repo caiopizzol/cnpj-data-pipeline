@@ -8,7 +8,7 @@
 Baixa e processa dados de empresas brasileiras da Receita Federal para PostgreSQL.
 
 > [!IMPORTANT]
-> **Novo em v1.3.2** — A Receita Federal migrou os arquivos CNPJ para um novo repositório Nextcloud. Esta versão já suporta a nova URL e realiza downloads via WebDAV automaticamente. Nenhuma configuração adicional necessária.
+> **Novo em v1.3.2** — _A Receita Federal migrou os arquivos CNPJ para um novo repositório Nextcloud. Esta versão já suporta a nova URL e realiza downloads via WebDAV automaticamente. Nenhuma configuração adicional necessária._
 
 ## Requisitos
 
