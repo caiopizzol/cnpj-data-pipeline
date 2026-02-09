@@ -152,7 +152,7 @@ erDiagram
 
 ## Fonte Oficial
 
-- **Download**: https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/
+- **Download**: https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9
 - **Layout CSV**: https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf
 - **Nota Técnica 47/2024**: https://www.gov.br/receitafederal/dados/nota_cocad_no_47_2024.pdf/
 - **Nota Técnica 86/2024**: https://www.gov.br/receitafederal/dados/nota-cocad-rfb-86-2024.pdf/

@@ -7,6 +7,9 @@
 
 Baixa e processa dados de empresas brasileiras da Receita Federal para PostgreSQL.
 
+> [!IMPORTANT]
+> **Novo em v1.3.2** — A Receita Federal migrou os arquivos CNPJ para um novo repositório Nextcloud. Esta versão já suporta a nova URL e realiza downloads via WebDAV automaticamente. Nenhuma configuração adicional necessária.
+
 ## Requisitos
 
 - [uv](https://docs.astral.sh/uv/) - `brew install uv`
@@ -71,5 +74,5 @@ EMPRESAS (1) ─── (N) ESTABELECIMENTOS
 
 ## Fonte de Dados
 
-- **URL**: https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj
+- **URL**: https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9
 - **Atualização**: Mensal
