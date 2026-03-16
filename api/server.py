@@ -5,9 +5,9 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from api.query import EMPRESA
 from config import config
 from database import Database
-from api.query import EMPRESA
 
 # Initialize security scheme if API authentication is enabled
 security = None
@@ -17,6 +17,7 @@ if config.api_auth_enabled:
 logger = logging.getLogger(__name__)
 
 db = Database(config.database_url)
+
 
 # Lifespan context manager to handle database connection lifecycle
 @asynccontextmanager
