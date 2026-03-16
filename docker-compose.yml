@@ -38,6 +38,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  
+  api-cnpj:
+    build:
+      context: .
+      dockerfile: Server.Dockerfile
+      args:
+        - NGROK_ENABLED=${NGROK_ENABLED:-false}
+        - NGROK_AUTH_TOKEN=${NGROK_AUTH_TOKEN:-}
+    container_name: cnpj-api
+    command: bash -c "if [ \"$NGROK_ENABLED\" = \"true\" ] && [ -n \"$NGROK_AUTH_TOKEN\" ]; then ngrok http --url=${NGROK_URL:-} ${API_PORT:-8080} & fi; uvicorn api.server:app --host 0.0.0.0 --port ${API_PORT:-8080} --workers ${API_WORKERS:-2}"
+    env_file: .env
+    environment:
+      # Override DATABASE_URL for container networking
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/cnpj
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:${API_PORT:-8080}"
+    restart: "always"
 
 volumes:
   cnpj_pipeline_data:

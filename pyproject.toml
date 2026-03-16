@@ -8,6 +8,8 @@ dependencies = [
     "tqdm>=4.66.0",
     "python-dotenv>=1.0.0",
     "polars>=1.0.0",
+    "fastapi>=0.135.1",
+    "uvicorn>=0.42.0",
 ]
 
 [project.scripts]

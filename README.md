@@ -29,6 +29,7 @@ just run     # Executar pipeline
 ```bash
 just install # Instalar dependências
 just up      # Iniciar PostgreSQL
+just up-api  # Iniciar API (com build)
 just down    # Parar PostgreSQL
 just db      # Entrar no banco (psql)
 just run     # Executar pipeline
@@ -61,6 +62,57 @@ CONNECT_TIMEOUT=30
 READ_TIMEOUT=300
 KEEP_DOWNLOADED_FILES=false
 ```
+## API
+
+A API expõe os dados de empresas via HTTP. Para iniciar:
+
+Configurações do servidor de api
+
+```bash
+# No .env
+API_PORT=<Porta> # Porta do servidor api (8080 padrão)
+API_WORKERS=<Workers> # Quantidade de workers ajuda a lidar com muitas requisições (2 padrão)
+API_AUTH_ENABLED=false # Habilita autenticação via Bearer no Header (false padrão)
+API_TOKEN=<SEU_TOKEN_AQUI> # Token de autenticação (null padrão)
+```
+
+```bash
+just up-api  # Sobe PostgreSQL + API na porta 8080
+```
+
+### Endpoints
+
+| Método | Rota               | Descrição                              |
+|--------|--------------------|-----------------------------------------|
+| GET    | `/empresa/{cnpj}`  | Retorna dados da empresa (14 dígitos)   |
+
+### Exemplo
+
+```bash
+# sem token de autenticação
+curl "http://127.0.0.1:8080/empresa/90400888000142"
+# com autenticação
+curl "http://127.0.0.1:8080/empresa/90400888000142" \
+  -H "Authorization: Bearer <SUA_API_TOKEN>" 
+```
+
+### Ngrok (opcional)
+
+Para expor a API publicamente via [ngrok](https://ngrok.com/):
+
+```bash
+# No .env
+NGROK_ENABLED=true # Habilita o ngrok
+NGROK_URL=<seu-dominio>.ngrok-free.dev # Seu domínio público no Ngrok
+NGROK_AUTH_TOKEN=<seu-token> # Seu token de autenticação do ngrok
+```
+
+Depois, `just up-api` já subirá o túnel automaticamente.
+
+<span style="color:#FFFF90">Obs: Caso não informe o token, o mesmo não será iniciado, iniciando apenas a api local rodando na porta definida no env.</span>
+
+### Query
+A query é baseada no schema da api do "CNPJÁ", para alterá-la ao seu gosto basta definir uma nova variável dentro do arquivo "query.py"
 
 ## Schema
 

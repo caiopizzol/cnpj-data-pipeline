@@ -23,6 +23,9 @@ class Config:
     keep_files: bool = False
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
     share_token: str = "YggdBLfdninEJX9"
+    # API Server Configuration
+    api_auth_enabled: bool = False
+    api_token: str = ""
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -37,6 +40,9 @@ class Config:
             connect_timeout=int(os.getenv("CONNECT_TIMEOUT", "30")),
             read_timeout=int(os.getenv("READ_TIMEOUT", "300")),
             keep_files=os.getenv("KEEP_DOWNLOADED_FILES", "false").lower() == "true",
+            # API Server Configuration
+            api_auth_enabled=os.getenv("API_AUTH_ENABLED", "false").lower() == "true",
+            api_token=os.getenv("API_TOKEN", ""),
         )
 
 

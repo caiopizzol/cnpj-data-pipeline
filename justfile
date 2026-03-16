@@ -8,6 +8,10 @@ install:
 up:
     docker compose up -d postgres
 
+# Start API
+up-api:
+    docker compose up -d api-cnpj --build
+
 # Stop PostgreSQL
 down:
     docker compose down
