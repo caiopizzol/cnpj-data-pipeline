@@ -162,6 +162,7 @@ def process_file(
                 if df.is_empty():
                     continue
                 df = _transform(df, file_type)
+                df = _validate(df, file_type)
                 yield df, table_name, columns
     finally:
         utf8_file.unlink(missing_ok=True)
@@ -217,5 +218,111 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     # Socios: ensure cnpj_cpf_do_socio is not null (PK)
     if file_type == "SOCIOCSV" and "cnpj_cpf_do_socio" in df.columns:
         df = df.with_columns(pl.col("cnpj_cpf_do_socio").fill_null("00000000000000"))
+
+    return df
+
+
+# Valid Brazilian UF codes
+_VALID_UFS = {
+    "AC",
+    "AL",
+    "AM",
+    "AP",
+    "BA",
+    "CE",
+    "DF",
+    "ES",
+    "GO",
+    "MA",
+    "MG",
+    "MS",
+    "MT",
+    "PA",
+    "PB",
+    "PE",
+    "PI",
+    "PR",
+    "RJ",
+    "RN",
+    "RO",
+    "RR",
+    "RS",
+    "SC",
+    "SE",
+    "SP",
+    "TO",
+    "EX",
+}
+
+# Format validation rules: (column, regex pattern, description)
+_FORMAT_RULES: dict[str, list[tuple[str, str, str]]] = {
+    "EMPRECSV": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("natureza_juridica", r"^\d{4}$", "4 dígitos"),
+        ("qualificacao_responsavel", r"^\d{2}$", "2 dígitos"),
+        ("porte", r"^(00|01|03|05)$", "00, 01, 03 ou 05"),
+    ],
+    "ESTABELE": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("cnpj_ordem", r"^\d{4}$", "4 dígitos"),
+        ("cnpj_dv", r"^\d{2}$", "2 dígitos"),
+        ("situacao_cadastral", r"^(01|02|03|04|08)$", "01, 02, 03, 04 ou 08"),
+        ("cep", r"^\d{8}$", "8 dígitos"),
+        ("cnae_fiscal_principal", r"^\d{7}$", "7 dígitos"),
+    ],
+    "SOCIOCSV": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("identificador_de_socio", r"^[123]$", "1, 2 ou 3"),
+        ("faixa_etaria", r"^\d$", "1 dígito"),
+    ],
+    "SIMPLESCSV": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("opcao_pelo_simples", r"^[SN]$", "S ou N"),
+        ("opcao_pelo_mei", r"^[SN]$", "S ou N"),
+    ],
+}
+
+# Date format validation: YYYYMMDD with valid month (01-12) and day (01-31)
+_DATE_PATTERN = r"^\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$"
+
+
+def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
+    """Validate field formats. Log invalid counts, nullify clearly broken values."""
+
+    # Format rules (regex)
+    for col, pattern, desc in _FORMAT_RULES.get(file_type, []):
+        if col not in df.columns:
+            continue
+        invalid = pl.col(col).is_not_null() & ~pl.col(col).str.contains(pattern)
+        count = df.filter(invalid).height
+        if count > 0:
+            logger.warning(f"{col}: {count} invalid values (expected {desc})")
+
+    # UF validation (ESTABELE only)
+    if file_type == "ESTABELE" and "uf" in df.columns:
+        invalid_uf = pl.col("uf").is_not_null() & ~pl.col("uf").is_in(list(_VALID_UFS))
+        count = df.filter(invalid_uf).height
+        if count > 0:
+            logger.warning(f"uf: {count} invalid values (not a valid UF code)")
+
+    # Date format validation (valid YYYYMMDD, not just range)
+    date_cols = {
+        "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
+        "SIMPLESCSV": [
+            "data_opcao_pelo_simples",
+            "data_exclusao_do_simples",
+            "data_opcao_pelo_mei",
+            "data_exclusao_do_mei",
+        ],
+        "SOCIOCSV": ["data_entrada_sociedade"],
+    }
+    for col in date_cols.get(file_type, []):
+        if col not in df.columns:
+            continue
+        invalid_format = pl.col(col).is_not_null() & ~pl.col(col).str.contains(_DATE_PATTERN)
+        count = df.filter(invalid_format).height
+        if count > 0:
+            logger.warning(f"{col}: {count} invalid date format (expected YYYYMMDD)")
+            df = df.with_columns(pl.when(invalid_format).then(None).otherwise(pl.col(col)).alias(col))
 
     return df

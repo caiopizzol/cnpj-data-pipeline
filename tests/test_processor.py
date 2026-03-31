@@ -5,7 +5,7 @@ from pathlib import Path
 
 import polars as pl
 
-from processor import _convert_encoding, _transform, get_file_type, process_file
+from processor import _convert_encoding, _transform, _validate, get_file_type, process_file
 
 
 class TestGetFileType:
@@ -262,6 +262,92 @@ class TestTransform:
         result = _transform(df, "SOCIOCSV")
 
         assert result["cnpj_cpf_do_socio"][0] == "00000000000000"
+
+
+class TestValidate:
+    """Test _validate function for format validation."""
+
+    def test_validate_cnpj_basico_format(self):
+        """Test that cnpj_basico must be exactly 8 digits."""
+        df = pl.DataFrame({"cnpj_basico": ["12345678", "1234", "ABCDEFGH", None]})
+
+        result = _validate(df, "EMPRECSV")
+
+        # Validation logs but doesn't nullify format errors (keeps raw values)
+        assert result["cnpj_basico"][0] == "12345678"
+        assert result["cnpj_basico"][1] == "1234"
+
+    def test_validate_situacao_cadastral(self):
+        """Test that situacao_cadastral must be 01, 02, 03, 04, or 08."""
+        df = pl.DataFrame({"situacao_cadastral": ["02", "08", "99", None]})
+
+        result = _validate(df, "ESTABELE")
+
+        # Logs the invalid "99" but keeps it
+        assert result["situacao_cadastral"][2] == "99"
+
+    def test_validate_uf(self):
+        """Test that UF must be a valid Brazilian state code."""
+        df = pl.DataFrame({"uf": ["SP", "RJ", "XX", None]})
+
+        result = _validate(df, "ESTABELE")
+
+        # Logs invalid "XX" but keeps it
+        assert result["uf"][2] == "XX"
+
+    def test_validate_opcao_simples(self):
+        """Test that opcao_pelo_simples must be S or N."""
+        df = pl.DataFrame({"opcao_pelo_simples": ["S", "N", "X", None]})
+
+        result = _validate(df, "SIMPLESCSV")
+
+        assert result["opcao_pelo_simples"][2] == "X"
+
+    def test_validate_identificador_socio(self):
+        """Test that identificador_de_socio must be 1, 2, or 3."""
+        df = pl.DataFrame({"identificador_de_socio": ["1", "2", "3", "9"]})
+
+        result = _validate(df, "SOCIOCSV")
+
+        assert result["identificador_de_socio"][3] == "9"
+
+    def test_validate_invalid_date_format_nullified(self):
+        """Test that dates with invalid format (not YYYYMMDD) are nullified."""
+        df = pl.DataFrame({"data_situacao_cadastral": ["20230101", "2023-01-01", "INVALID", None]})
+
+        result = _validate(df, "ESTABELE")
+
+        assert result["data_situacao_cadastral"][0] == "20230101"
+        assert result["data_situacao_cadastral"][1] is None
+        assert result["data_situacao_cadastral"][2] is None
+        assert result["data_situacao_cadastral"][3] is None
+
+    def test_validate_date_invalid_month_day(self):
+        """Test that dates with invalid month/day are nullified."""
+        df = pl.DataFrame({"data_situacao_cadastral": ["20231301", "20230132", "20230615"]})
+
+        result = _validate(df, "ESTABELE")
+
+        assert result["data_situacao_cadastral"][0] is None  # month 13
+        assert result["data_situacao_cadastral"][1] is None  # day 32
+        assert result["data_situacao_cadastral"][2] == "20230615"
+
+    def test_validate_valid_data_passes(self):
+        """Test that valid data passes through unchanged."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["12345678"],
+                "natureza_juridica": ["2135"],
+                "qualificacao_responsavel": ["50"],
+                "capital_social": ["1000.00"],
+                "porte": ["01"],
+                "ente_federativo_responsavel": [None],
+            }
+        )
+
+        result = _validate(df, "EMPRECSV")
+
+        assert result.equals(df)
 
 
 class TestConvertEncoding:
