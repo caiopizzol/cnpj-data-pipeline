@@ -105,7 +105,8 @@ Estes dados são **públicos e oficiais**, disponibilizados pela própria Receit
 | **Formato** | CSV (`;` separador, ISO-8859-1) |
 | **Base legal** | [Lei 12.527/2011](https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm) (Lei de Acesso à Informação), art. 8° |
 | **Regulamentação** | [Decreto 10.046/2019](https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2019/decreto/D10046.htm) |
-| **Nota Técnica** | [RFB/COCAD n° 47/2024](https://arquivos.receitafederal.gov.br/index.php/s/MPPfFit7g7zdA8C) (alterada pela NT 86/2024) |
+| **Nota Técnica** | [RFB/COCAD n° 47/2024](https://www.gov.br/receitafederal/dados/nota_cocad_no_47_2024.pdf/) (alterada pela [NT 86/2024](https://www.gov.br/receitafederal/dados/nota-cocad-rfb-86-2024.pdf/)) |
+| **Metadados** | [Layout dos arquivos (PDF)](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf) |
 
 O conjunto de dados CNPJ no Portal de Dados Abertos contém três recursos:
 
