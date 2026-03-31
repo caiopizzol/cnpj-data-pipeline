@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-03-31)
+
+### Continuous Integration
+
+- Run CI on push to main and release only after CI passes
+  ([`34d590b`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/34d590b096aaf660da457072c0b4b4809250510a))
+
+### Features
+
+- Validate data quality before loading
+  ([`9a0bcb8`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/9a0bcb80d4f178ea1a6bc1788f9dafa4b82d3ba9))
+
+
 ## v1.4.0 (2026-03-31)
 
 ### Features
