@@ -1,39 +1,15 @@
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: astral-sh/setup-uv@v7
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Format check
-        run: uv run ruff format --check .
-
-      - name: Test with coverage
-        run: uv run pytest --cov --cov-branch --cov-report=xml
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
   release:
-    needs: check
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     permissions:
       contents: write
 
