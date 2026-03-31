@@ -140,35 +140,28 @@ def process_file(
     utf8_file = _convert_encoding(file_path)
 
     try:
-        offset = 0
-        while True:
-            try:
-                df = pl.read_csv(
-                    utf8_file,
-                    separator=";",
-                    has_header=False,
-                    new_columns=columns,
-                    encoding="utf8",
-                    infer_schema_length=0,
-                    null_values=[""],
-                    ignore_errors=True,
-                    low_memory=False,
-                    skip_rows=offset,
-                    n_rows=batch_size,
-                )
-            except pl.exceptions.NoDataError:
-                break
+        try:
+            reader = pl.read_csv_batched(
+                utf8_file,
+                separator=";",
+                has_header=False,
+                new_columns=columns,
+                encoding="utf8",
+                infer_schema_length=0,
+                null_values=[""],
+                ignore_errors=True,
+                low_memory=False,
+                batch_size=batch_size,
+            )
+        except pl.exceptions.NoDataError:
+            return
 
-            if df.is_empty():
-                break
-
-            df = _transform(df, file_type)
-            yield df, table_name, columns
-
-            # End of file if we got fewer rows than requested
-            if len(df) < batch_size:
-                break
-            offset += len(df)
+        while (batches := reader.next_batches(1)) is not None:
+            for df in batches:
+                if df.is_empty():
+                    continue
+                df = _transform(df, file_type)
+                yield df, table_name, columns
     finally:
         utf8_file.unlink(missing_ok=True)
 
