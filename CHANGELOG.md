@@ -2,6 +2,39 @@
 
 <!-- version list -->
 
+## v1.3.3 (2026-03-31)
+
+### Bug Fixes
+
+- Prevent silent data loss and improve reliability
+  ([`44f3b24`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/44f3b240396be795d0e2429d29394b764561898c))
+
+### Chores
+
+- Add issue templates for bug and feature
+  ([`0cbb27f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0cbb27f8e3e637f4d0d27eae068aebd275e753ec))
+
+- Add lefthook pre-commit
+  ([`010582e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/010582eca1f72eae9358c86adf72be4f97190ef7))
+
+- Update readme
+  ([`fdf4704`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/fdf4704a0a663b9e7b5d9a847f59ddb5ed1dfe13))
+
+### Documentation
+
+- Add contributors section and auto-update workflow
+  ([`cd05529`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/cd05529265251276e90467f0795182762dcbd036))
+
+- Italic
+  ([`9a6efc4`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/9a6efc4f19d4eed06e216d5967f2229c3de1145d))
+
+- Update nextcloud url
+  ([`75327d6`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/75327d6efcdf1971bfbb55050e362bc7d8b97ff7))
+
+- Update readme with centered layout and cnpj.chat link
+  ([`f352d73`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/f352d73e404f6438c6c6a4b1f0aa75c3afb9cb1e))
+
+
 ## v1.3.2 (2026-02-09)
 
 ### Bug Fixes
