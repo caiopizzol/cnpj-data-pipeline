@@ -1,6 +1,6 @@
 name: Feature
 description: Algo que o pipeline deveria fazer.
-labels: ["enhancement"]
+labels: ["type:feature"]
 body:
   - type: textarea
     id: what

@@ -63,8 +63,9 @@ class Database:
                     (directory,),
                 )
                 return {row[0] for row in cur.fetchall()}
-        except Exception:
-            return set()
+        except Exception as e:
+            logger.error(f"Failed to get processed files: {e}")
+            raise
 
     def mark_processed(self, directory: str, filename: str):
         """Mark a file as processed."""

@@ -94,7 +94,7 @@ def main():
 
         # Handle --force mode
         if args.force:
-            print(f"Force mode: clearing processed files for {directory}")
+            logger.info(f"Force mode: clearing processed files for {directory}")
             db.clear_processed_files(directory)
 
         all_files = downloader.get_directory_files(directory)
@@ -102,10 +102,10 @@ def main():
         pending_files = [f for f in all_files if f not in processed]
 
         if not pending_files:
-            print("All files already processed!")
+            logger.info("All files already processed!")
             return
 
-        print(f"Processing {len(pending_files)} files from {directory}")
+        logger.info(f"Processing {len(pending_files)} files from {directory}")
 
         # Sort files by processing order
         pending_files.sort(key=get_file_priority)
@@ -124,14 +124,13 @@ def main():
 
                     db.mark_processed(directory, zip_filename)
 
-                except Exception as e:
-                    logger.error(f"Error: {csv_path.name}: {e}")
-
-                finally:
                     if csv_path.exists() and not config.keep_files:
                         csv_path.unlink()
 
-        print("Done!")
+                except Exception as e:
+                    logger.error(f"Error: {csv_path.name}: {e}")
+
+        logger.info("Done!")
 
     except Exception as e:
         logger.error(f"Failed: {e}")

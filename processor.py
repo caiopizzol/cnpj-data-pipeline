@@ -1,6 +1,7 @@
 """CSV processing and transformation for CNPJ data files using Polars."""
 
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Generator, List, Optional, Tuple
@@ -113,7 +114,9 @@ def get_file_type(filename: str) -> Optional[str]:
 
 def _convert_encoding(file_path: Path) -> Path:
     """Convert ISO-8859-1 to UTF-8. Returns path to converted file."""
-    utf8_file = Path(tempfile.mktemp(suffix=".utf8.csv"))
+    fd, tmp_path = tempfile.mkstemp(suffix=".utf8.csv")
+    os.close(fd)
+    utf8_file = Path(tmp_path)
     with open(file_path, "r", encoding="ISO-8859-1") as infile:
         with open(utf8_file, "w", encoding="UTF-8") as outfile:
             for chunk in iter(lambda: infile.read(50 * 1024 * 1024), ""):  # 50MB chunks
