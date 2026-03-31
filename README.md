@@ -95,8 +95,30 @@ EMPRESAS (1) ─── (N) ESTABELECIMENTOS
 
 ## Fonte de Dados
 
-- **URL**: https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9
-- **Atualização**: Mensal
+Estes dados são **públicos e oficiais**, disponibilizados pela própria Receita Federal do Brasil.
+
+| | |
+|---|---|
+| **Fonte** | [Portal de Dados Abertos — CNPJ](https://dados.gov.br/dados/conjuntos-dados/cadastro-nacional-da-pessoa-juridica---cnpj) |
+| **Repositório** | [Receita Federal — Nextcloud](https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9) |
+| **Atualização** | Mensal |
+| **Formato** | CSV (`;` separador, ISO-8859-1) |
+| **Base legal** | [Lei 12.527/2011](https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm) (Lei de Acesso à Informação), art. 8° |
+| **Regulamentação** | [Decreto 10.046/2019](https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2019/decreto/D10046.htm) |
+| **Nota Técnica** | [RFB/COCAD n° 47/2024](https://www.gov.br/receitafederal/dados/nota_cocad_no_47_2024.pdf/) (alterada pela [NT 86/2024](https://www.gov.br/receitafederal/dados/nota-cocad-rfb-86-2024.pdf/)) |
+| **Metadados** | [Layout dos arquivos (PDF)](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf) |
+
+O conjunto de dados CNPJ no Portal de Dados Abertos contém três recursos:
+
+| Recurso | Descrição | Status |
+|---------|-----------|--------|
+| Dicionário de dados | Layout e metadados dos arquivos | Referência |
+| **Inscrições no CNPJ** | Dados cadastrais de empresas, estabelecimentos, sócios e Simples Nacional | **Processado por este pipeline** |
+| Regimes Tributários | Forma de tributação (ECF): Lucro Real, Presumido, Arbitrado, Imunes/Isentas | Ainda não suportado |
+
+A Coordenação-Geral de Gestão de Cadastros e Benefícios Fiscais (Cocad) classifica estes dados como **dados públicos, de livre acesso a qualquer interessado** (NT 47/2024, item 10). CPFs de sócios são mascarados conforme art. 198 da [Lei 5.172/1966](https://www.planalto.gov.br/ccivil_03/leis/l5172compilado.htm) (CTN).
+
+Estes dados **não** são vazados, obtidos ilegalmente, ou protegidos por sigilo fiscal.
 
 ## Contribuidores
 
