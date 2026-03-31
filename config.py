@@ -21,7 +21,9 @@ class Config:
     connect_timeout: int = 30
     read_timeout: int = 300
     keep_files: bool = False
-    loading_strategy: str = "upsert"
+    loading_strategy: str = "upsert"  # "upsert" or "replace"
+    output_format: str = "postgres"  # "postgres" or "parquet"
+    parquet_output_dir: str = "./parquet"
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
     share_token: str = "YggdBLfdninEJX9"
 
@@ -39,6 +41,8 @@ class Config:
             read_timeout=int(os.getenv("READ_TIMEOUT", "300")),
             keep_files=os.getenv("KEEP_DOWNLOADED_FILES", "false").lower() == "true",
             loading_strategy=os.getenv("LOADING_STRATEGY", "upsert").lower(),
+            output_format=os.getenv("OUTPUT_FORMAT", "postgres").lower(),
+            parquet_output_dir=os.getenv("PARQUET_OUTPUT_DIR", "./parquet"),
         )
 
 

@@ -3,6 +3,7 @@
 __pycache__/
 .venv/
 temp/
+parquet/
 *.egg-info/
 .pytest_cache/
 .coverage

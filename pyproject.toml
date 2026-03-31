@@ -8,13 +8,14 @@ dependencies = [
     "tqdm>=4.66.0",
     "python-dotenv>=1.0.0",
     "polars>=1.0.0",
+    "pyarrow>=17.0.0",
 ]
 
 [project.scripts]
 cnpj-pipeline = "main:main"
 
 [tool.setuptools]
-py-modules = ["config", "database", "downloader", "processor", "main"]
+py-modules = ["config", "database", "downloader", "processor", "parquet_writer", "main"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

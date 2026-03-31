@@ -17,7 +17,6 @@ import sys
 from tqdm import tqdm
 
 from config import config
-from database import Database
 from downloader import Downloader
 from processor import get_file_type, process_file
 
@@ -75,11 +74,24 @@ def main():
             print(f"  {month}")
         return
 
-    if not config.database_url:
-        logger.error("DATABASE_URL not set")
+    is_parquet = config.output_format == "parquet"
+
+    if not is_parquet and not config.database_url:
+        logger.error("DATABASE_URL not set (required for postgres output)")
         sys.exit(1)
 
-    db = Database(config.database_url)
+    db = None
+    parquet = None
+
+    if is_parquet:
+        from parquet_writer import ParquetWriter
+
+        parquet = ParquetWriter(config.parquet_output_dir)
+        logger.info(f"Parquet mode: output to {config.parquet_output_dir}")
+    else:
+        from database import Database
+
+        db = Database(config.database_url)
 
     try:
         # Select directory
@@ -92,14 +104,18 @@ def main():
         else:
             directory = downloader.get_latest_directory()
 
-        # Handle --force mode
-        if args.force:
+        # Handle --force mode (database only)
+        if args.force and db:
             logger.info(f"Force mode: clearing processed files for {directory}")
             db.clear_processed_files(directory)
 
         all_files = downloader.get_directory_files(directory)
-        processed = db.get_processed_files(directory)
-        pending_files = [f for f in all_files if f not in processed]
+
+        if db:
+            processed = db.get_processed_files(directory)
+            pending_files = [f for f in all_files if f not in processed]
+        else:
+            pending_files = list(all_files)
 
         if not pending_files:
             logger.info("All files already processed!")
@@ -117,19 +133,33 @@ def main():
                 pbar.set_postfix_str(csv_path.name[:30])
                 try:
                     rows = 0
-                    load = db.bulk_insert if config.loading_strategy == "replace" else db.bulk_upsert
-                    for batch, table_name, columns in process_file(csv_path, config.batch_size):
-                        load(batch, table_name, columns)
-                        rows += len(batch)
-                        pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
 
-                    db.mark_processed(directory, zip_filename)
+                    if is_parquet:
+                        for batch, table_name, columns in process_file(csv_path, config.batch_size):
+                            parquet.write_batch(batch, table_name, columns)
+                            rows += len(batch)
+                            pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
+                    else:
+                        load = db.bulk_insert if config.loading_strategy == "replace" else db.bulk_upsert
+                        for batch, table_name, columns in process_file(csv_path, config.batch_size):
+                            load(batch, table_name, columns)
+                            rows += len(batch)
+                            pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
+
+                        db.mark_processed(directory, zip_filename)
 
                     if csv_path.exists() and not config.keep_files:
                         csv_path.unlink()
 
                 except Exception as e:
                     logger.error(f"Error: {csv_path.name}: {e}")
+
+        if is_parquet:
+            parquet.close()
+            manifest = parquet.write_manifest()
+            total_rows = manifest["totals"]["rows"]
+            total_size = manifest["totals"]["sizeBytes"] / 1024 / 1024 / 1024
+            logger.info(f"Parquet export complete: {total_rows:,} rows, {total_size:.2f} GB")
 
         logger.info("Done!")
 
@@ -138,7 +168,8 @@ def main():
         sys.exit(1)
 
     finally:
-        db.disconnect()
+        if db:
+            db.disconnect()
         downloader.cleanup()
 
 
