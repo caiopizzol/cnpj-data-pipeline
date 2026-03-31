@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-03-31)
+
+### Features
+
+- Use Polars read_csv_batched and add integration tests
+  ([`93a8560`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/93a8560cda91fc451325d50215df80bc65069880))
+
+### Testing
+
+- Add tests for database, main, and processor gaps
+  ([`c461630`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/c461630ab25be581b8f2ce63bc3fc29d905794dd))
+
+
 ## v1.3.3 (2026-03-31)
 
 ### Bug Fixes
