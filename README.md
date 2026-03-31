@@ -1,11 +1,22 @@
-# CNPJ Data Pipeline (v2)
+<p align="center">
+  <!-- TODO: add icon -->
+  <img src="" width="80" height="80" alt="cnpj.chat">
+</p>
 
-[![Release](https://img.shields.io/github/v/release/caiopizzol/cnpj-data-pipeline)](https://github.com/caiopizzol/cnpj-data-pipeline/releases)
-[![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![codecov](https://codecov.io/gh/caiopizzol/cnpj-data-pipeline/graph/badge.svg)](https://codecov.io/gh/caiopizzol/cnpj-data-pipeline)
+<h1 align="center">CNPJ Data Pipeline</h1>
 
-Baixa e processa dados de empresas brasileiras da Receita Federal para PostgreSQL.
+<p align="center">
+  Baixa e processa dados de empresas brasileiras da Receita Federal para PostgreSQL.
+  <br>
+  Parte do <a href="https://cnpj.chat">cnpj.chat</a> — dados públicos de empresas, acessíveis para todos.
+</p>
+
+<p align="center">
+  <a href="https://github.com/caiopizzol/cnpj-data-pipeline/releases"><img src="https://img.shields.io/github/v/release/caiopizzol/cnpj-data-pipeline" alt="Release"></a>
+  <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python"></a>
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
+  <a href="https://codecov.io/gh/caiopizzol/cnpj-data-pipeline"><img src="https://codecov.io/gh/caiopizzol/cnpj-data-pipeline/graph/badge.svg" alt="codecov"></a>
+</p>
 
 > [!IMPORTANT]
 > **Novo em v1.3.2** — _A Receita Federal migrou os arquivos CNPJ para um novo repositório Nextcloud. Esta versão já suporta a nova URL e realiza downloads via WebDAV automaticamente. Nenhuma configuração adicional necessária._
