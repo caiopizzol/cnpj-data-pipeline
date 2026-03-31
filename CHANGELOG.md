@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v1.8.0 (2026-03-31)
+
+### Bug Fixes
+
+- Use date parsing instead of regex for calendar validation
+  ([#61](https://github.com/caiopizzol/cnpj-data-pipeline/pull/61),
+  [`356f728`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/356f72898aee7a6f4ada3e881450b76774e34539))
+
+### Features
+
+- Validar formato dos dados por tipo de campo
+  ([#61](https://github.com/caiopizzol/cnpj-data-pipeline/pull/61),
+  [`356f728`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/356f72898aee7a6f4ada3e881450b76774e34539))
+
+- Validate field formats before loading
+  ([#61](https://github.com/caiopizzol/cnpj-data-pipeline/pull/61),
+  [`356f728`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/356f72898aee7a6f4ada3e881450b76774e34539))
+
+### Refactoring
+
+- Extract date_cols to shared _DATE_COLS constant
+  ([#61](https://github.com/caiopizzol/cnpj-data-pipeline/pull/61),
+  [`356f728`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/356f72898aee7a6f4ada3e881450b76774e34539))
+
+
 ## v1.7.0 (2026-03-31)
 
 ### Continuous Integration
