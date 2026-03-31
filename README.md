@@ -107,6 +107,14 @@ Estes dados são **públicos e oficiais**, disponibilizados pela própria Receit
 | **Regulamentação** | [Decreto 10.046/2019](https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2019/decreto/D10046.htm) |
 | **Nota Técnica** | [RFB/COCAD n° 47/2024](https://arquivos.receitafederal.gov.br/index.php/s/MPPfFit7g7zdA8C) (alterada pela NT 86/2024) |
 
+O conjunto de dados CNPJ no Portal de Dados Abertos contém três recursos:
+
+| Recurso | Descrição | Status |
+|---------|-----------|--------|
+| Dicionário de dados | Layout e metadados dos arquivos | Referência |
+| **Inscrições no CNPJ** | Dados cadastrais de empresas, estabelecimentos, sócios e Simples Nacional | **Processado por este pipeline** |
+| Regimes Tributários | Forma de tributação (ECF): Lucro Real, Presumido, Arbitrado, Imunes/Isentas | Ainda não suportado |
+
 A Coordenação-Geral de Gestão de Cadastros e Benefícios Fiscais (Cocad) classifica estes dados como **dados públicos, de livre acesso a qualquer interessado** (NT 47/2024, item 10). CPFs de sócios são mascarados conforme art. 198 da [Lei 5.172/1966](https://www.planalto.gov.br/ccivil_03/leis/l5172compilado.htm) (CTN).
 
 Estes dados **não** são vazados, obtidos ilegalmente, ou protegidos por sigilo fiscal.
