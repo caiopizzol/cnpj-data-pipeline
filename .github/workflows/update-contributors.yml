@@ -1,0 +1,52 @@
+name: Update README Contributors
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  update-contributors:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Add contributor to README
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # Skip bots
+          if [[ "$AUTHOR" == *"[bot]"* || "$AUTHOR" == *"bot"* ]]; then
+            echo "Skipping bot: $AUTHOR"
+            exit 0
+          fi
+
+          # Skip if already listed
+          if grep -q "github.com/$AUTHOR" README.md; then
+            echo "$AUTHOR already in README"
+            exit 0
+          fi
+
+          DISPLAY_NAME=$(gh api "users/$AUTHOR" --jq '.name // .login')
+          AVATAR='<a href="https://github.com/'"$AUTHOR"'"><img src="https://github.com/'"$AUTHOR"'.png" width="50" height="50" alt="'"$AUTHOR"'" title="'"$DISPLAY_NAME"'" /></a>'
+
+          LAST_LINE=$(grep -n 'github.com/.*\.png' README.md | tail -1 | cut -d: -f1)
+          sed -i "${LAST_LINE}a\\${AVATAR}" README.md
+
+          if git diff --quiet README.md; then
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: add $AUTHOR to contributors"
+          git push origin main
