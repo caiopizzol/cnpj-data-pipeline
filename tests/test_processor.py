@@ -178,6 +178,45 @@ class TestTransform:
             assert result["data_opcao_pelo_simples"][i] == expected_opcao[i]
             assert result["data_exclusao_do_simples"][i] == expected_exclusao[i]
 
+    def test_transform_capital_social(self):
+        """Test that capital social is converted from Brazilian to standard decimal."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["12345678"],
+                "capital_social": ["1.234.567,89"],
+            }
+        )
+
+        result = _transform(df, "EMPRECSV")
+
+        assert result["capital_social"][0] == "1234567.89"
+
+    def test_transform_country_code_padding(self):
+        """Test that country codes are zero-padded to 3 digits."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["12345678"],
+                "pais": ["1"],
+            }
+        )
+
+        result = _transform(df, "ESTABELE")
+
+        assert result["pais"][0] == "001"
+
+    def test_transform_null_cpf_fill(self):
+        """Test that null cnpj_cpf_do_socio is filled with zeros."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["12345678"],
+                "cnpj_cpf_do_socio": [None],
+            }
+        )
+
+        result = _transform(df, "SOCIOCSV")
+
+        assert result["cnpj_cpf_do_socio"][0] == "00000000000000"
+
 
 class TestConvertEncoding:
     """Test encoding conversion from ISO-8859-1 to UTF-8."""
