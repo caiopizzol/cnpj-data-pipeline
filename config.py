@@ -21,6 +21,7 @@ class Config:
     connect_timeout: int = 30
     read_timeout: int = 300
     keep_files: bool = False
+    loading_strategy: str = "upsert"
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
     share_token: str = "YggdBLfdninEJX9"
 
@@ -37,6 +38,7 @@ class Config:
             connect_timeout=int(os.getenv("CONNECT_TIMEOUT", "30")),
             read_timeout=int(os.getenv("READ_TIMEOUT", "300")),
             keep_files=os.getenv("KEEP_DOWNLOADED_FILES", "false").lower() == "true",
+            loading_strategy=os.getenv("LOADING_STRATEGY", "upsert").lower(),
         )
 
 

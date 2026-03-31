@@ -154,3 +154,18 @@ class TestFullPipeline:
                 WHERE data_situacao_cadastral::text IN ('0', '00000000')
             """)
             assert cur.fetchone()[0] == 0, "Found invalid dates in estabelecimentos"
+
+    def test_replace_strategy(self, test_db):
+        """Loading with bulk_insert should truncate and reload cleanly."""
+        # Load with replace strategy
+        test_db._truncated_tables.clear()
+        for fixture_name in PROCESSING_ORDER:
+            fixture_path = FIXTURES_DIR / fixture_name
+            for batch, table_name, columns in process_file(fixture_path, batch_size=500000):
+                test_db.bulk_insert(batch, table_name, columns)
+
+        # Verify data is still there (not empty after truncate)
+        for table, expected in EXPECTED_COUNTS.items():
+            actual = _count_rows(test_db, table)
+            assert actual > 0, f"{table} is empty after replace"
+            assert actual <= expected, f"{table} has more rows ({actual}) than fixture ({expected})"

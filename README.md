@@ -18,7 +18,10 @@
 </p>
 
 > [!IMPORTANT]
-> **Novo em v1.3.2** — _A Receita Federal migrou os arquivos CNPJ para um novo repositório Nextcloud. Esta versão já suporta a nova URL e realiza downloads via WebDAV automaticamente. Nenhuma configuração adicional necessária._
+> **Desde v1.3.2** — _A Receita Federal migrou os arquivos CNPJ para um novo repositório Nextcloud. Esta versão já suporta a nova URL e realiza downloads via WebDAV automaticamente. Nenhuma configuração adicional necessária._
+
+> [!TIP]
+> **Novo** — _Estratégia de carga configurável. Use `LOADING_STRATEGY=replace` para carga completa mais rápida (TRUNCATE + INSERT) ou `upsert` (default) para manter disponibilidade durante a carga._
 
 ## Requisitos
 
@@ -70,7 +73,15 @@ RETRY_DELAY=5
 CONNECT_TIMEOUT=30
 READ_TIMEOUT=300
 KEEP_DOWNLOADED_FILES=false
+LOADING_STRATEGY=upsert  # "upsert" ou "replace"
 ```
+
+### Estratégia de carga
+
+| Estratégia | Comando | Quando usar |
+|------------|---------|-------------|
+| `upsert` | `LOADING_STRATEGY=upsert just run` | Atualização incremental. Banco continua acessível durante a carga. |
+| `replace` | `LOADING_STRATEGY=replace just run` | Carga completa mensal. Mais rápido — faz TRUNCATE e insere direto. |
 
 ## Schema
 

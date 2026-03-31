@@ -18,6 +18,7 @@ class Database:
     def __init__(self, database_url: str):
         self.database_url = database_url
         self._pk_cache: dict = {}
+        self._truncated_tables: set = set()
         self.conn = None
 
     def _parse_url(self) -> dict:
@@ -111,6 +112,31 @@ class Database:
                 # 3. Upsert from temp to main
                 primary_keys = self._get_primary_keys(cur, table_name)
                 self._upsert_from_temp(cur, temp_table, table_name, columns, primary_keys)
+
+                self.conn.commit()
+
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error: {table_name}: {e}")
+            raise
+
+    def bulk_insert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
+        """Bulk insert using TRUNCATE + COPY (no conflict check)."""
+        if df.is_empty():
+            return
+
+        self.connect()
+
+        try:
+            with self.conn.cursor() as cur:
+                # Truncate only on first batch per table
+                if table_name not in self._truncated_tables:
+                    cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
+                    self._truncated_tables.add(table_name)
+                    logger.info(f"Truncated {table_name}")
+
+                # COPY directly into target table
+                self._copy_to_temp(cur, df, table_name, columns)
 
                 self.conn.commit()
 
