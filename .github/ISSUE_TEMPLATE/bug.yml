@@ -1,0 +1,29 @@
+name: Bug
+description: Algo não funciona como deveria.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: O que
+      description: O que acontece? Uma frase.
+      placeholder: "Pipeline falha ao processar arquivo ESTABELE com erro X."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Por quê
+      description: Como reproduzir ou o que causa o problema.
+      placeholder: |
+        1. Executar `just run`
+        2. Erro no log: ...
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Ideia
+      description: Sugestão de correção, se tiver.
+    validations:
+      required: false

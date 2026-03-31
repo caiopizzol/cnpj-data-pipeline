@@ -1,0 +1,27 @@
+name: Feature
+description: Algo que o pipeline deveria fazer.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: O que
+      description: O que precisa mudar? Uma frase.
+      placeholder: "Exportar dados como Parquet segmentado por estado."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Por quê
+      description: Qual problema isso resolve.
+      placeholder: "Hoje o único jeito de acessar os dados é rodar o pipeline inteiro."
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Ideia
+      description: Uma direção possível. Não precisa ser definitiva.
+    validations:
+      required: false
