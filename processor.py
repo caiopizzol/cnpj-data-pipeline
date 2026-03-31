@@ -183,19 +183,9 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
         )
 
     # Date columns: "0" or "00000000" → null
-    date_cols = {
-        "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
-        "SIMPLESCSV": [
-            "data_opcao_pelo_simples",
-            "data_exclusao_do_simples",
-            "data_opcao_pelo_mei",
-            "data_exclusao_do_mei",
-        ],
-        "SOCIOCSV": ["data_entrada_sociedade"],
-    }
-    if file_type in date_cols:
+    if file_type in _DATE_COLS:
         today = datetime.now().strftime("%Y%m%d")
-        for col in date_cols[file_type]:
+        for col in _DATE_COLS[file_type]:
             if col in df.columns:
                 # "0" or "00000000" → null
                 df = df.with_columns(
@@ -221,6 +211,18 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
 
     return df
 
+
+# Date columns by file type (shared between _transform and _validate)
+_DATE_COLS: dict[str, list[str]] = {
+    "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
+    "SIMPLESCSV": [
+        "data_opcao_pelo_simples",
+        "data_exclusao_do_simples",
+        "data_opcao_pelo_mei",
+        "data_exclusao_do_mei",
+    ],
+    "SOCIOCSV": ["data_entrada_sociedade"],
+}
 
 # Valid Brazilian UF codes
 _VALID_UFS = {
@@ -306,17 +308,7 @@ def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
             logger.warning(f"uf: {count} invalid values (not a valid UF code)")
 
     # Date format validation (valid YYYYMMDD, not just range)
-    date_cols = {
-        "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
-        "SIMPLESCSV": [
-            "data_opcao_pelo_simples",
-            "data_exclusao_do_simples",
-            "data_opcao_pelo_mei",
-            "data_exclusao_do_mei",
-        ],
-        "SOCIOCSV": ["data_entrada_sociedade"],
-    }
-    for col in date_cols.get(file_type, []):
+    for col in _DATE_COLS.get(file_type, []):
         if col not in df.columns:
             continue
         invalid_format = pl.col(col).is_not_null() & ~pl.col(col).str.contains(_DATE_PATTERN)
