@@ -43,7 +43,7 @@ class TestMain:
         mock_downloader.get_available_directories.return_value = ["2024-01", "2024-02"]
         mock_downloader_cls.return_value = mock_downloader
 
-        with patch("main.Database") as mock_db_cls:
+        with patch("database.Database") as mock_db_cls:
             main()
 
             mock_db_cls.assert_not_called()
@@ -62,7 +62,7 @@ class TestMain:
         assert exc_info.value.code == 1
 
     @patch("main.config")
-    @patch("main.Database")
+    @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_invalid_month_exits(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):
@@ -79,7 +79,7 @@ class TestMain:
         assert exc_info.value.code == 1
 
     @patch("main.config")
-    @patch("main.Database")
+    @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_force_clears_processed_files(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):
@@ -104,7 +104,7 @@ class TestMain:
         mock_db.clear_processed_files.assert_called_once_with("2024-01")
 
     @patch("main.config")
-    @patch("main.Database")
+    @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_no_pending_files_returns_early(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):
@@ -127,7 +127,7 @@ class TestMain:
 
     @patch("main.process_file")
     @patch("main.config")
-    @patch("main.Database")
+    @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_file_only_deleted_after_mark_processed(
@@ -165,7 +165,7 @@ class TestMain:
         assert csv_file.exists()
 
     @patch("main.config")
-    @patch("main.Database")
+    @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_always_disconnects_and_cleans_up(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):

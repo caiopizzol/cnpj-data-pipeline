@@ -74,14 +74,50 @@ CONNECT_TIMEOUT=30
 READ_TIMEOUT=300
 KEEP_DOWNLOADED_FILES=false
 LOADING_STRATEGY=upsert  # "upsert" ou "replace"
+OUTPUT_FORMAT=postgres   # "postgres" ou "parquet"
+PARQUET_OUTPUT_DIR=./parquet
 ```
 
-### Estratégia de carga
+### Estratégia de carga (PostgreSQL)
 
 | Estratégia | Comando | Quando usar |
 |------------|---------|-------------|
 | `upsert` | `LOADING_STRATEGY=upsert just run` | Atualização incremental. Banco continua acessível durante a carga. |
 | `replace` | `LOADING_STRATEGY=replace just run` | Carga completa mensal. Mais rápido — faz TRUNCATE e insere direto. |
+
+### Formato de saída
+
+| Formato | Comando | Quando usar |
+|---------|---------|-------------|
+| `postgres` | `just run` | Default. Carrega no PostgreSQL. |
+| `parquet` | `OUTPUT_FORMAT=parquet just run` | Exporta direto para Parquet. Sem banco de dados — ideal para DuckDB, Pandas, Spark. |
+
+### Parquet
+
+Com `OUTPUT_FORMAT=parquet`, o pipeline exporta direto para arquivos Parquet com compressão ZSTD. Sem necessidade de PostgreSQL.
+
+```bash
+OUTPUT_FORMAT=parquet just run
+```
+
+Saída (~6GB a partir de ~85GB de CSVs):
+```
+parquet/
+  empresas.parquet
+  estabelecimentos/
+    uf=SP.parquet
+    uf=RJ.parquet
+    ...
+  socios.parquet
+  dados_simples.parquet
+  manifest.json
+```
+
+Consulte com DuckDB:
+```sql
+SELECT * FROM 'parquet/empresas.parquet' WHERE cnpj_basico = '00000000';
+SELECT COUNT(*) FROM 'parquet/estabelecimentos/*.parquet' WHERE uf = 'SP';
+```
 
 ## Schema
 
