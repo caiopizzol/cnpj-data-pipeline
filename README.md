@@ -1,6 +1,5 @@
 <p align="center">
-  <!-- TODO: add icon -->
-  <img src="" width="80" height="80" alt="cnpj.chat">
+  <img src="https://github.com/user-attachments/assets/2ab351f0-a940-4b55-a875-d5773ddf0515" width="80" height="80" alt="cnpj.chat">
 </p>
 
 <h1 align="center">CNPJ Data Pipeline</h1>
