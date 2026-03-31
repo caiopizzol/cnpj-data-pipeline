@@ -117,8 +117,9 @@ def main():
                 pbar.set_postfix_str(csv_path.name[:30])
                 try:
                     rows = 0
+                    load = db.bulk_insert if config.loading_strategy == "replace" else db.bulk_upsert
                     for batch, table_name, columns in process_file(csv_path, config.batch_size):
-                        db.bulk_upsert(batch, table_name, columns)
+                        load(batch, table_name, columns)
                         rows += len(batch)
                         pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
 

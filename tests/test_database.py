@@ -202,6 +202,57 @@ class TestBulkUpsert:
         connected_db.conn.commit.assert_not_called()
 
 
+class TestBulkInsert:
+    """Test bulk insert with TRUNCATE + COPY strategy."""
+
+    def test_skips_empty_dataframe(self, connected_db):
+        df = pl.DataFrame({"col": []})
+
+        connected_db.bulk_insert(df, "test_table", ["col"])
+
+        connected_db.conn.cursor.assert_not_called()
+
+    def test_truncates_on_first_batch(self, connected_db):
+        df = pl.DataFrame({"codigo": ["001"]})
+        mock_cur = MagicMock()
+        connected_db.conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        connected_db.conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        connected_db.bulk_insert(df, "cnaes", ["codigo"])
+
+        calls = [c[0][0] for c in mock_cur.execute.call_args_list]
+        assert any("TRUNCATE" in c for c in calls)
+        mock_cur.copy_expert.assert_called_once()
+        connected_db.conn.commit.assert_called_once()
+
+    def test_does_not_truncate_on_second_batch(self, connected_db):
+        df = pl.DataFrame({"codigo": ["001"]})
+        mock_cur = MagicMock()
+        connected_db.conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        connected_db.conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        connected_db.bulk_insert(df, "cnaes", ["codigo"])
+        mock_cur.reset_mock()
+        connected_db.conn.reset_mock()
+
+        connected_db.bulk_insert(df, "cnaes", ["codigo"])
+
+        calls = [c[0][0] for c in mock_cur.execute.call_args_list]
+        assert not any("TRUNCATE" in c for c in calls)
+
+    def test_rollback_on_error(self, connected_db):
+        df = pl.DataFrame({"codigo": ["001"]})
+        mock_cur = MagicMock()
+        mock_cur.execute.side_effect = Exception("DB error")
+        connected_db.conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        connected_db.conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        with pytest.raises(Exception, match="DB error"):
+            connected_db.bulk_insert(df, "cnaes", ["codigo"])
+
+        connected_db.conn.rollback.assert_called_once()
+
+
 class TestGetPrimaryKeys:
     """Test primary key lookup with caching."""
 
