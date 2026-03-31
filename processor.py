@@ -3,6 +3,7 @@
 import logging
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Generator, List, Optional, Tuple
 
@@ -169,9 +170,16 @@ def process_file(
 def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     """Apply transformations based on file type."""
 
-    # Capital social: "1.234,56" → "1234.56"
+    # Capital social: "1.234,56" → "1234.56", negative → null
     if file_type == "EMPRECSV" and "capital_social" in df.columns:
         df = df.with_columns(pl.col("capital_social").str.replace_all(r"\.", "").str.replace(",", "."))
+        is_negative = pl.col("capital_social").str.starts_with("-")
+        invalid_count = df.filter(is_negative).height
+        if invalid_count > 0:
+            logger.warning(f"capital_social: {invalid_count} negative values → null")
+        df = df.with_columns(
+            pl.when(is_negative).then(None).otherwise(pl.col("capital_social")).alias("capital_social")
+        )
 
     # Date columns: "0" or "00000000" → null
     date_cols = {
@@ -185,14 +193,22 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
         "SOCIOCSV": ["data_entrada_sociedade"],
     }
     if file_type in date_cols:
+        today = datetime.now().strftime("%Y%m%d")
         for col in date_cols[file_type]:
             if col in df.columns:
+                # "0" or "00000000" → null
                 df = df.with_columns(
                     pl.when((pl.col(col) == "0") | (pl.col(col) == "00000000") | (pl.col(col).is_null()))
                     .then(None)
                     .otherwise(pl.col(col))
                     .alias(col)
                 )
+                # Future dates or dates before 1900 → null
+                invalid = (pl.col(col).is_not_null()) & ((pl.col(col) > today) | (pl.col(col) < "19000101"))
+                invalid_count = df.filter(invalid).height
+                if invalid_count > 0:
+                    logger.warning(f"{col}: {invalid_count} invalid dates → null (future or before 1900)")
+                df = df.with_columns(pl.when(invalid).then(None).otherwise(pl.col(col)).alias(col))
 
     # Estabelecimentos: pad country code
     if file_type == "ESTABELE" and "pais" in df.columns:

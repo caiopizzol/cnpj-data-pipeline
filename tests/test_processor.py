@@ -191,6 +191,52 @@ class TestTransform:
 
         assert result["capital_social"][0] == "1234567.89"
 
+    def test_transform_negative_capital_social(self):
+        """Test that negative capital social becomes null."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["12345678", "87654321"],
+                "capital_social": ["-1.000,00", "5.000,00"],
+            }
+        )
+
+        result = _transform(df, "EMPRECSV")
+
+        assert result["capital_social"][0] is None
+        assert result["capital_social"][1] == "5000.00"
+
+    def test_transform_future_dates_to_null(self):
+        """Test that dates in the future become null."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["12345678"],
+                "data_situacao_cadastral": ["29991231"],
+                "data_inicio_atividade": ["20230101"],
+                "data_situacao_especial": [None],
+            }
+        )
+
+        result = _transform(df, "ESTABELE")
+
+        assert result["data_situacao_cadastral"][0] is None
+        assert result["data_inicio_atividade"][0] == "20230101"
+
+    def test_transform_ancient_dates_to_null(self):
+        """Test that dates before 1900 become null."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["12345678"],
+                "data_situacao_cadastral": ["18501231"],
+                "data_inicio_atividade": ["20230101"],
+                "data_situacao_especial": [None],
+            }
+        )
+
+        result = _transform(df, "ESTABELE")
+
+        assert result["data_situacao_cadastral"][0] is None
+        assert result["data_inicio_atividade"][0] == "20230101"
+
     def test_transform_country_code_padding(self):
         """Test that country codes are zero-padded to 3 digits."""
         df = pl.DataFrame(
