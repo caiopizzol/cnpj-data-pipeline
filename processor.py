@@ -162,6 +162,7 @@ def process_file(
                 if df.is_empty():
                     continue
                 df = _transform(df, file_type)
+                df = _validate(df, file_type)
                 yield df, table_name, columns
     finally:
         utf8_file.unlink(missing_ok=True)
@@ -181,34 +182,16 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
             pl.when(is_negative).then(None).otherwise(pl.col("capital_social")).alias("capital_social")
         )
 
-    # Date columns: "0" or "00000000" → null
-    date_cols = {
-        "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
-        "SIMPLESCSV": [
-            "data_opcao_pelo_simples",
-            "data_exclusao_do_simples",
-            "data_opcao_pelo_mei",
-            "data_exclusao_do_mei",
-        ],
-        "SOCIOCSV": ["data_entrada_sociedade"],
-    }
-    if file_type in date_cols:
-        today = datetime.now().strftime("%Y%m%d")
-        for col in date_cols[file_type]:
+    # Date columns: "0" or "00000000" → null (placeholder cleanup only, validation in _validate)
+    if file_type in _DATE_COLS:
+        for col in _DATE_COLS[file_type]:
             if col in df.columns:
-                # "0" or "00000000" → null
                 df = df.with_columns(
                     pl.when((pl.col(col) == "0") | (pl.col(col) == "00000000") | (pl.col(col).is_null()))
                     .then(None)
                     .otherwise(pl.col(col))
                     .alias(col)
                 )
-                # Future dates or dates before 1900 → null
-                invalid = (pl.col(col).is_not_null()) & ((pl.col(col) > today) | (pl.col(col) < "19000101"))
-                invalid_count = df.filter(invalid).height
-                if invalid_count > 0:
-                    logger.warning(f"{col}: {invalid_count} invalid dates → null (future or before 1900)")
-                df = df.with_columns(pl.when(invalid).then(None).otherwise(pl.col(col)).alias(col))
 
     # Estabelecimentos: pad country code
     if file_type == "ESTABELE" and "pais" in df.columns:
@@ -217,5 +200,121 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     # Socios: ensure cnpj_cpf_do_socio is not null (PK)
     if file_type == "SOCIOCSV" and "cnpj_cpf_do_socio" in df.columns:
         df = df.with_columns(pl.col("cnpj_cpf_do_socio").fill_null("00000000000000"))
+
+    return df
+
+
+# Date columns by file type (shared between _transform and _validate)
+_DATE_COLS: dict[str, list[str]] = {
+    "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
+    "SIMPLESCSV": [
+        "data_opcao_pelo_simples",
+        "data_exclusao_do_simples",
+        "data_opcao_pelo_mei",
+        "data_exclusao_do_mei",
+    ],
+    "SOCIOCSV": ["data_entrada_sociedade"],
+}
+
+# Valid Brazilian UF codes
+_VALID_UFS = {
+    "AC",
+    "AL",
+    "AM",
+    "AP",
+    "BA",
+    "CE",
+    "DF",
+    "ES",
+    "GO",
+    "MA",
+    "MG",
+    "MS",
+    "MT",
+    "PA",
+    "PB",
+    "PE",
+    "PI",
+    "PR",
+    "RJ",
+    "RN",
+    "RO",
+    "RR",
+    "RS",
+    "SC",
+    "SE",
+    "SP",
+    "TO",
+    "EX",
+}
+
+# Format validation rules: (column, regex pattern, description)
+_FORMAT_RULES: dict[str, list[tuple[str, str, str]]] = {
+    "EMPRECSV": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("natureza_juridica", r"^\d{4}$", "4 dígitos"),
+        ("qualificacao_responsavel", r"^\d{2}$", "2 dígitos"),
+        ("porte", r"^(00|01|03|05)$", "00, 01, 03 ou 05"),
+    ],
+    "ESTABELE": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("cnpj_ordem", r"^\d{4}$", "4 dígitos"),
+        ("cnpj_dv", r"^\d{2}$", "2 dígitos"),
+        ("situacao_cadastral", r"^(01|02|03|04|08)$", "01, 02, 03, 04 ou 08"),
+        ("cep", r"^\d{8}$", "8 dígitos"),
+        ("cnae_fiscal_principal", r"^\d{7}$", "7 dígitos"),
+    ],
+    "SOCIOCSV": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("identificador_de_socio", r"^[123]$", "1, 2 ou 3"),
+        ("faixa_etaria", r"^\d$", "1 dígito"),
+    ],
+    "SIMPLESCSV": [
+        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("opcao_pelo_simples", r"^[SN]$", "S ou N"),
+        ("opcao_pelo_mei", r"^[SN]$", "S ou N"),
+    ],
+}
+
+
+def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
+    """Validate field formats. Log invalid counts, nullify clearly broken values."""
+
+    # Format rules (regex)
+    for col, pattern, desc in _FORMAT_RULES.get(file_type, []):
+        if col not in df.columns:
+            continue
+        invalid = pl.col(col).is_not_null() & ~pl.col(col).str.contains(pattern)
+        count = df.filter(invalid).height
+        if count > 0:
+            logger.warning(f"{col}: {count} invalid values (expected {desc})")
+
+    # UF validation (ESTABELE only)
+    if file_type == "ESTABELE" and "uf" in df.columns:
+        invalid_uf = pl.col("uf").is_not_null() & ~pl.col("uf").is_in(list(_VALID_UFS))
+        count = df.filter(invalid_uf).height
+        if count > 0:
+            logger.warning(f"uf: {count} invalid values (not a valid UF code)")
+
+    # Date validation: parse to verify real calendar date, then range check
+    if file_type in _DATE_COLS:
+        today = datetime.now().strftime("%Y%m%d")
+        for col in _DATE_COLS[file_type]:
+            if col not in df.columns:
+                continue
+            # Try parsing as date — catches impossible dates like Feb 30, Apr 31
+            parsed = pl.col(col).str.to_date("%Y%m%d", strict=False)
+            unparseable = pl.col(col).is_not_null() & parsed.is_null()
+            count = df.filter(unparseable).height
+            if count > 0:
+                logger.warning(f"{col}: {count} invalid dates → null (unparseable)")
+                df = df.with_columns(pl.when(unparseable).then(None).otherwise(pl.col(col)).alias(col))
+
+            # Range check: future or before 1900
+            out_of_range = pl.col(col).is_not_null() & ((pl.col(col) > today) | (pl.col(col) < "19000101"))
+            count = df.filter(out_of_range).height
+            if count > 0:
+                logger.warning(f"{col}: {count} dates out of range → null (future or before 1900)")
+                df = df.with_columns(pl.when(out_of_range).then(None).otherwise(pl.col(col)).alias(col))
 
     return df
