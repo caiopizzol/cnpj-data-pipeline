@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v1.6.0 (2026-03-31)
+
+### Documentation
+
+- Document loading strategy in README
+  ([#57](https://github.com/caiopizzol/cnpj-data-pipeline/pull/57),
+  [`8908dfd`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/8908dfd64e020c4cf207fbae593b99d268d4eba7))
+
+### Features
+
+- Add TRUNCATE+INSERT loading strategy as alternative to UPSERT
+  ([#57](https://github.com/caiopizzol/cnpj-data-pipeline/pull/57),
+  [`8908dfd`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/8908dfd64e020c4cf207fbae593b99d268d4eba7))
+
+- Adicionar estratégia TRUNCATE+INSERT para carga completa
+  ([#57](https://github.com/caiopizzol/cnpj-data-pipeline/pull/57),
+  [`8908dfd`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/8908dfd64e020c4cf207fbae593b99d268d4eba7))
+
+
 ## v1.5.0 (2026-03-31)
 
 ### Continuous Integration
