@@ -182,24 +182,16 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
             pl.when(is_negative).then(None).otherwise(pl.col("capital_social")).alias("capital_social")
         )
 
-    # Date columns: "0" or "00000000" → null
+    # Date columns: "0" or "00000000" → null (placeholder cleanup only, validation in _validate)
     if file_type in _DATE_COLS:
-        today = datetime.now().strftime("%Y%m%d")
         for col in _DATE_COLS[file_type]:
             if col in df.columns:
-                # "0" or "00000000" → null
                 df = df.with_columns(
                     pl.when((pl.col(col) == "0") | (pl.col(col) == "00000000") | (pl.col(col).is_null()))
                     .then(None)
                     .otherwise(pl.col(col))
                     .alias(col)
                 )
-                # Future dates or dates before 1900 → null
-                invalid = (pl.col(col).is_not_null()) & ((pl.col(col) > today) | (pl.col(col) < "19000101"))
-                invalid_count = df.filter(invalid).height
-                if invalid_count > 0:
-                    logger.warning(f"{col}: {invalid_count} invalid dates → null (future or before 1900)")
-                df = df.with_columns(pl.when(invalid).then(None).otherwise(pl.col(col)).alias(col))
 
     # Estabelecimentos: pad country code
     if file_type == "ESTABELE" and "pais" in df.columns:
@@ -284,9 +276,6 @@ _FORMAT_RULES: dict[str, list[tuple[str, str, str]]] = {
     ],
 }
 
-# Date format validation: YYYYMMDD with valid month (01-12) and day (01-31)
-_DATE_PATTERN = r"^\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$"
-
 
 def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     """Validate field formats. Log invalid counts, nullify clearly broken values."""
@@ -307,14 +296,25 @@ def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
         if count > 0:
             logger.warning(f"uf: {count} invalid values (not a valid UF code)")
 
-    # Date format validation (valid YYYYMMDD, not just range)
-    for col in _DATE_COLS.get(file_type, []):
-        if col not in df.columns:
-            continue
-        invalid_format = pl.col(col).is_not_null() & ~pl.col(col).str.contains(_DATE_PATTERN)
-        count = df.filter(invalid_format).height
-        if count > 0:
-            logger.warning(f"{col}: {count} invalid date format (expected YYYYMMDD)")
-            df = df.with_columns(pl.when(invalid_format).then(None).otherwise(pl.col(col)).alias(col))
+    # Date validation: parse to verify real calendar date, then range check
+    if file_type in _DATE_COLS:
+        today = datetime.now().strftime("%Y%m%d")
+        for col in _DATE_COLS[file_type]:
+            if col not in df.columns:
+                continue
+            # Try parsing as date — catches impossible dates like Feb 30, Apr 31
+            parsed = pl.col(col).str.to_date("%Y%m%d", strict=False)
+            unparseable = pl.col(col).is_not_null() & parsed.is_null()
+            count = df.filter(unparseable).height
+            if count > 0:
+                logger.warning(f"{col}: {count} invalid dates → null (unparseable)")
+                df = df.with_columns(pl.when(unparseable).then(None).otherwise(pl.col(col)).alias(col))
+
+            # Range check: future or before 1900
+            out_of_range = pl.col(col).is_not_null() & ((pl.col(col) > today) | (pl.col(col) < "19000101"))
+            count = df.filter(out_of_range).height
+            if count > 0:
+                logger.warning(f"{col}: {count} dates out of range → null (future or before 1900)")
+                df = df.with_columns(pl.when(out_of_range).then(None).otherwise(pl.col(col)).alias(col))
 
     return df

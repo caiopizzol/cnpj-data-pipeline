@@ -205,38 +205,6 @@ class TestTransform:
         assert result["capital_social"][0] is None
         assert result["capital_social"][1] == "5000.00"
 
-    def test_transform_future_dates_to_null(self):
-        """Test that dates in the future become null."""
-        df = pl.DataFrame(
-            {
-                "cnpj_basico": ["12345678"],
-                "data_situacao_cadastral": ["29991231"],
-                "data_inicio_atividade": ["20230101"],
-                "data_situacao_especial": [None],
-            }
-        )
-
-        result = _transform(df, "ESTABELE")
-
-        assert result["data_situacao_cadastral"][0] is None
-        assert result["data_inicio_atividade"][0] == "20230101"
-
-    def test_transform_ancient_dates_to_null(self):
-        """Test that dates before 1900 become null."""
-        df = pl.DataFrame(
-            {
-                "cnpj_basico": ["12345678"],
-                "data_situacao_cadastral": ["18501231"],
-                "data_inicio_atividade": ["20230101"],
-                "data_situacao_especial": [None],
-            }
-        )
-
-        result = _transform(df, "ESTABELE")
-
-        assert result["data_situacao_cadastral"][0] is None
-        assert result["data_inicio_atividade"][0] == "20230101"
-
     def test_transform_country_code_padding(self):
         """Test that country codes are zero-padded to 3 digits."""
         df = pl.DataFrame(
@@ -331,6 +299,36 @@ class TestValidate:
         assert result["data_situacao_cadastral"][0] is None  # month 13
         assert result["data_situacao_cadastral"][1] is None  # day 32
         assert result["data_situacao_cadastral"][2] == "20230615"
+
+    def test_validate_date_impossible_calendar_dates(self):
+        """Test that impossible calendar dates (Feb 30, Apr 31) are nullified."""
+        df = pl.DataFrame({"data_situacao_cadastral": ["20230229", "20230431", "20240230", "20240229", "20230115"]})
+
+        result = _validate(df, "ESTABELE")
+
+        assert result["data_situacao_cadastral"][0] is None  # Feb 29 non-leap
+        assert result["data_situacao_cadastral"][1] is None  # Apr 31
+        assert result["data_situacao_cadastral"][2] is None  # Feb 30
+        assert result["data_situacao_cadastral"][3] == "20240229"  # Feb 29 leap year — valid
+        assert result["data_situacao_cadastral"][4] == "20230115"  # normal date
+
+    def test_validate_date_future_nullified(self):
+        """Test that future dates are nullified."""
+        df = pl.DataFrame({"data_situacao_cadastral": ["29991231", "20230101"]})
+
+        result = _validate(df, "ESTABELE")
+
+        assert result["data_situacao_cadastral"][0] is None
+        assert result["data_situacao_cadastral"][1] == "20230101"
+
+    def test_validate_date_before_1900_nullified(self):
+        """Test that dates before 1900 are nullified."""
+        df = pl.DataFrame({"data_situacao_cadastral": ["18501231", "19000101"]})
+
+        result = _validate(df, "ESTABELE")
+
+        assert result["data_situacao_cadastral"][0] is None
+        assert result["data_situacao_cadastral"][1] == "19000101"
 
     def test_validate_valid_data_passes(self):
         """Test that valid data passes through unchanged."""
