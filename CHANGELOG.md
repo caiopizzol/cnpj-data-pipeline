@@ -2,6 +2,42 @@
 
 <!-- version list -->
 
+## v1.7.0 (2026-03-31)
+
+### Continuous Integration
+
+- Add AI-powered release notes via semantic-release-ai-notes action
+  ([`8764d72`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/8764d729df389337151fbb35f1d805b4483e1770))
+
+### Documentation
+
+- Add all three CNPJ dataset resources to README
+  ([#58](https://github.com/caiopizzol/cnpj-data-pipeline/pull/58),
+  [`6fba647`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/6fba647595f93945593e3906e3bcddf441babfbf))
+
+- Documentar origem legal e oficial dos dados
+  ([#58](https://github.com/caiopizzol/cnpj-data-pipeline/pull/58),
+  [`6fba647`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/6fba647595f93945593e3906e3bcddf441babfbf))
+
+- Fix links to use official gov.br URLs for Notas Tecnicas and metadados
+  ([#58](https://github.com/caiopizzol/cnpj-data-pipeline/pull/58),
+  [`6fba647`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/6fba647595f93945593e3906e3bcddf441babfbf))
+
+### Features
+
+- Add Parquet output format ([#62](https://github.com/caiopizzol/cnpj-data-pipeline/pull/62),
+  [`5a1b47f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/5a1b47f82c70fec80c16698a756555655e97bbce))
+
+### Testing
+
+- Add parquet output tests for main.py
+  ([#62](https://github.com/caiopizzol/cnpj-data-pipeline/pull/62),
+  [`5a1b47f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/5a1b47f82c70fec80c16698a756555655e97bbce))
+
+- Add parquet_writer tests ([#62](https://github.com/caiopizzol/cnpj-data-pipeline/pull/62),
+  [`5a1b47f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/5a1b47f82c70fec80c16698a756555655e97bbce))
+
+
 ## v1.6.0 (2026-03-31)
 
 ### Documentation
