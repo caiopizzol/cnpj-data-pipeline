@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.11.1 (2026-04-01)
+
+### Bug Fixes
+
+- Use numbered files to prevent overwrite on flush
+  ([`11c215e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/11c215e5c97d750087fef031b3061659b49b2d02))
+
+
 ## v1.11.0 (2026-04-01)
 
 ### Features
