@@ -312,3 +312,39 @@ class TestParquetOutput:
             main()
 
         mock_downloader.cleanup.assert_called_once()
+
+    @patch("main.subprocess")
+    @patch("main.process_file")
+    @patch("main.config")
+    @patch("main.Downloader")
+    @patch("main.parse_args")
+    def test_post_file_command_runs_per_flushed_file(
+        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, mock_subprocess, tmp_path
+    ):
+        """POST_FILE_COMMAND should run once per flushed parquet file."""
+        mock_args.return_value = MagicMock(list=False, month=None, force=False)
+        mock_config.output_format = "parquet"
+        mock_config.post_file_command = "echo"
+        mock_config.parquet_output_dir = str(tmp_path / "parquet")
+        mock_config.batch_size = 500000
+        mock_config.keep_files = True
+
+        csv_file = tmp_path / "CNAECSV.D51213"
+        csv_file.write_text("data")
+
+        mock_downloader = MagicMock()
+        mock_downloader.get_latest_directory.return_value = "2024-01"
+        mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
+        mock_downloader.download_files.return_value = iter([(csv_file, "Cnaes.zip")])
+        mock_downloader_cls.return_value = mock_downloader
+
+        mock_process_file.return_value = iter(
+            [(pl.DataFrame({"codigo": ["001"], "descricao": ["Test"]}), "cnaes", ["codigo", "descricao"])]
+        )
+
+        main()
+
+        mock_subprocess.run.assert_called_once()
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args[0] == "echo"
+        assert "cnaes.parquet" in call_args[-1]
