@@ -15,6 +15,7 @@ import logging
 import subprocess
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 from tqdm import tqdm
 
@@ -167,6 +168,13 @@ def main():
 
                 table_name = FILE_MAPPINGS[file_type]
                 group_files = groups[file_type]
+
+                # Skip if already exported (enables resume after crash)
+                parquet_path = Path(config.parquet_output_dir) / f"{table_name}.parquet"
+                if parquet_path.exists():
+                    logger.info(f"Skipping {table_name} (already exported)")
+                    continue
+
                 logger.info(f"Processing {table_name} ({len(group_files)} files)...")
 
                 for zip_filename in group_files:
