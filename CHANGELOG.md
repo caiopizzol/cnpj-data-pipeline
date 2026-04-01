@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.12.0 (2026-04-01)
+
+### Features
+
+- Single sorted parquet file per table
+  ([`b1fe222`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/b1fe2224a394bff18e19c7dc950e525ce59444b9))
+
+
 ## v1.11.1 (2026-04-01)
 
 ### Bug Fixes
