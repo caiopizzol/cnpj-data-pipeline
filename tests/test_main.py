@@ -206,6 +206,7 @@ class TestParquetOutput:
         """Parquet mode should write parquet files and manifest without touching database."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
+        mock_config.post_file_command = ""
         mock_config.parquet_output_dir = str(tmp_path / "parquet")
         mock_config.batch_size = 500000
         mock_config.keep_files = False
@@ -240,6 +241,7 @@ class TestParquetOutput:
         """Parquet mode should work without DATABASE_URL."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
+        mock_config.post_file_command = ""
         mock_config.database_url = ""
         mock_config.parquet_output_dir = str(tmp_path / "parquet")
         mock_config.batch_size = 500000
@@ -265,6 +267,7 @@ class TestParquetOutput:
         """Estabelecimentos should be partitioned by UF."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
+        mock_config.post_file_command = ""
         mock_config.parquet_output_dir = str(tmp_path / "parquet")
         mock_config.batch_size = 500000
         mock_config.keep_files = True
@@ -298,6 +301,7 @@ class TestParquetOutput:
         """Parquet mode should always call downloader.cleanup on error."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
+        mock_config.post_file_command = ""
         mock_config.parquet_output_dir = str(tmp_path / "parquet")
 
         mock_downloader = MagicMock()

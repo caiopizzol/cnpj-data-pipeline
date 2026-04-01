@@ -94,6 +94,52 @@ class TestWriteBatch:
         assert not (output_dir / "estabelecimentos").is_dir()
 
 
+class TestFlush:
+    def test_returns_flushed_file_paths(self, writer, sample_empresas, output_dir):
+        writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
+        flushed = writer.flush()
+
+        assert len(flushed) == 1
+        assert flushed[0] == output_dir / "empresas.parquet"
+        assert flushed[0].exists()
+
+    def test_clears_writers_after_flush(self, writer, sample_empresas):
+        writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
+        assert len(writer._writers) > 0
+
+        writer.flush()
+        assert len(writer._writers) == 0
+
+    def test_can_write_after_flush(self, writer, sample_empresas, output_dir):
+        """After flush, new writes create new files (separate row groups)."""
+        writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
+        flushed1 = writer.flush()
+
+        # Write again — this reopens the same file
+        writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
+        flushed2 = writer.flush()
+
+        assert len(flushed1) == 1
+        assert len(flushed2) == 1
+        # Both flushes wrote to the same path
+        assert flushed1[0] == flushed2[0]
+
+    def test_flush_partitioned_returns_all_files(self, writer, sample_estabelecimentos, output_dir):
+        writer.write_batch(
+            sample_estabelecimentos,
+            "estabelecimentos",
+            ["cnpj_basico", "cnpj_ordem", "uf", "municipio"],
+        )
+        flushed = writer.flush()
+
+        # Should have 3 files: SP, RJ, MG
+        assert len(flushed) == 3
+        flushed_names = {f.name for f in flushed}
+        assert "uf=SP.parquet" in flushed_names
+        assert "uf=RJ.parquet" in flushed_names
+        assert "uf=MG.parquet" in flushed_names
+
+
 class TestClose:
     def test_computes_file_sizes(self, writer, sample_empresas):
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])

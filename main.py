@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import logging
+import subprocess
 import sys
 
 from tqdm import tqdm
@@ -139,6 +140,16 @@ def main():
                             parquet.write_batch(batch, table_name, columns)
                             rows += len(batch)
                             pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
+
+                        # Flush after each source file — enables streaming upload + cleanup
+                        flushed = parquet.flush()
+                        if config.post_file_command and flushed:
+                            for parquet_path in flushed:
+                                logger.info(f"Running post-file command for {parquet_path.name}")
+                                subprocess.run(
+                                    [*config.post_file_command.split(), str(parquet_path)],
+                                    check=True,
+                                )
                     else:
                         load = db.bulk_insert if config.loading_strategy == "replace" else db.bulk_upsert
                         for batch, table_name, columns in process_file(csv_path, config.batch_size):
