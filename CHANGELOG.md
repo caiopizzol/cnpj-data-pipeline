@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v1.10.0 (2026-04-01)
+
+### Features
+
+- Add logging for parquet mode progress
+  ([`bee3a4e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/bee3a4eb2ac91125583bdd07ef357dc431534d91))
+
+- Add per-file flush and POST_FILE_COMMAND hook for parquet mode
+  ([`b26fa78`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/b26fa78ce53210d05290ea13492d93f91e8c24bb))
+
+### Testing
+
+- Add POST_FILE_COMMAND coverage
+  ([`c674769`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/c674769f422594be5da6478549f0e89b938dc714))
+
+
 ## v1.9.0 (2026-04-01)
 
 ### Features
