@@ -227,7 +227,7 @@ class TestParquetOutput:
         main()
 
         parquet_dir = tmp_path / "parquet"
-        assert (parquet_dir / "cnaes_000.parquet").exists()
+        assert (parquet_dir / "cnaes.parquet").exists()
         assert (parquet_dir / "manifest.json").exists()
         assert not csv_file.exists()
 
@@ -261,10 +261,10 @@ class TestParquetOutput:
     @patch("main.config")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_partitions_estabelecimentos_by_uf(
+    def test_estabelecimentos_single_file(
         self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
     ):
-        """Estabelecimentos should be partitioned by UF."""
+        """Estabelecimentos should be written to a single file."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
         mock_config.post_file_command = ""
@@ -290,9 +290,7 @@ class TestParquetOutput:
 
         main()
 
-        estab_dir = tmp_path / "parquet" / "estabelecimentos"
-        assert (estab_dir / "uf=SP" / "part_000.parquet").exists()
-        assert (estab_dir / "uf=RJ" / "part_000.parquet").exists()
+        assert (tmp_path / "parquet" / "estabelecimentos.parquet").exists()
 
     @patch("main.config")
     @patch("main.Downloader")
@@ -318,10 +316,10 @@ class TestParquetOutput:
     @patch("main.config")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_post_file_command_runs_per_flushed_file(
+    def test_post_file_command_runs_per_table(
         self, mock_args, mock_downloader_cls, mock_config, mock_process_file, mock_subprocess, tmp_path
     ):
-        """POST_FILE_COMMAND should run once per flushed parquet file."""
+        """POST_FILE_COMMAND should run once per table after all its files are processed."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
         mock_config.post_file_command = "echo"
@@ -347,4 +345,4 @@ class TestParquetOutput:
         mock_subprocess.run.assert_called_once()
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args[0] == "echo"
-        assert "cnaes_000.parquet" in call_args[-1]
+        assert "cnaes.parquet" in call_args[-1]

@@ -1,3 +1,8 @@
+pre-push:
+  commands:
+    sync:
+      run: git pull --rebase origin main
+
 pre-commit:
   commands:
     ruff:

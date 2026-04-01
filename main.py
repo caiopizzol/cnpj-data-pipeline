@@ -14,12 +14,13 @@ import argparse
 import logging
 import subprocess
 import sys
+from collections import defaultdict
 
 from tqdm import tqdm
 
 from config import config
 from downloader import Downloader
-from processor import get_file_type, process_file
+from processor import FILE_MAPPINGS, get_file_type, process_file
 
 # Configure logging
 logging.basicConfig(
@@ -43,10 +44,33 @@ PROCESSING_ORDER = [
     "SIMPLESCSV",  # dados_simples
 ]
 
+# ZIP filename prefix → file type (zip names differ from CSV names inside)
+ZIP_PREFIX_MAP = [
+    ("SIMPLES", "SIMPLESCSV"),
+    ("CNAE", "CNAECSV"),
+    ("MOTI", "MOTICSV"),
+    ("MUNIC", "MUNICCSV"),
+    ("NATUR", "NATJUCSV"),
+    ("PAIS", "PAISCSV"),
+    ("QUALIFICAC", "QUALSCSV"),
+    ("EMPRES", "EMPRECSV"),
+    ("ESTABELE", "ESTABELE"),
+    ("SOCIO", "SOCIOCSV"),
+]
+
+
+def get_zip_file_type(zip_filename: str) -> str | None:
+    """Determine file type from ZIP filename."""
+    name = zip_filename.upper()
+    for prefix, file_type in ZIP_PREFIX_MAP:
+        if name.startswith(prefix):
+            return file_type
+    return None
+
 
 def get_file_priority(filename: str) -> int:
     """Get processing priority for a file (lower = first)."""
-    file_type = get_file_type(filename)
+    file_type = get_zip_file_type(filename) or get_file_type(filename)
     if file_type in PROCESSING_ORDER:
         return PROCESSING_ORDER.index(file_type)
     return 999
@@ -127,34 +151,61 @@ def main():
         # Sort files by processing order
         pending_files.sort(key=get_file_priority)
 
-        # Download and process files
-        file_iterator = downloader.download_files(directory, pending_files)
-        with tqdm(file_iterator, total=len(pending_files), desc="Processing", unit="file") as pbar:
-            for csv_path, zip_filename in pbar:
-                pbar.set_postfix_str(csv_path.name[:30])
-                try:
-                    rows = 0
+        if is_parquet:
+            # Group files by table type so we process one table at a time:
+            # all empresas → flush → clean up → all estabelecimentos → ...
+            groups = defaultdict(list)
+            for f in pending_files:
+                file_type = get_zip_file_type(f)
+                if file_type:
+                    groups[file_type].append(f)
 
-                    if is_parquet:
-                        logger.info(f"Processing {csv_path.name}...")
-                        for batch, table_name, columns in process_file(csv_path, config.batch_size):
-                            parquet.write_batch(batch, table_name, columns)
-                            rows += len(batch)
-                            if rows % 1_000_000 == 0:
-                                logger.info(f"  {csv_path.name}: {rows:,} rows")
-                            pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
+            # Process each table group in order
+            for file_type in PROCESSING_ORDER:
+                if file_type not in groups:
+                    continue
 
-                        logger.info(f"  {csv_path.name}: {rows:,} rows total → flushing parquet")
-                        # Flush after each source file — enables streaming upload + cleanup
-                        flushed = parquet.flush()
-                        if config.post_file_command and flushed:
-                            for parquet_path in flushed:
-                                logger.info(f"Running post-file command for {parquet_path.name}")
-                                subprocess.run(
-                                    [*config.post_file_command.split(), str(parquet_path)],
-                                    check=True,
-                                )
-                    else:
+                table_name = FILE_MAPPINGS[file_type]
+                group_files = groups[file_type]
+                logger.info(f"Processing {table_name} ({len(group_files)} files)...")
+
+                for zip_filename in group_files:
+                    for csv_path, _ in downloader.download_files(directory, [zip_filename]):
+                        try:
+                            rows = 0
+                            for batch, tname, columns in process_file(csv_path, config.batch_size):
+                                parquet.write_batch(batch, tname, columns)
+                                rows += len(batch)
+                                if rows % 1_000_000 == 0:
+                                    logger.info(f"  {csv_path.name}: {rows:,} rows")
+
+                            logger.info(f"  {csv_path.name}: {rows:,} rows total")
+
+                            if csv_path.exists() and not config.keep_files:
+                                csv_path.unlink()
+
+                        except Exception as e:
+                            logger.error(f"Error: {csv_path.name}: {e}")
+
+                # Flush this table and run post-file command
+                parquet_path = parquet.flush_table(table_name)
+                if parquet_path:
+                    logger.info(f"  {table_name}: flushed → {parquet_path.name}")
+                    if config.post_file_command:
+                        logger.info(f"  Running post-file command for {parquet_path.name}")
+                        subprocess.run(
+                            [*config.post_file_command.split(), str(parquet_path)],
+                            check=True,
+                        )
+
+        else:
+            # Database mode: process files sequentially
+            file_iterator = downloader.download_files(directory, pending_files)
+            with tqdm(file_iterator, total=len(pending_files), desc="Processing", unit="file") as pbar:
+                for csv_path, zip_filename in pbar:
+                    pbar.set_postfix_str(csv_path.name[:30])
+                    try:
+                        rows = 0
                         load = db.bulk_insert if config.loading_strategy == "replace" else db.bulk_upsert
                         for batch, table_name, columns in process_file(csv_path, config.batch_size):
                             load(batch, table_name, columns)
@@ -163,11 +214,11 @@ def main():
 
                         db.mark_processed(directory, zip_filename)
 
-                    if csv_path.exists() and not config.keep_files:
-                        csv_path.unlink()
+                        if csv_path.exists() and not config.keep_files:
+                            csv_path.unlink()
 
-                except Exception as e:
-                    logger.error(f"Error: {csv_path.name}: {e}")
+                    except Exception as e:
+                        logger.error(f"Error: {csv_path.name}: {e}")
 
         if is_parquet:
             parquet.close()
