@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.13.0 (2026-04-01)
+
+### Features
+
+- Resume support for parquet export
+  ([`2243581`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/224358172150079b9d7dee87d590587a85676afb))
+
+
 ## v1.12.0 (2026-04-01)
 
 ### Features
