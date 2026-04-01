@@ -1,6 +1,7 @@
 """Download and extract CNPJ data files from Receita Federal."""
 
 import logging
+import os
 import re
 import time
 import zipfile
@@ -152,13 +153,16 @@ class Downloader:
         zip_path = self.temp_path / filename
 
         # Skip download if keeping files and valid ZIP already exists
+        # Use info logging when tqdm is disabled (e.g., Docker, CI)
+        log = logger.info if os.environ.get("TQDM_DISABLE") else logger.debug
+
         if self.config.keep_files and zip_path.exists() and zipfile.is_zipfile(zip_path):
-            logger.debug(f"Using cached: {filename}")
+            log(f"Using cached: {filename}")
         else:
             # Download with retries
             for attempt in range(self.config.retry_attempts):
                 try:
-                    logger.debug(f"Downloading {filename} (attempt {attempt + 1})")
+                    log(f"Downloading {filename}...")
 
                     response = requests.get(
                         url,
