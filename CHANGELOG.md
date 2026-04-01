@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.11.0 (2026-04-01)
+
+### Features
+
+- Log downloads at INFO when tqdm is disabled (Docker/CI)
+  ([`54af1f3`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/54af1f372c9328cc518decc23e7c3c324975513a))
+
+
 ## v1.10.0 (2026-04-01)
 
 ### Features
