@@ -227,7 +227,7 @@ class TestParquetOutput:
         main()
 
         parquet_dir = tmp_path / "parquet"
-        assert (parquet_dir / "cnaes.parquet").exists()
+        assert (parquet_dir / "cnaes_000.parquet").exists()
         assert (parquet_dir / "manifest.json").exists()
         assert not csv_file.exists()
 
@@ -291,8 +291,8 @@ class TestParquetOutput:
         main()
 
         estab_dir = tmp_path / "parquet" / "estabelecimentos"
-        assert (estab_dir / "uf=SP.parquet").exists()
-        assert (estab_dir / "uf=RJ.parquet").exists()
+        assert (estab_dir / "uf=SP" / "part_000.parquet").exists()
+        assert (estab_dir / "uf=RJ" / "part_000.parquet").exists()
 
     @patch("main.config")
     @patch("main.Downloader")
@@ -347,4 +347,4 @@ class TestParquetOutput:
         mock_subprocess.run.assert_called_once()
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args[0] == "echo"
-        assert "cnaes.parquet" in call_args[-1]
+        assert "cnaes_000.parquet" in call_args[-1]

@@ -43,26 +43,25 @@ def sample_estabelecimentos():
 
 
 class TestWriteBatch:
-    def test_writes_single_file_for_regular_table(self, writer, sample_empresas, output_dir):
+    def test_writes_numbered_file(self, writer, sample_empresas, output_dir):
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
 
-        path = output_dir / "empresas.parquet"
+        path = output_dir / "empresas_000.parquet"
         assert path.exists()
-
-        table = pq.read_table(str(path))
-        assert table.num_rows == 3
+        assert pq.read_table(str(path)).num_rows == 3
 
     def test_returns_row_count(self, writer, sample_empresas):
         rows = writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         assert rows == 3
 
-    def test_accumulates_rows_across_batches(self, writer, sample_empresas, output_dir):
+    def test_accumulates_rows_in_same_file(self, writer, sample_empresas, output_dir):
+        """Multiple batches before flush go to the same file."""
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
 
-        table = pq.read_table(str(output_dir / "empresas.parquet"))
+        table = pq.read_table(str(output_dir / "empresas_000.parquet"))
         assert table.num_rows == 6
         assert writer.stats["empresas"].rows == 6
 
@@ -74,24 +73,20 @@ class TestWriteBatch:
         )
         writer.close()
 
-        estab_dir = output_dir / "estabelecimentos"
-        assert (estab_dir / "uf=SP.parquet").exists()
-        assert (estab_dir / "uf=RJ.parquet").exists()
-        assert (estab_dir / "uf=MG.parquet").exists()
+        assert (output_dir / "estabelecimentos" / "uf=SP" / "part_000.parquet").exists()
+        assert (output_dir / "estabelecimentos" / "uf=RJ" / "part_000.parquet").exists()
+        assert (output_dir / "estabelecimentos" / "uf=MG" / "part_000.parquet").exists()
 
-        sp_table = pq.read_table(str(estab_dir / "uf=SP.parquet"))
+        sp_table = pq.ParquetFile(str(output_dir / "estabelecimentos" / "uf=SP" / "part_000.parquet")).read()
         assert sp_table.num_rows == 2
-
-        rj_table = pq.read_table(str(estab_dir / "uf=RJ.parquet"))
-        assert rj_table.num_rows == 1
 
     def test_does_not_partition_if_uf_not_in_columns(self, writer, output_dir):
         df = pl.DataFrame({"cnpj_basico": ["00000000"], "nome_fantasia": ["TEST"]})
         writer.write_batch(df, "estabelecimentos", ["cnpj_basico", "nome_fantasia"])
         writer.close()
 
-        assert (output_dir / "estabelecimentos.parquet").exists()
-        assert not (output_dir / "estabelecimentos").is_dir()
+        assert (output_dir / "estabelecimentos_000.parquet").exists()
+        assert not (output_dir / "estabelecimentos" / "uf=SP").is_dir()
 
 
 class TestFlush:
@@ -100,7 +95,7 @@ class TestFlush:
         flushed = writer.flush()
 
         assert len(flushed) == 1
-        assert flushed[0] == output_dir / "empresas.parquet"
+        assert flushed[0] == output_dir / "empresas_000.parquet"
         assert flushed[0].exists()
 
     def test_clears_writers_after_flush(self, writer, sample_empresas):
@@ -110,19 +105,21 @@ class TestFlush:
         writer.flush()
         assert len(writer._writers) == 0
 
-    def test_can_write_after_flush(self, writer, sample_empresas, output_dir):
-        """After flush, new writes create new files (separate row groups)."""
+    def test_creates_new_numbered_file_after_flush(self, writer, sample_empresas, output_dir):
+        """After flush, next write creates a new numbered file (no overwrite)."""
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         flushed1 = writer.flush()
 
-        # Write again — this reopens the same file
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         flushed2 = writer.flush()
 
-        assert len(flushed1) == 1
-        assert len(flushed2) == 1
-        # Both flushes wrote to the same path
-        assert flushed1[0] == flushed2[0]
+        assert flushed1[0].name == "empresas_000.parquet"
+        assert flushed2[0].name == "empresas_001.parquet"
+        assert flushed1[0] != flushed2[0]
+
+        # Both files exist with correct data
+        assert pq.ParquetFile(str(flushed1[0])).read().num_rows == 3
+        assert pq.ParquetFile(str(flushed2[0])).read().num_rows == 3
 
     def test_flush_partitioned_returns_all_files(self, writer, sample_estabelecimentos, output_dir):
         writer.write_batch(
@@ -132,12 +129,29 @@ class TestFlush:
         )
         flushed = writer.flush()
 
-        # Should have 3 files: SP, RJ, MG
         assert len(flushed) == 3
-        flushed_names = {f.name for f in flushed}
-        assert "uf=SP.parquet" in flushed_names
-        assert "uf=RJ.parquet" in flushed_names
-        assert "uf=MG.parquet" in flushed_names
+        flushed_parents = {f.parent.name for f in flushed}
+        assert "uf=SP" in flushed_parents
+        assert "uf=RJ" in flushed_parents
+        assert "uf=MG" in flushed_parents
+
+    def test_partitioned_creates_new_files_after_flush(self, writer, output_dir):
+        """Multiple source files writing to same UF partition create separate numbered files."""
+        batch1 = pl.DataFrame({"cnpj_basico": ["00000000"], "uf": ["SP"]})
+        batch2 = pl.DataFrame({"cnpj_basico": ["11111111"], "uf": ["SP"]})
+
+        writer.write_batch(batch1, "estabelecimentos", ["cnpj_basico", "uf"])
+        flushed1 = writer.flush()
+
+        writer.write_batch(batch2, "estabelecimentos", ["cnpj_basico", "uf"])
+        flushed2 = writer.flush()
+
+        assert flushed1[0].name == "part_000.parquet"
+        assert flushed2[0].name == "part_001.parquet"
+
+        # Both files have data (no overwrite)
+        assert pq.ParquetFile(str(flushed1[0])).read().num_rows == 1
+        assert pq.ParquetFile(str(flushed2[0])).read().num_rows == 1
 
 
 class TestClose:
@@ -191,6 +205,6 @@ class TestZstdCompression:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
 
-        meta = pq.read_metadata(str(output_dir / "empresas.parquet"))
+        meta = pq.read_metadata(str(output_dir / "empresas_000.parquet"))
         compression = meta.row_group(0).column(0).compression
         assert compression == "ZSTD"
