@@ -136,11 +136,15 @@ def main():
                     rows = 0
 
                     if is_parquet:
+                        logger.info(f"Processing {csv_path.name}...")
                         for batch, table_name, columns in process_file(csv_path, config.batch_size):
                             parquet.write_batch(batch, table_name, columns)
                             rows += len(batch)
+                            if rows % 1_000_000 == 0:
+                                logger.info(f"  {csv_path.name}: {rows:,} rows")
                             pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
 
+                        logger.info(f"  {csv_path.name}: {rows:,} rows total → flushing parquet")
                         # Flush after each source file — enables streaming upload + cleanup
                         flushed = parquet.flush()
                         if config.post_file_command and flushed:
