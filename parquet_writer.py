@@ -108,13 +108,22 @@ class ParquetWriter:
             writer = self._get_writer(path, partition_table.schema)
             writer.write_table(partition_table, row_group_size=ROW_GROUP_SIZE)
 
-    def close(self):
-        """Close all writers and compute file sizes."""
+    def flush(self) -> list[Path]:
+        """Close all open writers and return absolute paths of flushed files.
+
+        Use this to upload/delete files after each source file is processed.
+        The writer can continue to be used after flush — new writers will be
+        created for subsequent writes (appending to the same Parquet files
+        is not supported after flush; new row groups go into new files).
+        """
+        flushed: list[Path] = []
+
         for key, writer in self._writers.items():
             writer.close()
             path = Path(key)
             size = path.stat().st_size
-            # Find which table this file belongs to
+            flushed.append(path)
+
             for table_name, stats in self.stats.items():
                 if table_name in key:
                     stats.size_bytes += size
@@ -122,6 +131,11 @@ class ParquetWriter:
                     break
 
         self._writers.clear()
+        return flushed
+
+    def close(self):
+        """Close all writers and compute file sizes."""
+        self.flush()
 
     def write_manifest(self) -> dict:
         """Write manifest.json with export metadata."""

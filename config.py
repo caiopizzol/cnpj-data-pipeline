@@ -24,6 +24,7 @@ class Config:
     loading_strategy: str = "upsert"  # "upsert" or "replace"
     output_format: str = "postgres"  # "postgres" or "parquet"
     parquet_output_dir: str = "./parquet"
+    post_file_command: str = ""  # Command to run after each parquet file (receives file path as arg)
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
     share_token: str = "YggdBLfdninEJX9"
 
@@ -43,6 +44,7 @@ class Config:
             loading_strategy=os.getenv("LOADING_STRATEGY", "upsert").lower(),
             output_format=os.getenv("OUTPUT_FORMAT", "postgres").lower(),
             parquet_output_dir=os.getenv("PARQUET_OUTPUT_DIR", "./parquet"),
+            post_file_command=os.getenv("POST_FILE_COMMAND", ""),
         )
 
 
