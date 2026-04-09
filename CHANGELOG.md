@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.15.3 (2026-04-09)
+
+### Bug Fixes
+
+- Use config retry values in Database.connect()
+  ([`856ad86`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/856ad864afa8e4981d3540149a5aaf54d163a744))
+
+
 ## v1.15.2 (2026-04-09)
 
 ### Bug Fixes
