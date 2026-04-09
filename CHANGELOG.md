@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v1.15.4 (2026-04-09)
+
+### Bug Fixes
+
+- Propagate download failures instead of swallowing
+  ([`92ed30a`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/92ed30a7306b842445d56c7f338302ef32b13907))
+
+### Testing
+
+- Add Config.from_env() test coverage
+  ([`23cbc3a`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/23cbc3ac4298de3d12d9df6b2cb84853fe8ce952))
+
+- Add parquet resume/skip and parallel failure tests
+  ([`5e6f56a`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/5e6f56a946e5d810037ad76ff7aed32299b65e7e))
+
+
 ## v1.15.3 (2026-04-09)
 
 ### Bug Fixes
