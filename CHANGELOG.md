@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.14.0 (2026-04-09)
+
+### Features
+
+- Parallel file processing within dependency groups
+  ([`21e2697`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/21e2697304cf6369352fe7b56ec0ffaf9d710e49))
+
+
 ## v1.13.0 (2026-04-01)
 
 ### Features
