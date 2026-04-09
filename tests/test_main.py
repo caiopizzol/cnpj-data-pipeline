@@ -707,3 +707,105 @@ class TestPreTruncation:
         main()
 
         mock_db.truncate_table.assert_not_called()
+
+
+class TestParquetResume:
+    """Test parquet resume/skip logic for already-exported tables."""
+
+    @patch("main.process_file")
+    @patch("main.config")
+    @patch("main.Downloader")
+    @patch("main.parse_args")
+    def test_skips_already_exported_table(
+        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
+    ):
+        """Tables with existing parquet files should be skipped entirely."""
+        parquet_dir = tmp_path / "parquet"
+        parquet_dir.mkdir()
+        # Pre-create cnaes.parquet to simulate prior export
+        (parquet_dir / "cnaes.parquet").write_bytes(b"existing")
+
+        mock_args.return_value = MagicMock(list=False, month=None, force=False)
+        mock_config.output_format = "parquet"
+        mock_config.post_file_command = ""
+        mock_config.parquet_output_dir = str(parquet_dir)
+        mock_config.batch_size = 500000
+        mock_config.keep_files = False
+        mock_config.process_workers = 1
+
+        mock_downloader = MagicMock()
+        mock_downloader.get_latest_directory.return_value = "2024-01"
+        mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
+        mock_downloader_cls.return_value = mock_downloader
+
+        main()
+
+        # download_files should never be called — table was skipped
+        mock_downloader.download_files.assert_not_called()
+        mock_process_file.assert_not_called()
+
+    @patch("main.process_file")
+    @patch("main.config")
+    @patch("main.Downloader")
+    @patch("main.parse_args")
+    def test_processes_only_missing_tables(
+        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
+    ):
+        """Only tables without existing parquet files should be processed."""
+        parquet_dir = tmp_path / "parquet"
+        parquet_dir.mkdir()
+        # cnaes already exported, motivos not
+        (parquet_dir / "cnaes.parquet").write_bytes(b"existing")
+
+        mock_args.return_value = MagicMock(list=False, month=None, force=False)
+        mock_config.output_format = "parquet"
+        mock_config.post_file_command = ""
+        mock_config.parquet_output_dir = str(parquet_dir)
+        mock_config.batch_size = 500000
+        mock_config.keep_files = True
+        mock_config.process_workers = 1
+
+        csv_file = tmp_path / "MOTICSV.D51213"
+        csv_file.write_text("data")
+
+        mock_downloader = MagicMock()
+        mock_downloader.get_latest_directory.return_value = "2024-01"
+        mock_downloader.get_directory_files.return_value = ["Cnaes.zip", "Motivos.zip"]
+        mock_downloader.download_files.return_value = iter([(csv_file, "Motivos.zip")])
+        mock_downloader_cls.return_value = mock_downloader
+
+        mock_process_file.return_value = iter(
+            [(pl.DataFrame({"codigo": ["001"], "descricao": ["Test"]}), "motivos", ["codigo", "descricao"])]
+        )
+
+        main()
+
+        # Only motivos should have been processed
+        mock_process_file.assert_called_once()
+        assert (parquet_dir / "motivos.parquet").exists()
+
+    @patch("main._parquet_worker")
+    @patch("main.config")
+    @patch("main.Downloader")
+    @patch("main.parse_args")
+    def test_parallel_parquet_worker_failure_aborts(
+        self, mock_args, mock_downloader_cls, mock_config, mock_parquet_worker, tmp_path
+    ):
+        """Parallel parquet worker failure should abort the pipeline."""
+        mock_args.return_value = MagicMock(list=False, month=None, force=False)
+        mock_config.output_format = "parquet"
+        mock_config.post_file_command = ""
+        mock_config.parquet_output_dir = str(tmp_path / "parquet")
+        mock_config.batch_size = 500000
+        mock_config.keep_files = False
+        mock_config.process_workers = 2
+
+        mock_downloader = MagicMock()
+        mock_downloader.get_latest_directory.return_value = "2024-01"
+        mock_downloader.get_directory_files.return_value = ["Cnaes.zip", "Motivos.zip"]
+        mock_downloader_cls.return_value = mock_downloader
+
+        mock_parquet_worker.side_effect = [Exception("worker crashed"), None]
+
+        with pytest.raises(SystemExit):
+            main()
