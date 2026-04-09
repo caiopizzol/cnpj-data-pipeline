@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.15.1 (2026-04-09)
+
+### Bug Fixes
+
+- Clean up temp file on encoding conversion failure
+  ([`3bbf27b`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/3bbf27b8355513563adb67f4b6e7e9e61ae83356))
+
+
 ## v1.15.0 (2026-04-09)
 
 ### Features
