@@ -47,6 +47,8 @@ class Config:
             output_format=os.getenv("OUTPUT_FORMAT", "postgres").lower(),
             parquet_output_dir=os.getenv("PARQUET_OUTPUT_DIR", "./parquet"),
             post_file_command=os.getenv("POST_FILE_COMMAND", ""),
+            base_url=os.getenv("BASE_URL", "https://arquivos.receitafederal.gov.br/public.php/webdav"),
+            share_token=os.getenv("SHARE_TOKEN", "YggdBLfdninEJX9"),
         )
 
 
