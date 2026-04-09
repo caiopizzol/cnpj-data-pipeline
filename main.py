@@ -273,6 +273,7 @@ def main():
 
                             except Exception as e:
                                 logger.error(f"Error: {csv_path.name}: {e}")
+                                raise
 
                 # Flush tables in this group and run post-file commands
                 for table_name in tables_in_group:
@@ -346,6 +347,7 @@ def main():
 
                             except Exception as e:
                                 logger.error(f"Error: {csv_path.name}: {e}")
+                                raise
 
         if is_parquet:
             parquet.close()

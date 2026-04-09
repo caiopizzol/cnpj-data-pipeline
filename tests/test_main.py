@@ -199,7 +199,8 @@ class TestMain:
             ]
         )
 
-        main()
+        with pytest.raises(SystemExit):
+            main()
 
         # File should NOT be deleted because mark_processed failed
         assert csv_file.exists()
