@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.15.2 (2026-04-09)
+
+### Bug Fixes
+
+- Propagate errors in sequential processing paths
+  ([`963b6ca`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/963b6ca7873a5fb27c5fab1f2f192033a0291d39))
+
+
 ## v1.15.1 (2026-04-09)
 
 ### Bug Fixes
