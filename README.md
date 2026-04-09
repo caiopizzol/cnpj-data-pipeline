@@ -104,11 +104,14 @@ OUTPUT_FORMAT=parquet just run
 Saída (~6GB a partir de ~85GB de CSVs):
 ```
 parquet/
+  cnaes.parquet
+  motivos.parquet
+  municipios.parquet
+  naturezas_juridicas.parquet
+  paises.parquet
+  qualificacoes_socios.parquet
   empresas.parquet
-  estabelecimentos/
-    uf=SP.parquet
-    uf=RJ.parquet
-    ...
+  estabelecimentos.parquet
   socios.parquet
   dados_simples.parquet
   manifest.json
@@ -117,7 +120,7 @@ parquet/
 Consulte com DuckDB:
 ```sql
 SELECT * FROM 'parquet/empresas.parquet' WHERE cnpj_basico = '00000000';
-SELECT COUNT(*) FROM 'parquet/estabelecimentos/*.parquet' WHERE uf = 'SP';
+SELECT COUNT(*) FROM 'parquet/estabelecimentos.parquet' WHERE uf = 'SP';
 ```
 
 ## Schema
