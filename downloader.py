@@ -125,11 +125,8 @@ class Downloader:
 
         # Process reference files first (sequentially)
         for filename in reference_files:
-            try:
-                for csv_path in self._download_and_extract(directory, filename):
-                    yield csv_path, filename
-            except Exception as e:
-                logger.error(f"Failed: {filename}: {e}")
+            for csv_path in self._download_and_extract(directory, filename):
+                yield csv_path, filename
 
         # Process data files in parallel
         if data_files:
@@ -144,12 +141,9 @@ class Downloader:
 
             for future in as_completed(future_to_filename):
                 filename = future_to_filename[future]
-                try:
-                    extracted_files = future.result()
-                    for csv_path in extracted_files:
-                        yield csv_path, filename
-                except Exception as e:
-                    logger.error(f"Failed: {filename}: {e}")
+                extracted_files = future.result()
+                for csv_path in extracted_files:
+                    yield csv_path, filename
 
     def _download_and_extract(self, directory: str, filename: str) -> List[Path]:
         """Download a single ZIP file and extract CSV files."""

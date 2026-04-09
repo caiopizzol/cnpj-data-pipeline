@@ -253,29 +253,13 @@ class TestDownloadFiles:
 
         assert result == []
 
-    def test_continues_after_single_file_failure(self, downloader, tmp_path):
-        """Test that one file failure doesn't stop other downloads."""
-        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "data"})
-
+    def test_reference_download_failure_propagates(self, downloader, tmp_path):
+        """A reference file download failure should propagate to the caller."""
         with patch("requests.get") as mock_get:
-            # First call fails, second succeeds
-            mock_response = MagicMock()
-            mock_response.headers = {"content-length": str(len(zip_content))}
-            mock_response.iter_content = MagicMock(return_value=[zip_content])
-            mock_response.raise_for_status = MagicMock()
+            mock_get.side_effect = requests.exceptions.Timeout("Timeout")
 
-            def side_effect(url, **kwargs):
-                if "Empresas0.zip" in url:
-                    raise requests.exceptions.Timeout("Timeout")
-                return mock_response
-
-            mock_get.side_effect = side_effect
-
-            # Use reference files (processed sequentially) to test failure handling
-            result = list(downloader.download_files("2024-03", ["Cnaes.zip", "Motivos.zip"]))
-
-            # Cnaes.zip should succeed, Motivos.zip should also succeed
-            assert len(result) >= 1
+            with pytest.raises(requests.exceptions.Timeout):
+                list(downloader.download_files("2024-03", ["Cnaes.zip"]))
 
 
 class TestCleanup:
