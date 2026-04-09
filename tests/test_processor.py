@@ -1,9 +1,12 @@
 """Tests for processor module."""
 
+import os
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import polars as pl
+import pytest
 
 from processor import _convert_encoding, _transform, _validate, get_file_type, process_file
 
@@ -384,6 +387,20 @@ class TestConvertEncoding:
             assert result.count("\n") == 10000
         finally:
             utf8_file.unlink(missing_ok=True)
+
+    def test_cleans_up_temp_file_on_read_error(self, tmp_path):
+        """Temp file should be deleted if the source file can't be read."""
+        missing_file = tmp_path / "nonexistent.csv"
+        temp_file = tmp_path / "leaked.utf8.csv"
+
+        with patch(
+            "processor.tempfile.mkstemp",
+            return_value=(os.open(str(temp_file), os.O_CREAT | os.O_WRONLY), str(temp_file)),
+        ):
+            with pytest.raises(FileNotFoundError):
+                _convert_encoding(missing_file)
+
+        assert not temp_file.exists()
 
 
 class TestProcessFile:

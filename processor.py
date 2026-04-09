@@ -118,10 +118,14 @@ def _convert_encoding(file_path: Path) -> Path:
     fd, tmp_path = tempfile.mkstemp(suffix=".utf8.csv")
     os.close(fd)
     utf8_file = Path(tmp_path)
-    with open(file_path, "r", encoding="ISO-8859-1") as infile:
-        with open(utf8_file, "w", encoding="UTF-8") as outfile:
-            for chunk in iter(lambda: infile.read(50 * 1024 * 1024), ""):  # 50MB chunks
-                outfile.write(chunk)
+    try:
+        with open(file_path, "r", encoding="ISO-8859-1") as infile:
+            with open(utf8_file, "w", encoding="UTF-8") as outfile:
+                for chunk in iter(lambda: infile.read(50 * 1024 * 1024), ""):  # 50MB chunks
+                    outfile.write(chunk)
+    except Exception:
+        utf8_file.unlink(missing_ok=True)
+        raise
     return utf8_file
 
 
