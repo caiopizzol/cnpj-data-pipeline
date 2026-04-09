@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.14.1 (2026-04-09)
+
+### Bug Fixes
+
+- Pin polars and pyarrow major versions
+  ([`a67a948`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/a67a948cc9ed02f0a9279dc3eaa119f452554bf1))
+
+### Chores
+
+- Add PROCESS_WORKERS to .env.example
+  ([`feb5042`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/feb50428cc9012147313c02277017920245f4578))
+
+### Documentation
+
+- Fix parquet output structure in README
+  ([`1ae95cd`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/1ae95cd94707cfe50610d36bd3b54000158692df))
+
+
 ## v1.14.0 (2026-04-09)
 
 ### Features
