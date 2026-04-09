@@ -83,7 +83,7 @@ class TestConnect:
         with pytest.raises(psycopg2.OperationalError):
             db.connect()
 
-        assert mock_connect.call_count == 4
+        assert mock_connect.call_count == 3  # default retry_attempts
 
 
 class TestDisconnect:

@@ -15,8 +15,12 @@ logger = logging.getLogger(__name__)
 class Database:
     """PostgreSQL database handler with temp table upsert."""
 
-    def __init__(self, database_url: str, pre_truncated: set | None = None):
+    def __init__(
+        self, database_url: str, pre_truncated: set | None = None, retry_attempts: int = 3, retry_delay: int = 5
+    ):
         self.database_url = database_url
+        self.retry_attempts = retry_attempts
+        self.retry_delay = retry_delay
         self._pk_cache: dict = {}
         self._truncated_tables: set = set(pre_truncated) if pre_truncated else set()
         self.conn = None
@@ -38,13 +42,13 @@ class Database:
             return
 
         params = self._parse_url()
-        for attempt in range(4):
+        for attempt in range(self.retry_attempts):
             try:
                 self.conn = psycopg2.connect(**params)
                 self.conn.autocommit = False
                 return
             except psycopg2.OperationalError:
-                if attempt == 3:
+                if attempt == self.retry_attempts - 1:
                     raise
                 time.sleep(2**attempt)
 

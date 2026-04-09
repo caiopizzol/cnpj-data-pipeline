@@ -463,12 +463,16 @@ class TestPgWorker:
         mock_cfg.loading_strategy = "replace"
         mock_cfg.batch_size = 500000
         mock_cfg.keep_files = False
+        mock_cfg.retry_attempts = 3
+        mock_cfg.retry_delay = 5
 
         mock_process_file.return_value = iter([(pl.DataFrame({"codigo": ["001"]}), "cnaes", ["codigo"])])
 
         _pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg, pre_truncated={"cnaes"})
 
-        mock_db_cls.assert_called_once_with("postgresql://test", pre_truncated={"cnaes"})
+        mock_db_cls.assert_called_once_with(
+            "postgresql://test", pre_truncated={"cnaes"}, retry_attempts=3, retry_delay=5
+        )
 
     @patch("database.Database")
     def test_disconnects_on_error(self, mock_db_cls):

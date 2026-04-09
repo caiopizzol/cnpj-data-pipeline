@@ -101,7 +101,9 @@ def _pg_worker(zip_filename, directory, downloader, cfg, pre_truncated=None):
     """Worker: download, process, and load one file to PostgreSQL."""
     from database import Database
 
-    db = Database(cfg.database_url, pre_truncated=pre_truncated)
+    db = Database(
+        cfg.database_url, pre_truncated=pre_truncated, retry_attempts=cfg.retry_attempts, retry_delay=cfg.retry_delay
+    )
     try:
         for csv_path in downloader.download_file(directory, zip_filename):
             rows = 0
@@ -171,7 +173,7 @@ def main():
     else:
         from database import Database
 
-        db = Database(config.database_url)
+        db = Database(config.database_url, retry_attempts=config.retry_attempts, retry_delay=config.retry_delay)
 
     try:
         # Select directory
