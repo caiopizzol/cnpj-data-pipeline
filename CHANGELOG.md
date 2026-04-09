@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.15.0 (2026-04-09)
+
+### Features
+
+- Make base_url and share_token configurable via env
+  ([`c93ba39`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/c93ba39d96119e854bf8d205836f352fde0d3b9b))
+
+
 ## v1.14.1 (2026-04-09)
 
 ### Bug Fixes
