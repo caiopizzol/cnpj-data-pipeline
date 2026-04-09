@@ -153,6 +153,40 @@ class TestWriteManifest:
         assert manifest["exportedAt"].endswith("Z")
 
 
+class TestThreadSafety:
+    def test_concurrent_writes_produce_correct_row_count(self, writer, output_dir):
+        """Multiple threads writing simultaneously should not lose data."""
+        import threading
+
+        errors = []
+
+        def write_batch(thread_id):
+            try:
+                df = pl.DataFrame(
+                    {
+                        "codigo": [f"{thread_id:03d}{i:04d}" for i in range(100)],
+                        "descricao": [f"Thread {thread_id} item {i}" for i in range(100)],
+                    }
+                )
+                writer.write_batch(df, "cnaes", ["codigo", "descricao"])
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=write_batch, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        writer.close()
+
+        assert not errors, f"Errors during concurrent writes: {errors}"
+
+        table = pq.read_table(str(output_dir / "cnaes.parquet"))
+        assert table.num_rows == 1000  # 10 threads x 100 rows
+        assert writer.stats["cnaes"].rows == 1000
+
+
 class TestZstdCompression:
     def test_output_uses_zstd(self, writer, sample_empresas, output_dir):
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])

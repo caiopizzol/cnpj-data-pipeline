@@ -20,6 +20,7 @@ One file per table. DuckDB reads them directly:
 
 import json
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +50,7 @@ class ParquetWriter:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.stats: dict[str, TableStats] = {}
         self._writers: dict[str, pq.ParquetWriter] = {}
+        self._lock = threading.Lock()
 
     def _get_writer(self, table_name: str, schema) -> pq.ParquetWriter:
         """Get or create a ParquetWriter for a table."""
@@ -62,16 +64,18 @@ class ParquetWriter:
         return self._writers[table_name]
 
     def write_batch(self, df, table_name: str, columns: list[str]) -> int:
-        """Write a batch of data to Parquet. Returns the number of rows written."""
-        if table_name not in self.stats:
-            self.stats[table_name] = TableStats()
-
+        """Write a batch of data to Parquet. Thread-safe. Returns the number of rows written."""
         arrow_table = df.to_arrow()
-        writer = self._get_writer(table_name, arrow_table.schema)
-        writer.write_table(arrow_table, row_group_size=ROW_GROUP_SIZE)
-
         rows = len(df)
-        self.stats[table_name].rows += rows
+
+        with self._lock:
+            if table_name not in self.stats:
+                self.stats[table_name] = TableStats()
+
+            writer = self._get_writer(table_name, arrow_table.schema)
+            writer.write_table(arrow_table, row_group_size=ROW_GROUP_SIZE)
+            self.stats[table_name].rows += rows
+
         return rows
 
     def flush_table(self, table_name: str) -> Path | None:

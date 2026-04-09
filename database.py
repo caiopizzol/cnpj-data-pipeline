@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 class Database:
     """PostgreSQL database handler with temp table upsert."""
 
-    def __init__(self, database_url: str):
+    def __init__(self, database_url: str, pre_truncated: set | None = None):
         self.database_url = database_url
         self._pk_cache: dict = {}
-        self._truncated_tables: set = set()
+        self._truncated_tables: set = set(pre_truncated) if pre_truncated else set()
         self.conn = None
 
     def _parse_url(self) -> dict:
@@ -89,6 +89,14 @@ class Database:
                 (directory,),
             )
             self.conn.commit()
+
+    def truncate_table(self, table_name: str):
+        """Truncate a table. Used before parallel processing with replace strategy."""
+        self.connect()
+        with self.conn.cursor() as cur:
+            cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
+            self.conn.commit()
+        self._truncated_tables.add(table_name)
 
     def bulk_upsert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
         """Bulk upsert using temp table + COPY."""

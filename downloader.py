@@ -102,6 +102,10 @@ class Downloader:
 
         return files
 
+    def download_file(self, directory: str, filename: str) -> List[Path]:
+        """Download and extract a single ZIP file. Returns list of extracted CSV paths."""
+        return self._download_and_extract(directory, filename)
+
     def download_files(self, directory: str, files: List[str]) -> Iterator[Tuple[Path, str]]:
         """
         Download files with parallel support.

@@ -16,6 +16,7 @@ class Config:
     batch_size: int = 500000
     temp_dir: str = "./temp"
     download_workers: int = 4
+    process_workers: int = 1
     retry_attempts: int = 3
     retry_delay: int = 5
     connect_timeout: int = 30
@@ -36,6 +37,7 @@ class Config:
             batch_size=int(os.getenv("BATCH_SIZE", "500000")),
             temp_dir=os.getenv("TEMP_DIR", "./temp"),
             download_workers=int(os.getenv("DOWNLOAD_WORKERS", "4")),
+            process_workers=int(os.getenv("PROCESS_WORKERS", "1")),
             retry_attempts=int(os.getenv("RETRY_ATTEMPTS", "3")),
             retry_delay=int(os.getenv("RETRY_DELAY", "5")),
             connect_timeout=int(os.getenv("CONNECT_TIMEOUT", "30")),

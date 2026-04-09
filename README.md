@@ -76,6 +76,7 @@ KEEP_DOWNLOADED_FILES=false
 LOADING_STRATEGY=upsert  # "upsert" ou "replace"
 OUTPUT_FORMAT=postgres   # "postgres" ou "parquet"
 PARQUET_OUTPUT_DIR=./parquet
+PROCESS_WORKERS=1        # Arquivos do mesmo grupo em paralelo (ex: 4)
 ```
 
 ### Estratégia de carga (PostgreSQL)

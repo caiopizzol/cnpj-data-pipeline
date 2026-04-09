@@ -154,6 +154,27 @@ class TestClearProcessedFiles:
         connected_db.conn.commit.assert_called_once()
 
 
+class TestTruncateTable:
+    """Test explicit table truncation for parallel processing."""
+
+    def test_truncates_and_tracks(self, connected_db):
+        mock_cur = MagicMock()
+        connected_db.conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        connected_db.conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        connected_db.truncate_table("empresas")
+
+        mock_cur.execute.assert_called_once()
+        assert "TRUNCATE TABLE empresas CASCADE" in mock_cur.execute.call_args[0][0]
+        connected_db.conn.commit.assert_called_once()
+        assert "empresas" in connected_db._truncated_tables
+
+    def test_pre_truncated_constructor_param(self):
+        """Database should accept pre_truncated tables via constructor."""
+        db = Database("postgresql://test", pre_truncated={"empresas", "socios"})
+        assert db._truncated_tables == {"empresas", "socios"}
+
+
 class TestBulkUpsert:
     """Test bulk upsert with temp table strategy."""
 
