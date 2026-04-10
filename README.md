@@ -25,9 +25,21 @@
 
 ## Requisitos
 
-- [uv](https://docs.astral.sh/uv/) - `brew install uv`
-- [just](https://github.com/casey/just) - `brew install just`
-- Docker
+- [uv](https://docs.astral.sh/uv/) — gerencia pacotes e versões do Python. Substitui pip e virtualenv
+- [just](https://github.com/casey/just) — roda os comandos do projeto. Substitui Makefile
+- [Docker](https://docs.docker.com/get-docker/) — roda o PostgreSQL sem instalar banco local
+- **Python 3.11+** — `uv` instala automaticamente se necessário
+
+### Instalação
+
+**macOS** (Homebrew):
+```bash
+brew install uv just
+```
+
+**Linux / Windows:** veja a instalação do [uv](https://docs.astral.sh/uv/getting-started/installation/) e do [just](https://github.com/casey/just#installation).
+
+> `uv` e `just` são binários prontos — não precisa de Rust ou compilação.
 
 ## Início Rápido
 
