@@ -174,6 +174,7 @@ def main():
         from database import Database
 
         db = Database(config.database_url, retry_attempts=config.retry_attempts, retry_delay=config.retry_delay)
+        db.ensure_schema()
 
     try:
         # Select directory

@@ -1,10 +1,11 @@
 # CNPJ Data Pipeline
 #
 # Usage:
-#   docker compose up -d                              # Start services
-#   docker exec cnpj-pipeline python main.py --list   # List available months
-#   docker exec cnpj-pipeline python main.py          # Process latest month
-#   docker compose down                               # Stop services
+#   docker compose up -d postgres                          # Start database only
+#   docker compose run --rm pipeline --list                # List available months
+#   docker compose run --rm pipeline                       # Process latest month
+#   docker compose run --rm pipeline --month 2024-11       # Process specific month
+#   docker compose down                                    # Stop services
 
 services:
   pipeline:
@@ -19,7 +20,6 @@ services:
         condition: service_healthy
     volumes:
       - ./temp:/app/temp
-    restart: "no"
 
   postgres:
     image: postgres:16-alpine
@@ -32,7 +32,6 @@ services:
       - "5435:5432"
     volumes:
       - cnpj_pipeline_data:/var/lib/postgresql/data
-      - ./initial.sql:/docker-entrypoint-initdb.d/initial.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

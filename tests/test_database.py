@@ -101,6 +101,46 @@ class TestDisconnect:
         db.disconnect()  # Should not raise
 
 
+class TestEnsureSchema:
+    """Test schema bootstrap for published images pointing at a fresh Postgres."""
+
+    def _mock_cursor(self, db, fetchone_value):
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = fetchone_value
+        db.conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        db.conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_cur
+
+    def test_noop_when_tables_exist(self, connected_db):
+        mock_cur = self._mock_cursor(connected_db, ("processed_files",))
+
+        connected_db.ensure_schema()
+
+        assert mock_cur.execute.call_count == 1
+        assert "to_regclass" in mock_cur.execute.call_args[0][0]
+        connected_db.conn.commit.assert_not_called()
+
+    def test_applies_initial_sql_when_missing(self, connected_db):
+        mock_cur = self._mock_cursor(connected_db, (None,))
+
+        connected_db.ensure_schema()
+
+        assert mock_cur.execute.call_count == 2
+        ddl = mock_cur.execute.call_args_list[1][0][0]
+        assert "CREATE TABLE IF NOT EXISTS processed_files" in ddl
+        connected_db.conn.commit.assert_called_once()
+
+    def test_rollback_on_error(self, connected_db):
+        mock_cur = self._mock_cursor(connected_db, (None,))
+        mock_cur.execute.side_effect = [None, Exception("bad sql")]
+
+        with pytest.raises(Exception, match="bad sql"):
+            connected_db.ensure_schema()
+
+        connected_db.conn.rollback.assert_called_once()
+        connected_db.conn.commit.assert_not_called()
+
+
 class TestGetProcessedFiles:
     """Test processed file tracking."""
 
