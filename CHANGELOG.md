@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v1.16.0 (2026-04-22)
+
+### Documentation
+
+- Improve prerequisites section with descriptions and cross-platform install
+  ([`8ddcc1a`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/8ddcc1a4c22db8d76576aba356b225fb0ed01c44))
+
+### Features
+
+- **docker**: Publish multi-arch image to GHCR on release (#73)
+  ([#74](https://github.com/caiopizzol/cnpj-data-pipeline/pull/74),
+  [`09a63d4`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/09a63d4fa1a49cab6df561b0c480e912bc35fad3))
+
+
 ## v1.15.4 (2026-04-09)
 
 ### Bug Fixes
