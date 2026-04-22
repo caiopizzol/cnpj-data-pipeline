@@ -3,6 +3,7 @@
 import io
 import logging
 import time
+from pathlib import Path
 from typing import List, Set
 from urllib.parse import urlparse
 
@@ -57,6 +58,27 @@ class Database:
         if self.conn:
             self.conn.close()
             self.conn = None
+
+    def ensure_schema(self):
+        """Apply initial.sql if the schema tables don't exist yet.
+
+        Lets the published Docker image target a fresh managed Postgres
+        (Railway, RDS, etc.) without a separate init step.
+        """
+        self.connect()
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT to_regclass('processed_files')")
+                if cur.fetchone()[0] is not None:
+                    return
+
+                sql_path = Path(__file__).parent / "initial.sql"
+                cur.execute(sql_path.read_text())
+                self.conn.commit()
+                logger.info("Applied schema from initial.sql")
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def get_processed_files(self, directory: str) -> Set[str]:
         """Get all processed filenames for a directory."""

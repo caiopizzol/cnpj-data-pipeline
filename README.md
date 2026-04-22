@@ -49,6 +49,28 @@ just up      # Iniciar PostgreSQL
 just run     # Executar pipeline
 ```
 
+## Via Docker
+
+Imagem pronta publicada a cada release no GitHub Container Registry. Não precisa clonar o repositório.
+
+```bash
+# Listar meses disponíveis
+docker run --rm ghcr.io/caiopizzol/cnpj-data-pipeline --list
+
+# Processar um mês em um Postgres seu
+docker run --rm \
+  -e DATABASE_URL=postgres://user:pass@host:5432/cnpj \
+  ghcr.io/caiopizzol/cnpj-data-pipeline --month 2024-11
+
+# Exportar para Parquet (sem banco)
+docker run --rm \
+  -e OUTPUT_FORMAT=parquet \
+  -v $(pwd)/parquet:/app/parquet \
+  ghcr.io/caiopizzol/cnpj-data-pipeline
+```
+
+O schema é aplicado automaticamente na primeira execução. Para rodar com o Postgres do projeto, use `docker compose run --rm pipeline <args>`.
+
 ## Comandos
 
 ```bash
