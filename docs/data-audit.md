@@ -45,7 +45,7 @@ Este documento mapeia cada campo das tabelas principais e classifica o que é tr
 | `cnae_fiscal_secundaria` | string com códigos de 7 dígitos separados por vírgula, ex: "5914600,8230002,9001999" | — | — | **explodir em tabela lateral `estabelecimentos_cnae_secundaria(cnpj_basico, cnpj_ordem, cnpj_dv, cnae_codigo)`** | alta (segunda receita) |
 | `pais` | 3 dígitos com zero-padding | padding `zfill(3)` | — | join descrição (rara, geralmente null) | baixa |
 | `uf` | 2 letras | validação contra lista de 27 UFs + "EX" | — | — | — |
-| `municipio` | 7 dígitos, string | — | — | join descrição em `empresa_detalhe` | alta |
+| `municipio` | código RFB do município, string (geralmente 4 dígitos; coluna aceita até 7) | — | — | join descrição em `empresa_detalhe` | alta |
 | `tipo_logradouro`, `logradouro`, `numero`, `complemento`, `bairro`, `cep` | TEXT, ALL CAPS, sem acentos | — | — | concatenação em receita futura (opcional) | baixa |
 | `ddd_1`, `telefone_1`, etc. | strings de dígitos, sem formatação | — | — | — | — |
 | `correio_eletronico` | TEXT, ALL CAPS | — | — | — | — |
@@ -78,7 +78,7 @@ Este documento mapeia cada campo das tabelas principais e classifica o que é tr
 
 ## Tabelas de referência (cnaes, motivos, municipios, naturezas_juridicas, paises, qualificacoes_socios)
 
-Todas têm a mesma forma: `(codigo, descricao, data_criacao, data_atualizacao)`. Não há normalização ou receita aplicável — são lookup puro.
+No PostgreSQL, todas têm a mesma forma: `(codigo, descricao, data_criacao, data_atualizacao)`. Nos arquivos de origem e no Parquet, a forma é apenas `(codigo, descricao)`. Não há normalização ou receita aplicável — são lookup puro.
 
 > Medição em 12/05/2026: zero órfãos em `estabelecimentos.cnae_fiscal_principal` e `estabelecimentos.municipio` contra suas respectivas tabelas de referência. `LEFT JOIN` continua sendo a escolha defensiva por causa de snapshots históricos (códigos retirados ao longo dos anos), mas para o mês atual `INNER JOIN` produziria o mesmo resultado.
 

@@ -91,4 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_uf ON empresa_detalhe (uf);
 CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_municipio ON empresa_detalhe (municipio);
 CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_cnae ON empresa_detalhe (cnae_fiscal_principal);
 CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_situacao ON empresa_detalhe (situacao_cadastral);
+CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_cnpj ON empresa_detalhe (cnpj);
 CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_basico ON empresa_detalhe (cnpj_basico);
+
+ANALYZE empresa_detalhe;

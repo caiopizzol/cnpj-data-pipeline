@@ -22,7 +22,7 @@ Re-rodar após cada ingest mensal para atualizar.
 
 ## Consumidores usando Parquet
 
-As receitas hoje são escritas para Postgres. Para DuckDB, Spark, Polars, Athena ou qualquer outro engine que leia Parquet, a SQL é direta de traduzir — basta substituir as tabelas-fonte por `read_parquet('parquet/empresa.parquet')` (ou o equivalente do seu engine) e ajustar a sintaxe de JOIN se necessário.
+As receitas hoje são escritas para Postgres. Para DuckDB, Spark, Polars, Athena ou qualquer outro engine que leia Parquet, a SQL é direta de traduzir — basta substituir as tabelas-fonte por chamadas como `read_parquet('parquet/empresas.parquet')` e `read_parquet('parquet/estabelecimentos.parquet')` (ou o equivalente do seu engine) e ajustar a sintaxe de JOIN se necessário.
 
 PRs adicionando variantes específicas de engine são bem-vindos quando houver demanda clara.
 
