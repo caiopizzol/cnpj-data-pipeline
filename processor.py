@@ -1,5 +1,6 @@
 """CSV processing and transformation for CNPJ data files using Polars."""
 
+import csv
 import logging
 import os
 import tempfile
@@ -113,6 +114,42 @@ def get_file_type(filename: str) -> Optional[str]:
     return None
 
 
+class LayoutDriftError(ValueError):
+    """Raised when a source CSV has a column count that doesn't match what
+    the pipeline expects for its file type. Indicates an RFB schema change
+    that would otherwise be silently mis-interpreted (Polars reads with a
+    fixed new_columns list and would drop extras or null-fill missing fields)."""
+
+
+def _check_layout(utf8_file: Path, file_type: str) -> None:
+    """Verify the CSV's column count matches the expected schema.
+
+    RFB CSVs are headerless and the pipeline uses Polars' new_columns to
+    impose column names by position. If RFB adds, removes, or reorders
+    columns between months, Polars silently maps the wrong values to the
+    wrong names. This check counts fields in the first non-empty row and
+    raises LayoutDriftError on mismatch so the failure is loud.
+
+    A real CSV parser is used (csv.reader with ';' delimiter) instead of a
+    naive split so quoted-field edge cases don't false-positive.
+    """
+    expected = len(COLUMNS[file_type])
+    with open(utf8_file, encoding="utf-8", newline="") as f:
+        reader = csv.reader(f, delimiter=";")
+        try:
+            first_row = next(reader)
+        except StopIteration:
+            return  # empty file; Polars NoDataError handles it cleanly
+    actual = len(first_row)
+    if actual != expected:
+        raise LayoutDriftError(
+            f"Layout drift in {utf8_file.name} ({file_type}): "
+            f"expected {expected} columns, got {actual}. "
+            f"Receita Federal may have changed the file layout - update "
+            f"COLUMNS[{file_type!r}] in processor.py before re-running."
+        )
+
+
 def _convert_encoding(file_path: Path) -> Path:
     """Convert ISO-8859-1 to UTF-8. Returns path to converted file."""
     fd, tmp_path = tempfile.mkstemp(suffix=".utf8.csv")
@@ -156,6 +193,11 @@ def process_file(
     utf8_file = _convert_encoding(file_path)
 
     try:
+        # Verify the CSV layout matches the expected column count before
+        # Polars binds field-by-position to new_columns. Catches RFB schema
+        # changes that would otherwise be silently mis-mapped.
+        _check_layout(utf8_file, file_type)
+
         try:
             reader = pl.read_csv_batched(
                 utf8_file,

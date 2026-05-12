@@ -8,7 +8,16 @@ from unittest.mock import patch
 import polars as pl
 import pytest
 
-from processor import _apply_typed_casts, _convert_encoding, _transform, _validate, get_file_type, process_file
+from processor import (
+    LayoutDriftError,
+    _apply_typed_casts,
+    _check_layout,
+    _convert_encoding,
+    _transform,
+    _validate,
+    get_file_type,
+    process_file,
+)
 
 
 class TestGetFileType:
@@ -582,3 +591,49 @@ class TestProcessFileTypedFlag:
         results = list(process_file(simples_file, typed=True))
         df, _, _ = results[0]
         assert df["data_opcao_pelo_simples"].dtype == pl.Date
+
+
+class TestLayoutDriftDetection:
+    """_check_layout catches RFB schema changes loudly instead of letting
+    Polars silently mis-map fields by position."""
+
+    def test_matching_layout_passes(self, tmp_path):
+        """A CSV with the expected column count must validate cleanly."""
+        # SIMPLESCSV expects 7 columns
+        f = tmp_path / "good.utf8.csv"
+        f.write_text("12345678;S;20200101;0;N;0;0\n", encoding="utf-8")
+        # Should not raise
+        _check_layout(f, "SIMPLESCSV")
+
+    def test_extra_column_raises(self, tmp_path):
+        """If RFB adds a column, we must fail loudly."""
+        f = tmp_path / "drift.utf8.csv"
+        # 8 fields instead of expected 7
+        f.write_text("12345678;S;20200101;0;N;0;0;EXTRA\n", encoding="utf-8")
+        with pytest.raises(LayoutDriftError) as exc:
+            _check_layout(f, "SIMPLESCSV")
+        assert "expected 7" in str(exc.value)
+        assert "got 8" in str(exc.value)
+
+    def test_missing_column_raises(self, tmp_path):
+        f = tmp_path / "short.utf8.csv"
+        # 6 fields instead of expected 7
+        f.write_text("12345678;S;20200101;0;N;0\n", encoding="utf-8")
+        with pytest.raises(LayoutDriftError) as exc:
+            _check_layout(f, "SIMPLESCSV")
+        assert "expected 7" in str(exc.value)
+
+    def test_empty_file_does_not_raise(self, tmp_path):
+        """Empty CSV: let Polars' NoDataError handle it, don't claim drift."""
+        f = tmp_path / "empty.utf8.csv"
+        f.write_text("", encoding="utf-8")
+        _check_layout(f, "SIMPLESCSV")  # should not raise
+
+    def test_process_file_aborts_on_drift(self, tmp_path):
+        """End-to-end: process_file must fail BEFORE yielding any batch
+        when the source layout doesn't match."""
+        bad = tmp_path / "F.K03200$W.SIMPLES.CSV.D51213"
+        # 8 fields (one extra) - drift
+        bad.write_text("12345678;S;20200101;0;N;0;0;BOGUS\n", encoding="ISO-8859-1")
+        with pytest.raises(LayoutDriftError):
+            list(process_file(bad))
