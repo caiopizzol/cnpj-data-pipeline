@@ -200,8 +200,7 @@ class TestFullPipeline:
             test_db.bulk_insert(batch, table_name, columns)
         count_after_second = _count_rows(test_db, "estabelecimentos")
         assert count_after_second == count_after_first, (
-            f"cross-batch overlap path changed row count: "
-            f"{count_after_first} -> {count_after_second}"
+            f"cross-batch overlap path changed row count: {count_after_first} -> {count_after_second}"
         )
 
 
