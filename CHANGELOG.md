@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.20.0 (2026-05-12)
+
+### Features
+
+- **scripts**: Add SQL-based measurements to data-quality-report
+  ([`b1090d3`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/b1090d346d7287b0c84b002f07a9fde91c27a25b))
+
+- **scripts**: Data-quality-report tool with CNPJ check-digit validation
+  ([`711d7be`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/711d7be1441213fcdd6b70143211c9f885fe94ac))
+
+
 ## v1.19.2 (2026-05-12)
 
 ### Bug Fixes
