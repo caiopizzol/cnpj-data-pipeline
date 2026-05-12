@@ -39,3 +39,8 @@ test:
 # Run all checks (lint, format, test)
 check:
     uv run ruff check . && uv run ruff format --check . && uv run pytest
+
+# Data quality report (opt-in). Default: sampled. Use --full for a full scan.
+# Requires DATABASE_URL pointing at a populated CNPJ database.
+data-quality-report *ARGS:
+    uv run python scripts/data_quality_report.py {{ARGS}}
