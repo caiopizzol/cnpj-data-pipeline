@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.21.0 (2026-05-12)
+
+### Features
+
+- **processor**: Zero-pad 7-digit numeric CEPs to 8
+  ([`b727a06`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/b727a06a87a024911dc50ea75781e5c60d4aec04))
+
+
 ## v1.20.0 (2026-05-12)
 
 ### Features
