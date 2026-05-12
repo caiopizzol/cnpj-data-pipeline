@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.23.0 (2026-05-12)
+
+### Features
+
+- **recipes**: Add estabelecimentos_clean.sql (recipeVersion 1)
+  ([`1890f95`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/1890f95fe1d7cc22de0cb332adcfea611ee5b658))
+
+
 ## v1.22.0 (2026-05-12)
 
 ### Documentation
