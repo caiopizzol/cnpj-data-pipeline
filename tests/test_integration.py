@@ -193,9 +193,7 @@ class TestRecipeEmpresaDetalhe:
 
         # Table exists
         with test_db.conn.cursor() as cur:
-            cur.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_name = 'empresa_detalhe'"
-            )
+            cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'empresa_detalhe'")
             assert cur.fetchone() is not None, "empresa_detalhe table not created"
 
     def test_row_count_matches_empresa_estabelecimento_join(self, test_db):
@@ -305,6 +303,4 @@ class TestRecipeEmpresaDetalhe:
         test_db.conn.commit()
 
         count_after = _count_rows(test_db, "empresa_detalhe")
-        assert count_before == count_after, (
-            f"Re-running recipe changed row count: {count_before} -> {count_after}"
-        )
+        assert count_before == count_after, f"Re-running recipe changed row count: {count_before} -> {count_after}"
