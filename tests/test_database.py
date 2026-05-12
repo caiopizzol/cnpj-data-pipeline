@@ -286,7 +286,15 @@ class TestBulkInsert:
         mock_cur.copy_expert.assert_called_once()
         connected_db.conn.commit.assert_called_once()
 
-    def test_does_not_truncate_on_second_batch(self, connected_db):
+    def test_does_not_truncate_target_on_second_batch(self, connected_db):
+        """The target table must only be truncated on the first batch.
+
+        On subsequent batches, the cross-batch-overlap fix routes through
+        a temp table - the target stays. The temp table itself is
+        truncated each call (TRUNCATE <temp_name>), which is fine; the
+        guarantee being asserted is that 'TRUNCATE TABLE <target>' does
+        not fire twice.
+        """
         df = pl.DataFrame({"codigo": ["001"]})
         mock_cur = MagicMock()
         connected_db.conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
@@ -299,7 +307,8 @@ class TestBulkInsert:
         connected_db.bulk_insert(df, "cnaes", ["codigo"])
 
         calls = [c[0][0] for c in mock_cur.execute.call_args_list]
-        assert not any("TRUNCATE" in c for c in calls)
+        # Specifically the target table must not be re-truncated.
+        assert not any("TRUNCATE TABLE cnaes" in c for c in calls)
 
     def test_rollback_on_error(self, connected_db):
         df = pl.DataFrame({"codigo": ["001"]})

@@ -2,6 +2,7 @@
 
 import io
 import logging
+import os
 import time
 from pathlib import Path
 from typing import List, Set
@@ -155,7 +156,18 @@ class Database:
             raise
 
     def bulk_insert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
-        """Bulk insert using TRUNCATE + COPY (no conflict check)."""
+        """Bulk insert under LOADING_STRATEGY=replace.
+
+        First batch per table: TRUNCATE then COPY directly into the target
+        (fast path; target is guaranteed empty).
+
+        Subsequent batches: COPY into a temp table and merge via the
+        existing upsert helper. RFB occasionally ships the same
+        (cnpj_basico, cnpj_ordem, cnpj_dv) across two sharded ZIPs of the
+        same source table (e.g. Estabelecimentos0.zip and Estabelecimentos5.zip);
+        without the temp-table path the second batch's direct COPY crashes
+        on the PK constraint.
+        """
         if df.is_empty():
             return
 
@@ -163,14 +175,25 @@ class Database:
 
         try:
             with self.conn.cursor() as cur:
-                # Truncate only on first batch per table
-                if table_name not in self._truncated_tables:
+                first_batch = table_name not in self._truncated_tables
+                if first_batch:
                     cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
                     self._truncated_tables.add(table_name)
                     logger.info(f"Truncated {table_name}")
-
-                # COPY directly into target table
-                self._copy_to_temp(cur, df, table_name, columns)
+                    # Target is empty - direct COPY is safe and fastest.
+                    self._copy_to_temp(cur, df, table_name, columns)
+                else:
+                    # Cross-batch PK overlap path. Same temp-then-upsert
+                    # pattern as bulk_upsert.
+                    temp_table = f"{table_name}_tmp_{os.getpid()}"
+                    cur.execute(
+                        f"CREATE TEMP TABLE IF NOT EXISTS {temp_table} "
+                        f"(LIKE {table_name} INCLUDING DEFAULTS INCLUDING STORAGE) ON COMMIT DROP"
+                    )
+                    cur.execute(f"TRUNCATE {temp_table}")
+                    self._copy_to_temp(cur, df, temp_table, columns)
+                    primary_keys = self._get_primary_keys(cur, table_name)
+                    self._upsert_from_temp(cur, temp_table, table_name, columns, primary_keys)
 
                 self.conn.commit()
 

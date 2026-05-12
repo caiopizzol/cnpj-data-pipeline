@@ -170,6 +170,40 @@ class TestFullPipeline:
             assert actual > 0, f"{table} is empty after replace"
             assert actual <= expected, f"{table} has more rows ({actual}) than fixture ({expected})"
 
+    def test_replace_handles_cross_batch_pk_overlap(self, test_db):
+        """bulk_insert must handle PK overlap across batches of the same table.
+
+        RFB occasionally ships the same (cnpj_basico, cnpj_ordem, cnpj_dv)
+        across two sharded ZIPs of the same source table. Before the fix,
+        the second batch's direct COPY into the target crashed on the PK
+        constraint. The fix routes subsequent batches through a temp table
+        + ON CONFLICT path so the load completes.
+
+        Simulating cross-batch overlap by calling bulk_insert TWICE on the
+        same estabelecimentos fixture - second call must not raise.
+        """
+        test_db._truncated_tables.clear()
+        fixture_path = FIXTURES_DIR / "ESTABELE.csv"
+        all_batches = list(process_file(fixture_path, batch_size=500000))
+        assert len(all_batches) > 0, "fixture produced no batches"
+
+        # First pass: truncate + load (fast path)
+        for batch, table_name, columns in all_batches:
+            test_db.bulk_insert(batch, table_name, columns)
+        count_after_first = _count_rows(test_db, "estabelecimentos")
+        assert count_after_first > 0
+
+        # Second pass: same data, should hit the overlap path. The fix
+        # makes this complete without raising; the row count stays stable
+        # because every (basico, ordem, dv) already exists.
+        for batch, table_name, columns in all_batches:
+            test_db.bulk_insert(batch, table_name, columns)
+        count_after_second = _count_rows(test_db, "estabelecimentos")
+        assert count_after_second == count_after_first, (
+            f"cross-batch overlap path changed row count: "
+            f"{count_after_first} -> {count_after_second}"
+        )
+
 
 class TestRecipeEmpresaDetalhe:
     """Apply recipes/postgres/empresa_detalhe.sql against the fixture-loaded
