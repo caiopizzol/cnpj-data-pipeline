@@ -34,6 +34,7 @@ Se a resposta for "sim" para a primeira pergunta e "não" para a segunda, a muda
 - Limpeza de placeholders de data (`0` → null)
 - Vírgula decimal em `capital_social`
 - Padding zero em código de país
+- Padding zero em CEP quando o valor é exatamente 7 dígitos numéricos (determinístico; RFB perde o zero à esquerda em ~0,1% das linhas, sobretudo São Paulo)
 - Cast tipado em Parquet (`PARQUET_TYPED_OUTPUT=true`) para paridade com a saída PostgreSQL
 
 ## O que NÃO entra no núcleo

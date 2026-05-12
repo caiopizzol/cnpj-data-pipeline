@@ -243,6 +243,35 @@ class TestTransform:
 
         assert result["cnpj_cpf_do_socio"][0] == "00000000000000"
 
+    def test_transform_cep_pads_seven_digit_numeric(self):
+        """7-digit all-numeric CEPs get the missing leading zero restored.
+        RFB drops it on ~0.1% of rows; the fix is deterministic and lossless.
+        Junk values must be left untouched so the report keeps surfacing them."""
+        df = pl.DataFrame(
+            {
+                "cnpj_basico": ["1", "2", "3", "4", "5", "6", "7"],
+                "cep": [
+                    "1005010",  # 7-digit numeric → padded
+                    "01005010",  # already 8 digits → unchanged
+                    "13045000",  # 8-digit, no leading zero → unchanged
+                    "0",  # single-char sentinel → unchanged
+                    "       0",  # whitespace sentinel → unchanged
+                    "0000ABCD",  # 8-char non-digit → unchanged
+                    None,  # null → unchanged
+                ],
+            }
+        )
+
+        result = _transform(df, "ESTABELE")
+
+        assert result["cep"][0] == "01005010"
+        assert result["cep"][1] == "01005010"
+        assert result["cep"][2] == "13045000"
+        assert result["cep"][3] == "0"
+        assert result["cep"][4] == "       0"
+        assert result["cep"][5] == "0000ABCD"
+        assert result["cep"][6] is None
+
 
 class TestValidate:
     """Test _validate function for format validation."""

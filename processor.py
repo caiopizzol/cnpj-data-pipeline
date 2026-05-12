@@ -256,6 +256,15 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     if file_type == "ESTABELE" and "pais" in df.columns:
         df = df.with_columns(pl.col("pais").str.zfill(3))
 
+    # Estabelecimentos: pad 7-digit numeric CEP to 8 (RFB drops the leading
+    # zero for ~0.1% of rows, mostly SP CEPs like 1005010 → 01005010).
+    # Narrow rule: only when the value is exactly 7 digits, all-numeric.
+    # Leaves '0', '       0', letters, '00000000', and other shapes untouched
+    # so the data_quality_report keeps surfacing them.
+    if file_type == "ESTABELE" and "cep" in df.columns:
+        needs_pad = pl.col("cep").str.contains(r"^\d{7}$")
+        df = df.with_columns(pl.when(needs_pad).then(pl.col("cep").str.zfill(8)).otherwise(pl.col("cep")).alias("cep"))
+
     # Socios: ensure cnpj_cpf_do_socio is not null (PK)
     if file_type == "SOCIOCSV" and "cnpj_cpf_do_socio" in df.columns:
         df = df.with_columns(pl.col("cnpj_cpf_do_socio").fill_null("00000000000000"))
