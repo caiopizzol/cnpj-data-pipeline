@@ -23,7 +23,7 @@ branch = "main"
 commit_message = "chore(release): {version} [skip ci]"
 upload_to_pypi = false
 
-[tool.semantic_release.changelog]
+[tool.semantic_release.changelog.default_templates]
 changelog_file = ""
 
 [tool.semantic_release.publish]
