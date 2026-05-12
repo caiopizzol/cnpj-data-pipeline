@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.18.0 (2026-05-12)
+
+### Chores
+
+- Tighten parquet release prep
+  ([`e9a386f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/e9a386f8fd67032c1d1245f308832abc5221682e))
+
+### Documentation
+
+- Define normalization and recipe policy
+  ([`31032c6`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/31032c6973a4e9055e5655589de2b03e067d1364))
+
+### Features
+
+- **parquet**: Opt-in typed output for dates and numerics (PARQUET_TYPED_OUTPUT)
+  ([`a12706f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/a12706f1409366594f44c3032cb404546d756765))
+
+
 ## v1.17.0 (2026-05-12)
 
 ### Continuous Integration
