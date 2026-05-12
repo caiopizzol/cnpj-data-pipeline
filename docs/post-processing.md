@@ -1,34 +1,34 @@
-# Normalização e pós-processamento
+# Normalização e receitas
 
-Esta página define a política do projeto sobre o que entra no pipeline e o que fica de fora.
+Esta página define o que o pipeline faz, o que ele não faz, e onde entram as receitas SQL opcionais.
 
-> **Em uma linha:** o loader preserva e mede; receitas interpretam.
+> **Regra simples:** o pipeline preserva e mede. Receitas interpretam.
 
 ## Princípios
 
-1. **A saída padrão é fiel à fonte.** As tabelas reproduzem o layout dos arquivos CSV da Receita Federal. Nomes de colunas, granularidade e códigos seguem o documento [layout oficial](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf).
+1. **A saída padrão é fiel à fonte.** As tabelas seguem o layout dos arquivos CSV da Receita Federal. Nomes de colunas, granularidade e códigos acompanham o [layout oficial](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf).
 
-2. **Normalização no núcleo só corrige representação e paridade.** Conversão de encoding (ISO-8859-1 → UTF-8), `0`/`00000000` → null em datas, vírgula decimal em `capital_social`, validação de UF, validação de datas impossíveis, padding de código de país. Tudo isso já acontece em `processor.py` e existe para que os arquivos sejam carregáveis em formatos previsíveis (PostgreSQL com tipos, Parquet com tipos quando `PARQUET_TYPED_OUTPUT=true`).
+2. **Normalização no núcleo só corrige forma e paridade.** Conversão de encoding (ISO-8859-1 → UTF-8), `0`/`00000000` → null em datas, vírgula decimal em `capital_social`, validação de UF, validação de datas impossíveis e padding de código de país. Isso existe para que os arquivos sejam carregáveis em formatos previsíveis: PostgreSQL com tipos e Parquet com tipos quando `PARQUET_TYPED_OUTPUT=true`.
 
-3. **Tabelas derivadas vivem como receitas SQL.** Denormalizações como `empresa_detalhe` (joins de empresas + estabelecimentos + cnaes + municípios), tabelas de lookup para busca por prefixo, agregações por UF/CNAE — nada disso está no pipeline. Quando adicionadas ao projeto, elas devem ser arquivos SQL em `recipes/` que o usuário aplica manualmente.
+3. **Tabelas derivadas vivem como receitas SQL.** Denormalizações como `empresa_detalhe`, tabelas de busca por prefixo e agregações por UF/CNAE não fazem parte da carga padrão. Quando fizerem sentido para mais de um consumidor, entram como arquivos SQL em `recipes/`, aplicados manualmente.
 
-4. **Receitas são opcionais, inspecionáveis e forkáveis.** O usuário abre o `.sql`, lê o que ele faz, copia/modifica/ignora. Não há código Python escondido executando a derivação. Não há tabelas que aparecem sem você pedir.
+4. **Receitas são opcionais e legíveis.** O usuário abre o `.sql`, lê o que ele faz, copia, modifica ou ignora. Não há código Python escondido criando tabelas derivadas.
 
-5. **Se um runner de pós-processamento for adicionado no futuro, ele executa as receitas — não reimplementa a lógica em Python.** Os arquivos SQL continuam sendo a fonte da verdade. O runner é só conveniência, e a forma da CLI deve ser decidida quando essa camada existir.
+5. **Se um runner de receitas for adicionado no futuro, ele executa os arquivos SQL.** A lógica continua nas receitas. O runner seria apenas conveniência, não uma segunda implementação em Python.
 
 ## Por que essa separação
 
-O valor do projeto open-source é ser o carregador canônico dos dados da Receita Federal. Consumidores variam: PostgreSQL, BigQuery, Snowflake, ClickHouse, DuckDB sobre Parquet, pipelines de ML. Cada um tem necessidades de denormalização diferentes.
+O valor do projeto open-source é carregar os dados da Receita Federal de forma previsível. Consumidores variam: PostgreSQL, BigQuery, Snowflake, ClickHouse, DuckDB sobre Parquet, pipelines de ML. Cada um tem necessidades diferentes de denormalização.
 
-Embutir uma única visão "curada" (por exemplo, a do [cnpj.chat](https://cnpj.chat)) no pipeline forçaria todos os outros consumidores a pagar o custo de manutenção e armazenamento de tabelas que eles não usam. Receitas resolvem isso: o usuário escolhe o que aplicar, e a lógica é transparente.
+Embutir uma única visão "curada" no pipeline faria todos os consumidores pagarem o custo de tabelas que talvez não usem. Receitas resolvem isso: o usuário escolhe o que aplicar, e a lógica fica explícita.
 
 ## O que entra no núcleo do pipeline
 
-Mudanças passam neste teste:
+Uma mudança entra no núcleo quando passa neste teste:
 
-> Um consumidor PostgreSQL, um consumidor Parquet, e um consumidor de pipeline de ML — todos os três querem essa transformação, e não há caso razoável para a forma não-transformada?
+> Um consumidor PostgreSQL, um consumidor Parquet e um consumidor de pipeline de ML querem essa transformação? Existe algum caso razoável para manter a forma original?
 
-Se sim, vai para o núcleo. Casos atuais que passaram:
+Se a resposta for "sim" para a primeira pergunta e "não" para a segunda, a mudança pode entrar no núcleo. Casos atuais:
 
 - Conversão de encoding
 - Limpeza de placeholders de data (`0` → null)
@@ -38,24 +38,24 @@ Se sim, vai para o núcleo. Casos atuais que passaram:
 
 ## O que NÃO entra no núcleo
 
-Mesmo sob flag opt-in:
+Mesmo com flag opt-in:
 
 - `empresa_detalhe` ou qualquer tabela denormalizada
 - Tabelas de lookup para busca por prefixo (`lookup_empresas_nome`, etc.)
 - Agregações pré-computadas
-- Colunas derivadas como `is_ativa`, `is_matriz`, `is_mei` (depende da definição de "ativa")
+- Colunas derivadas como `is_ativa`, `is_matriz`, `is_mei`
 - CNPJ formatado com máscara como coluna separada
 - Endereço concatenado em um único campo
 - Remoção de acentos em razão social (alguns consumidores querem os acentos)
 
-Esses casos são receitas, não pipeline.
+Esses casos pertencem a receitas, não à carga padrão.
 
 ## Versionamento e metadados
 
-Toda saída Parquet inclui `manifest.json` com:
+Toda saída Parquet inclui um `manifest.json` com:
 
 - `pipelineVersion` — versão do pacote que produziu o arquivo
-- `schemaVersion` — versão da forma da saída (incrementada quando colunas mudam, tabelas são renomeadas etc.)
+- `schemaVersion` — versão da forma da saída, incrementada quando colunas mudam ou tabelas são renomeadas
 - `sourceMonth` — diretório de origem na Receita (ex: `2024-11`)
 
 Consumidores que mantêm suas próprias derivações usam esses campos para decidir quando re-executá-las.

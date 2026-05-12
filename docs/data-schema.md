@@ -1,4 +1,4 @@
-# CNPJ Data Schema
+# Schema dos dados CNPJ
 
 Layout dos arquivos CSV disponibilizados pela Receita Federal.
 
