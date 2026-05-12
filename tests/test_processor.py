@@ -8,7 +8,7 @@ from unittest.mock import patch
 import polars as pl
 import pytest
 
-from processor import _convert_encoding, _transform, _validate, get_file_type, process_file
+from processor import _apply_typed_casts, _convert_encoding, _transform, _validate, get_file_type, process_file
 
 
 class TestGetFileType:
@@ -481,3 +481,104 @@ class TestProcessFile:
         total_rows = sum(len(df) for df, _, _ in results)
         assert total_rows == 150
         assert len(results) >= 1
+
+
+class TestTypedCasts:
+    """_apply_typed_casts brings Parquet output to type-parity with Postgres.
+
+    Inputs are post-_validate dataframes: dates are YYYYMMDD or null,
+    capital_social has dot-decimals, identificador_matriz_filial is "1"/"2".
+    """
+
+    def test_dates_cast_to_polars_date_for_estabele(self):
+        df = pl.DataFrame(
+            {
+                "data_situacao_cadastral": ["20240315", None],
+                "data_inicio_atividade": ["20200101", "19991231"],
+                "data_situacao_especial": [None, None],
+            }
+        )
+        out = _apply_typed_casts(df, "ESTABELE")
+        assert out["data_situacao_cadastral"].dtype == pl.Date
+        assert out["data_inicio_atividade"].dtype == pl.Date
+        assert out["data_situacao_especial"].dtype == pl.Date
+        # Null preserved
+        assert out["data_situacao_cadastral"][1] is None
+
+    def test_dates_cast_for_simples_and_socios(self):
+        simples = pl.DataFrame(
+            {
+                "data_opcao_pelo_simples": ["20200101"],
+                "data_exclusao_do_simples": [None],
+                "data_opcao_pelo_mei": ["20210601"],
+                "data_exclusao_do_mei": [None],
+            }
+        )
+        socios = pl.DataFrame({"data_entrada_sociedade": ["20180515"]})
+        assert _apply_typed_casts(simples, "SIMPLESCSV")["data_opcao_pelo_simples"].dtype == pl.Date
+        assert _apply_typed_casts(socios, "SOCIOCSV")["data_entrada_sociedade"].dtype == pl.Date
+
+    def test_capital_social_cast_to_float64(self):
+        df = pl.DataFrame({"capital_social": ["1234567.89", "0", None]})
+        out = _apply_typed_casts(df, "EMPRECSV")
+        assert out["capital_social"].dtype == pl.Float64
+        assert out["capital_social"][0] == 1234567.89
+        assert out["capital_social"][1] == 0.0
+        assert out["capital_social"][2] is None
+
+    def test_identificador_matriz_filial_cast_to_int32(self):
+        df = pl.DataFrame({"identificador_matriz_filial": ["1", "2", None]})
+        out = _apply_typed_casts(df, "ESTABELE")
+        assert out["identificador_matriz_filial"].dtype == pl.Int32
+        assert out["identificador_matriz_filial"][0] == 1
+        assert out["identificador_matriz_filial"][1] == 2
+        assert out["identificador_matriz_filial"][2] is None
+
+    def test_noop_on_reference_table(self):
+        """Reference tables have no date or numeric columns to cast."""
+        df = pl.DataFrame({"codigo": ["0111301"], "descricao": ["Cultivo de arroz"]})
+        out = _apply_typed_casts(df, "CNAECSV")
+        # Both columns stay Utf8 (no transformations apply to reference tables)
+        assert out["codigo"].dtype == pl.Utf8
+        assert out["descricao"].dtype == pl.Utf8
+
+    def test_handles_all_null_date_column(self):
+        """A batch where every date value is null arrives as pl.Null dtype
+        (not Utf8). The cast must handle this without crashing - otherwise
+        a real-world batch with all-null data_situacao_especial would blow
+        up in production."""
+        df = pl.DataFrame(
+            {
+                "data_situacao_cadastral": ["20240101"],
+                "data_inicio_atividade": ["20200101"],
+                "data_situacao_especial": pl.Series([None], dtype=pl.Null),
+            }
+        )
+        out = _apply_typed_casts(df, "ESTABELE")
+        # All three columns end up as Date for schema stability across batches
+        assert out["data_situacao_cadastral"].dtype == pl.Date
+        assert out["data_inicio_atividade"].dtype == pl.Date
+        assert out["data_situacao_especial"].dtype == pl.Date
+        assert out["data_situacao_especial"][0] is None
+
+
+class TestProcessFileTypedFlag:
+    """typed=True end-to-end through process_file."""
+
+    def test_default_keeps_strings(self, tmp_path):
+        """Default behavior (typed=False) preserves backward compat for v1.x
+        Parquet consumers who already wrote queries against string columns."""
+        simples_file = tmp_path / "F.K03200$W.SIMPLES.CSV.D51213"
+        simples_file.write_text("12345678;S;20200101;0;N;0;0", encoding="ISO-8859-1")
+
+        results = list(process_file(simples_file))
+        df, _, _ = results[0]
+        assert df["data_opcao_pelo_simples"].dtype == pl.Utf8
+
+    def test_typed_flag_casts_dates(self, tmp_path):
+        simples_file = tmp_path / "F.K03200$W.SIMPLES.CSV.D51213"
+        simples_file.write_text("12345678;S;20200101;0;N;0;0", encoding="ISO-8859-1")
+
+        results = list(process_file(simples_file, typed=True))
+        df, _, _ = results[0]
+        assert df["data_opcao_pelo_simples"].dtype == pl.Date

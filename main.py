@@ -129,7 +129,7 @@ def _parquet_worker(zip_filename, directory, downloader, parquet, cfg):
     for csv_path in downloader.download_file(directory, zip_filename):
         try:
             rows = 0
-            for batch, table_name, columns in process_file(csv_path, cfg.batch_size):
+            for batch, table_name, columns in process_file(csv_path, cfg.batch_size, typed=cfg.parquet_typed_output):
                 parquet.write_batch(batch, table_name, columns)
                 rows += len(batch)
 
@@ -263,7 +263,9 @@ def main():
                         for csv_path, _ in downloader.download_files(directory, [zip_filename]):
                             try:
                                 rows = 0
-                                for batch, tname, columns in process_file(csv_path, config.batch_size):
+                                for batch, tname, columns in process_file(
+                                    csv_path, config.batch_size, typed=config.parquet_typed_output
+                                ):
                                     parquet.write_batch(batch, tname, columns)
                                     rows += len(batch)
                                     if rows % 1_000_000 == 0:

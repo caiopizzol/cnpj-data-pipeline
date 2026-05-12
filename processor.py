@@ -130,9 +130,20 @@ def _convert_encoding(file_path: Path) -> Path:
 
 
 def process_file(
-    file_path: Path, batch_size: int = 50000
+    file_path: Path, batch_size: int = 50000, typed: bool = False
 ) -> Generator[Tuple[pl.DataFrame, str, List[str]], None, None]:
-    """Process a CSV file and yield batches as Polars DataFrames."""
+    """Process a CSV file and yield batches as Polars DataFrames.
+
+    Args:
+        file_path: CSV file to process.
+        batch_size: Polars batch size for streaming reads.
+        typed: When true, cast date/numeric columns to their Polars
+            typed forms (Date, Float64, Int32). Postgres mode leaves
+            this false because the destination column types coerce
+            strings during COPY; Parquet mode opts in via the
+            PARQUET_TYPED_OUTPUT flag so the on-disk Parquet has the
+            same shape Postgres ends up with.
+    """
     file_type = get_file_type(file_path.name)
     if not file_type:
         logger.warning(f"Unknown file type: {file_path.name}")
@@ -167,6 +178,8 @@ def process_file(
                     continue
                 df = _transform(df, file_type)
                 df = _validate(df, file_type)
+                if typed:
+                    df = _apply_typed_casts(df, file_type)
                 yield df, table_name, columns
     finally:
         utf8_file.unlink(missing_ok=True)
@@ -320,5 +333,44 @@ def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
             if count > 0:
                 logger.warning(f"{col}: {count} dates out of range → null (future or before 1900)")
                 df = df.with_columns(pl.when(out_of_range).then(None).otherwise(pl.col(col)).alias(col))
+
+    return df
+
+
+def _apply_typed_casts(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
+    """Cast string columns to their typed Polars forms.
+
+    Postgres mode doesn't need this - COPY coerces strings via the column
+    types declared in initial.sql. Parquet preserves whatever dtype the
+    DataFrame has, so without explicit casts the date/numeric columns
+    land in Parquet as Utf8 strings. Consumers using DuckDB then end up
+    doing lexicographic comparisons on what they assume are dates/numbers.
+
+    Inputs to this function have already been validated: dates are
+    YYYYMMDD or null, capital_social has comma-decimals replaced with
+    dots, identificador_matriz_filial is "1" or "2". Casts use
+    strict=False defensively - any survivor that snuck through becomes
+    null rather than raising.
+
+    Dtype dispatch on date columns: a batch where every value is null
+    arrives with pl.Null dtype (not Utf8), so str.strptime would crash.
+    Cast such columns directly to pl.Date so the on-disk Parquet schema
+    stays stable across batches.
+    """
+    if file_type in _DATE_COLS:
+        for col in _DATE_COLS[file_type]:
+            if col not in df.columns:
+                continue
+            col_dtype = df[col].dtype
+            if col_dtype == pl.Utf8:
+                df = df.with_columns(pl.col(col).str.strptime(pl.Date, "%Y%m%d", strict=False).alias(col))
+            elif col_dtype == pl.Null:
+                df = df.with_columns(pl.col(col).cast(pl.Date))
+
+    if file_type == "EMPRECSV" and "capital_social" in df.columns:
+        df = df.with_columns(pl.col("capital_social").cast(pl.Float64, strict=False))
+
+    if file_type == "ESTABELE" and "identificador_matriz_filial" in df.columns:
+        df = df.with_columns(pl.col("identificador_matriz_filial").cast(pl.Int32, strict=False))
 
     return df

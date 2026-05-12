@@ -25,6 +25,12 @@ class Config:
     loading_strategy: str = "upsert"  # "upsert" or "replace"
     output_format: str = "postgres"  # "postgres" or "parquet"
     parquet_output_dir: str = "./parquet"
+    # When true (opt-in for backward compatibility in v1.x), cast date and
+    # numeric columns to their typed Polars forms before writing Parquet.
+    # The Postgres output is already typed via initial.sql column types;
+    # this flag exists to bring Parquet to parity. The default will flip
+    # to true at the next major version bump.
+    parquet_typed_output: bool = False
     post_file_command: str = ""  # Command to run after each parquet file (receives file path as arg)
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
     share_token: str = "YggdBLfdninEJX9"
@@ -46,6 +52,7 @@ class Config:
             loading_strategy=os.getenv("LOADING_STRATEGY", "upsert").lower(),
             output_format=os.getenv("OUTPUT_FORMAT", "postgres").lower(),
             parquet_output_dir=os.getenv("PARQUET_OUTPUT_DIR", "./parquet"),
+            parquet_typed_output=os.getenv("PARQUET_TYPED_OUTPUT", "false").lower() == "true",
             post_file_command=os.getenv("POST_FILE_COMMAND", ""),
             base_url=os.getenv("BASE_URL", "https://arquivos.receitafederal.gov.br/public.php/webdav"),
             share_token=os.getenv("SHARE_TOKEN", "YggdBLfdninEJX9"),

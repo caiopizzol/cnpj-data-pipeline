@@ -110,6 +110,7 @@ KEEP_DOWNLOADED_FILES=false
 LOADING_STRATEGY=upsert  # "upsert" ou "replace"
 OUTPUT_FORMAT=postgres   # "postgres" ou "parquet"
 PARQUET_OUTPUT_DIR=./parquet
+PARQUET_TYPED_OUTPUT=false  # Quando true, datas e numéricos saem tipados (Date, Float64, Int32)
 PROCESS_WORKERS=1        # Arquivos do mesmo grupo em paralelo (ex: 4)
 ```
 
