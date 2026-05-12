@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v1.22.0 (2026-05-12)
+
+### Documentation
+
+- **data-audit**: Cite official sources, downgrade empirical claims
+  ([`8284107`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/82841071eb486d8dd420b4a2a2c45853c2899992))
+
+- **data-audit**: Clarify EX wording (pais 'ativa' -> 'preenchida')
+  ([`50bfab9`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/50bfab94a02549bb3bd2b96b6c4d909410e03ab4))
+
+### Features
+
+- **recipes**: Add data_quality_flags.sql (recipeVersion 1)
+  ([`955d33d`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/955d33dbedc3fa369f51cd282f4e66a5c97f43ca))
+
+
 ## v1.21.0 (2026-05-12)
 
 ### Features
