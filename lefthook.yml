@@ -11,5 +11,8 @@ pre-commit:
     ruff-format:
       glob: "*.py"
       run: uv run ruff format {staged_files} && git add {staged_files}
+    ruff-format-check:
+      glob: "*.py"
+      run: uv run ruff format --check .
     pytest:
       run: uv run pytest
