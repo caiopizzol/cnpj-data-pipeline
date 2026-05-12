@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.25.0 (2026-05-12)
+
+### Documentation
+
+- Align recipes README tone
+  ([`aeb9a7f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/aeb9a7f7de06c0a1b828787c4f3f1164e425ed55))
+
+### Features
+
+- **recipes**: Add socios_quality_flags.sql (recipeVersion 1)
+  ([`e9aea82`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/e9aea822cf1953ffb0d4b74deafed1b27b956eda))
+
+
 ## v1.24.0 (2026-05-12)
 
 ### Features
