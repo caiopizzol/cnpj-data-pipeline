@@ -161,6 +161,8 @@ SELECT COUNT(*) FROM 'parquet/estabelecimentos.parquet' WHERE uf = 'SP';
 ## Schema
 
 > Documentação completa: [docs/data-schema.md](docs/data-schema.md)
+>
+> Sobre normalização e tabelas derivadas: [docs/post-processing.md](docs/post-processing.md)
 
 ```
 EMPRESAS (1) ─── (N) ESTABELECIMENTOS
