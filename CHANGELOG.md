@@ -2,6 +2,28 @@
 
 <!-- version list -->
 
+## v1.17.0 (2026-05-12)
+
+### Continuous Integration
+
+- **docker**: Allow manual workflow dispatch so v1.16.0 can be published
+  ([`ffe4a20`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/ffe4a2075a926d7a3fe1cdd5662a13d250672b4b))
+
+- **docker**: Support manual dispatch with explicit tag; bump actions
+  ([`19cc926`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/19cc92655835440af88c2c2d581a3e6466206a71))
+
+### Documentation
+
+- Credit @renerlemes for the Docker image proposal
+  ([#73](https://github.com/caiopizzol/cnpj-data-pipeline/pull/73),
+  [`bb46026`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/bb46026daac02dce28706880641a0ad62d57920b))
+
+### Features
+
+- **parquet**: Enrich manifest with version metadata
+  ([`274e43f`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/274e43f14914b2153a3261686e54fed52df6bd6b))
+
+
 ## v1.16.0 (2026-04-22)
 
 ### Documentation
