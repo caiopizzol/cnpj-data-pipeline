@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.19.1 (2026-05-12)
+
+### Bug Fixes
+
+- **release**: Set explicit changelog_file path for semantic-release v10
+  ([`828c459`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/828c4596bc833751b4a2ed445e73d6016dfc3084))
+
+### Chores
+
+- Move semantic-release changelog config to new key path
+  ([`fe1a01d`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/fe1a01d12d9cfd06868deefe7019f972e5239ef7))
+
+
 ## v1.19.0 (2026-05-12)
 
 ### Chores
