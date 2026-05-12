@@ -121,7 +121,7 @@ A receita `recipes/postgres/empresa_detalhe.sql` implementa:
 ## Receitas planejadas após a primeira
 
 1. **`data_quality_flags`** (v1.22.0+) — tabela estreita, uma linha por estabelecimento, com sinais sem mutação de valor: `cep_status`, `is_exterior`, `pais_lookup_missing`, `motivo_lookup_missing`, `capital_social_is_suspicious_sentinel`. Serve como predicate-source para a futura `estabelecimentos_clean`. Sócios ficam para uma receita separada (`socios_quality_flags`) por terem grão diferente.
-2. **`estabelecimentos_clean`** — junta `estabelecimentos`, `empresas` e `data_quality_flags` para emitir colunas interpretadas (`cep_clean`, `capital_social_clean`, etc.) usando as mesmas flags como predicados.
+2. **`estabelecimentos_clean`** (v1.23.0+) — junta `estabelecimentos`, `empresas` e `data_quality_flags`. Primeira receita que altera valores: emite `cep_clean` (NULL quando `cep_status != 'valid_shape'`) e `capital_social_clean` (NULL quando `capital_social_is_suspicious_sentinel`). Preserva os valores crus (`cep_raw`, `capital_social_raw`) ao lado das colunas limpas. Usa exclusivamente os predicados de `data_quality_flags` — qualquer mudança de interpretação acontece lá, não aqui.
 3. **`cnae_secundaria_exploded`** — tabela lateral para `cnae_fiscal_secundaria`. Útil pelo volume de estabelecimentos com múltiplos CNAEs secundários (~20M+ linhas medidos em 12/05/2026).
 4. **`socios_detalhe`** + **`socios_quality_flags`** — junções com `qualificacoes_socios` e `paises`. Tratamento opcional do valor sentinela `***000000**` / `00` para representante legal.
 5. **`labels`** — expansão de enums (`situacao_cadastral` → `situacao_cadastral_descricao`, `porte` → `porte_descricao`, etc.).
