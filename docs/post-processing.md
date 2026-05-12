@@ -2,6 +2,8 @@
 
 Esta página define a política do projeto sobre o que entra no pipeline e o que fica de fora.
 
+> **Em uma linha:** o loader preserva e mede; receitas interpretam.
+
 ## Princípios
 
 1. **A saída padrão é fiel à fonte.** As tabelas reproduzem o layout dos arquivos CSV da Receita Federal. Nomes de colunas, granularidade e códigos seguem o documento [layout oficial](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf).
