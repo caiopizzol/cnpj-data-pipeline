@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.24.0 (2026-05-12)
+
+### Features
+
+- **recipes**: Add cnae_secundaria_exploded.sql (recipeVersion 1)
+  ([`0706165`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0706165805860a722177f6293ef3876a254f29bc))
+
+
 ## v1.23.0 (2026-05-12)
 
 ### Features
