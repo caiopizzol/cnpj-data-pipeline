@@ -1,42 +1,56 @@
 # Receitas
 
-Tabelas derivadas opcionais. Cada arquivo é SQL puro, inspecionável, com cabeçalho documentando o que faz e como aplicar. O pipeline não executa nada daqui — você roda manualmente.
+Receitas são arquivos SQL opcionais para quem quer uma camada além da carga bruta. O pipeline não roda esses arquivos automaticamente. Você lê, escolhe, adapta e executa quando fizer sentido.
 
-Política completa: [../docs/post-processing.md](../docs/post-processing.md). Resumo: a saída padrão do pipeline é fiel à fonte; receitas são camadas opcionais que o usuário escolhe aplicar.
+A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pipeline preserva e mede. Receitas interpretam.
 
 ## Disponíveis
 
 | Receita | Arquivo | O que faz |
 |---|---|---|
-| `empresa_detalhe` | [`postgres/empresa_detalhe.sql`](postgres/empresa_detalhe.sql) | Junta empresas + estabelecimentos + tabelas de referência (cnaes, municipios, motivos, paises, naturezas_juridicas) + dados_simples em uma tabela por estabelecimento. |
+| `empresa_detalhe` | [`postgres/empresa_detalhe.sql`](postgres/empresa_detalhe.sql) | Junta empresas, estabelecimentos, tabelas de referência e dados do Simples Nacional em uma tabela por estabelecimento. Preserva códigos e valores da fonte. |
+| `data_quality_flags` | [`postgres/data_quality_flags.sql`](postgres/data_quality_flags.sql) | Mede sinais de qualidade por estabelecimento, sem alterar valores. |
+| `estabelecimentos_clean` | [`postgres/estabelecimentos_clean.sql`](postgres/estabelecimentos_clean.sql) | Usa `data_quality_flags` para emitir pares cru/limpo de CEP e capital social. |
+| `cnae_secundaria_exploded` | [`postgres/cnae_secundaria_exploded.sql`](postgres/cnae_secundaria_exploded.sql) | Transforma `cnae_fiscal_secundaria` em uma tabela lateral: uma linha por CNAE secundário. |
 
 ## Como aplicar
 
-Depois do ingest (`just run`):
+Depois da carga (`just run`), rode apenas as receitas que você precisa:
 
 ```bash
+# Tabela denormalizada para consulta
 psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
+
+# Sinais de qualidade e camada limpa de estabelecimentos
+psql "$DATABASE_URL" -f recipes/postgres/data_quality_flags.sql
+psql "$DATABASE_URL" -f recipes/postgres/estabelecimentos_clean.sql
+
+# CNAEs secundários em tabela lateral
+psql "$DATABASE_URL" -f recipes/postgres/cnae_secundaria_exploded.sql
 ```
 
-Re-rodar após cada ingest mensal para atualizar.
+Rode novamente após cada carga mensal para atualizar. Quando uma receita depende de outra, isso aparece no cabeçalho do SQL.
 
 ## Consumidores usando Parquet
 
-As receitas hoje são escritas para Postgres. Para DuckDB, Spark, Polars, Athena ou qualquer outro engine que leia Parquet, a SQL é direta de traduzir — basta substituir as tabelas-fonte por chamadas como `read_parquet('parquet/empresas.parquet')` e `read_parquet('parquet/estabelecimentos.parquet')` (ou o equivalente do seu engine) e ajustar a sintaxe de JOIN se necessário.
+As receitas hoje são escritas para Postgres porque esse é o caminho testado. Quem usa Parquet pode tratar os arquivos SQL como referência e traduzir para DuckDB, Spark, Polars, Athena ou outra ferramenta que leia Parquet.
 
-PRs adicionando variantes específicas de engine são bem-vindos quando houver demanda clara.
+Exemplo em DuckDB: substituir uma tabela como `empresas` por `read_parquet('parquet/empresas.parquet')` e ajustar a sintaxe quando necessário. Variantes para outras ferramentas são bem-vindas quando houver demanda clara.
 
 ## Princípios para novas receitas
 
 Antes de propor uma receita nova:
 
-1. Tem caso de uso para mais de um consumidor? Se só você usa, mantenha no seu repositório.
-2. É puramente SQL? Lógica que precisa de Python não é receita, é fork do pipeline.
-3. Tem header documentando: o que produz, premissas (ex: tabelas necessárias), e qualquer escolha opinativa.
+1. Serve mais de um consumidor? Se só você usa, mantenha no seu repositório.
+2. É SQL puro e fácil de ler? Se precisa de Python, provavelmente é outra ferramenta, não uma receita.
+3. Deixa claro o que interpreta? Uma receita pode limpar, marcar ou juntar dados, mas precisa dizer qual regra usou.
+4. Preserva a fonte quando possível? Receitas `*_clean` devem manter o valor cru ao lado do valor tratado.
+5. Documenta dependências? O cabeçalho deve dizer quais tabelas ou receitas precisam existir antes.
 
-Receitas em discussão (não implementadas ainda):
+Receitas em discussão:
 
-- `cnae_secundaria_exploded` — `cnae_fiscal_secundaria` (string com códigos separados por vírgula) explodido em tabela lateral `(cnpj_basico, cnpj_ordem, cnpj_dv, cnae_codigo)`. Próxima a ser entregue.
-- `socios_detalhe` — junções de sócios com qualificação e país. Decisões opinativas pendentes (tratamento do sentinel `***000000**` para representante legal, forma do label de `faixa_etaria`).
-- `labels` — colunas adicionais com a descrição legível de enums (`situacao_cadastral_descricao`, `porte_descricao` etc.).
-- `booleans` — colunas convenientes como `is_ativa`, `is_matriz`, `is_optante_simples_atual`. Cada uma com a regra documentada.
+- `socios_quality_flags` — sinais de qualidade por sócio: representante legal com valor de preenchimento, país sem referência, qualificação sem referência, faixa etária "não se aplica".
+- `socios_detalhe` — junções de sócios com qualificação e país. Ainda precisa decidir como expor descrições e valores sentinela.
+- `socios_clean` — camada limpa de sócios construída sobre `socios_quality_flags`, preservando valores crus ao lado dos valores tratados.
+- `descricoes` — colunas adicionais com a descrição legível de enums (`situacao_cadastral_descricao`, `porte_descricao` etc.).
+- `booleanos` — colunas convenientes como `is_ativa`, `is_matriz`, `is_optante_simples_atual`. Cada uma com a regra documentada.
