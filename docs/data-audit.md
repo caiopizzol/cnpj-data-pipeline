@@ -87,12 +87,26 @@ No PostgreSQL, todas têm a mesma forma: `(codigo, descricao, data_criacao, data
 
 A entrega mensal da RFB tem inconsistências internas que o pipeline preserva intencionalmente. O `scripts/data_quality_report.py` mede cada uma; receitas opcionais podem mascarar ou nulificar quando o consumidor preferir. Medições abaixo em 12/05/2026 contra a entrega 2026-04.
 
-- **`estabelecimentos.motivo_situacao_cadastral = '32'`** — 18.672 linhas referenciam um código que não existe em `Motivos.csv` da mesma entrega. Provavelmente um código retirado pela RFB. Preservado; aparecerá como `NULL` no `LEFT JOIN` com `motivos` em receitas.
-- **`estabelecimentos.pais` órfãos** — 14 códigos distintos, 1.220 linhas. Os mais frequentes são `150` (583), `367` (483) e `359` (97). Quase todos em `uf='EX'`; nove linhas em UFs brasileiras (códigos `008`, `009`) parecem ser referências históricas que a RFB nunca atualizou. Mesmo padrão: drift entre dados e tabela de referência.
-- **`estabelecimentos.uf = 'EX'`** — 170.865 linhas. Não é dado sujo: é o código oficial da RFB para endereços no exterior. A coluna `pais` deve carregar o país real.
-- **`empresas.capital_social = 999999999999`** — 124 linhas. Valor suspeito de sentinela para capital não informado/desconhecido. Preservado para que o sinal continue visível.
-- **`socios.representante_legal = '***000000**'` + `qualificacao_do_representante_legal = '00'`** — 26.730.045 linhas (97% dos sócios). É o caso dominante: significa "sem representante legal separado". Preservado; uma receita pode expor `has_representante_legal` quando o consumidor quiser tratar como `NULL`.
-- **`estabelecimentos.cep` residual após padding** — após o `zfill(8)` aplicado em 7 dígitos numéricos (v1.21.0+), restam ~2.914 valores não conformes (`'0'`, `'       0'`, 8 caracteres com letras, etc.). Preservados como vieram. O `data_quality_report` os enumera; a receita `data_quality_flags` pode expor flags para consumidores que prefiram `NULL`.
+- **`estabelecimentos.motivo_situacao_cadastral = '32'`** — 18.672 linhas referenciam um código presente em `Estabelecimentos.csv` mas ausente do `Motivos.csv` da mesma entrega. O layout oficial da RFB não publica a lista de motivos válidos, então não conseguimos confirmar o status do código (retirado, erro de entrega, etc.) a partir das fontes oficiais. Preservado; aparecerá como `NULL` no `LEFT JOIN` com `motivos` em receitas.
+- **`estabelecimentos.pais` órfãos** — 14 códigos distintos, 1.220 linhas. Mais frequentes: `150` (583), `367` (483), `359` (97). Quase todos em `uf='EX'`; nove linhas em UFs brasileiras (códigos `008`, `009`). Drift entre `Estabelecimentos.csv` e `Paises.csv` da mesma entrega. O layout oficial da RFB também não publica a lista de países válidos, então não inferimos status individual (retirado vs. ativo) sem fonte adicional.
+- **`estabelecimentos.uf = 'EX'`** — 170.865 linhas. Padrão observado para registros no exterior: as mesmas linhas costumam ter `NOME DA CIDADE NO EXTERIOR` preenchido e a coluna `pais` ativa. O layout oficial da RFB não documenta o código `EX` explicitamente; tratamos como código convencional usado pela RFB, não como código oficial citado em norma.
+- **`empresas.capital_social = 999999999999`** — 124 linhas. Valor suspeito de sentinela para capital não informado/desconhecido. O layout oficial da RFB não documenta este sentinela. Preservado para que o sinal continue visível; uma receita pode mascarar.
+- **`socios.representante_legal = '***000000**'` + `qualificacao_do_representante_legal = '00'`** — 26.730.045 linhas (97% dos sócios). A forma `***000000**` é consistente com a regra pública de mascaramento de CPF (LDO 2018, art. 129 §2º — ocultar os três primeiros dígitos e os dois dígitos verificadores), aplicada sobre um CPF de origem `00000000000`. A leitura "sem representante legal separado" é empírica (97% dos registros), não documentada. Preservado; uma receita pode expor `has_representante_legal` quando o consumidor quiser tratar como `NULL`.
+- **`estabelecimentos.cep` residual após padding** — após o `zfill(8)` aplicado a valores com exatamente 7 dígitos numéricos (v1.21.0+), restam ~2.914 valores não conformes (`'0'`, `'       0'`, 8 caracteres com letras, etc.). Preservados como vieram. Resumo da política:
+  - Correios define CEP como 8 algarismos numéricos.
+  - A RFB entrega alguns CEPs com 7 dígitos numéricos.
+  - O pipeline padroniza exclusivamente os valores com exatamente 7 dígitos numéricos.
+  - Validação de existência contra Correios/DNE está fora do núcleo.
+
+## Fontes oficiais
+
+Onde cada afirmação acima foi (ou não) verificada contra fonte autoritativa.
+
+- **Algoritmo do dígito verificador do CNPJ** — Receita Federal / Serpro, documento técnico [`manual-dv-cnpj.pdf`](https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/documentos-tecnicos/cnpj/manual-dv-cnpj.pdf): módulo 11, pesos 5,4,3,2,9,8,7,6,5,4,3,2 (DV1) e 6,5,4,3,2,9,8,7,6,5,4,3,2 (DV2). Regra: se `resto = soma mod 11 ∈ {0,1}`, DV = 0; caso contrário, DV = `11 - resto`. O algoritmo permanece o mesmo no CNPJ alfanumérico que entra em vigor em julho/2026 ([nota RFB](https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2024/outubro/cnpj-tera-letras-e-numeros-a-partir-de-julho-de-2026)); CNPJs numéricos existentes continuam válidos.
+- **Forma do CEP (8 algarismos numéricos)** — Correios: ["O CEP é um conjunto numérico constituído de oito algarismos"](https://www.correios.com.br/enviar/precisa-de-ajuda/tudo-sobre-cep).
+- **Existência de um CEP específico** — autoridade é o DNE/Correios (proprietário). **Fora do escopo do núcleo do pipeline**: introduzir validação por chamada externa adicionaria dependência de auth/rate-limit/licenciamento e reduziria a reprodutibilidade da carga. Receitas/ferramentas opcionais podem fazer essa checagem em amostra.
+- **Códigos de município e UF (geografia)** — IBGE é a autoridade para enriquecimento geográfico (códigos de município, microrregião, mesorregião). IBGE **não é** autoridade para validar CEP.
+- **Layout dos dados abertos do CNPJ** — Receita Federal: [`cnpj-metadados.pdf`](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf). É um documento curto; não enumera valores válidos de `motivo`, `pais`, `uf` (além do que aparece em prosa), nem documenta sentinelas como `999999999999` em capital_social ou `'***000000**'` em representante_legal.
 
 ## Decisões para a primeira receita (empresa_detalhe)
 
