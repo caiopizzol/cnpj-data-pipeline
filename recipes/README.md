@@ -12,6 +12,7 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 | `data_quality_flags` | [`postgres/data_quality_flags.sql`](postgres/data_quality_flags.sql) | Mede sinais de qualidade por estabelecimento, sem alterar valores. |
 | `estabelecimentos_clean` | [`postgres/estabelecimentos_clean.sql`](postgres/estabelecimentos_clean.sql) | Usa `data_quality_flags` para emitir pares cru/limpo de CEP e capital social. |
 | `cnae_secundaria_exploded` | [`postgres/cnae_secundaria_exploded.sql`](postgres/cnae_secundaria_exploded.sql) | Transforma `cnae_fiscal_secundaria` em uma tabela lateral: uma linha por CNAE secundário. |
+| `socios_quality_flags` | [`postgres/socios_quality_flags.sql`](postgres/socios_quality_flags.sql) | Mede sinais de qualidade por sócio, incluindo representante legal com valor de preenchimento e referências ausentes. |
 
 ## Como aplicar
 
@@ -27,6 +28,9 @@ psql "$DATABASE_URL" -f recipes/postgres/estabelecimentos_clean.sql
 
 # CNAEs secundários em tabela lateral
 psql "$DATABASE_URL" -f recipes/postgres/cnae_secundaria_exploded.sql
+
+# Sinais de qualidade por sócio
+psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql
 ```
 
 Rode novamente após cada carga mensal para atualizar. Quando uma receita depende de outra, isso aparece no cabeçalho do SQL.
@@ -49,8 +53,7 @@ Antes de propor uma receita nova:
 
 Receitas em discussão:
 
-- `socios_quality_flags` — sinais de qualidade por sócio: representante legal com valor de preenchimento, país sem referência, qualificação sem referência, faixa etária "não se aplica".
-- `socios_detalhe` — junções de sócios com qualificação e país. Ainda precisa decidir como expor descrições e valores sentinela.
 - `socios_clean` — camada limpa de sócios construída sobre `socios_quality_flags`, preservando valores crus ao lado dos valores tratados.
+- `socios_detalhe` — junções de sócios com qualificação e país. Ainda precisa decidir como expor descrições e valores sentinela.
 - `descricoes` — colunas adicionais com a descrição legível de enums (`situacao_cadastral_descricao`, `porte_descricao` etc.).
 - `booleanos` — colunas convenientes como `is_ativa`, `is_matriz`, `is_optante_simples_atual`. Cada uma com a regra documentada.
