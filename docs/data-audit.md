@@ -2,7 +2,7 @@
 
 Este documento mapeia cada campo das tabelas principais e classifica o que é tratado pelo pipeline (núcleo) e o que pode ser entregue como receita opcional. A política está em [post-processing.md](post-processing.md); aqui é a leitura de campo-a-campo que motiva as receitas.
 
-> **Notas empíricas datadas:** as contagens citadas abaixo foram medidas em **12/05/2026** contra o snapshot mais recente carregado em `query.cnpj.chat` (MotherDuck). A forma dos dados é estável mês a mês, mas tratar números absolutos como invariantes é um erro — re-medir quando uma decisão depender da magnitude.
+> **Notas empíricas datadas:** as contagens citadas abaixo foram medidas em **12/05/2026** contra um snapshot recente carregado em PostgreSQL pelo próprio pipeline. A forma dos dados é estável mês a mês, mas tratar números absolutos como invariantes é um erro — re-medir quando uma decisão depender da magnitude.
 
 ## Resumo
 
