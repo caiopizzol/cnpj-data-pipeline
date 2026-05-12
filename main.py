@@ -354,7 +354,7 @@ def main():
 
         if is_parquet:
             parquet.close()
-            manifest = parquet.write_manifest()
+            manifest = parquet.write_manifest(source_month=directory)
             total_rows = manifest["totals"]["rows"]
             total_size = manifest["totals"]["sizeBytes"] / 1024 / 1024 / 1024
             logger.info(f"Parquet export complete: {total_rows:,} rows, {total_size:.2f} GB")

@@ -22,6 +22,7 @@ import json
 import logging
 import threading
 import time
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,24 @@ logger = logging.getLogger(__name__)
 
 ROW_GROUP_SIZE = 100_000
 COMPRESSION = "zstd"
+
+# Bumped when the output schema changes shape (column added/removed/retyped,
+# table renamed). Consumers can compare against this in manifest.json to
+# detect when they need to re-run their own post-processing/derivations.
+SCHEMA_VERSION = "1"
+
+
+def _read_pipeline_version() -> str:
+    """Read the pipeline version from pyproject.toml. Returns 'unknown' if
+    the file can't be located (e.g. when running from a packaged binary
+    where pyproject.toml isn't shipped)."""
+    pyproject = Path(__file__).parent / "pyproject.toml"
+    try:
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        return str(data["project"]["version"])
+    except (FileNotFoundError, KeyError):
+        return "unknown"
 
 
 @dataclass
@@ -99,10 +118,20 @@ class ParquetWriter:
         for table_name in list(self._writers.keys()):
             self.flush_table(table_name)
 
-    def write_manifest(self) -> dict:
-        """Write manifest.json with export metadata."""
+    def write_manifest(self, source_month: str | None = None) -> dict:
+        """Write manifest.json with export metadata.
+
+        Args:
+            source_month: The Receita Federal directory the data came from
+                (e.g. "2024-11"). Recorded in the manifest so downstream
+                consumers can detect when a new month landed without
+                cross-referencing the original ZIP listing.
+        """
         manifest = {
             "exportedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "pipelineVersion": _read_pipeline_version(),
+            "schemaVersion": SCHEMA_VERSION,
+            "sourceMonth": source_month,
             "tables": {},
             "totals": {
                 "rows": sum(s.rows for s in self.stats.values()),

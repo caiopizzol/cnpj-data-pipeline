@@ -152,6 +152,33 @@ class TestWriteManifest:
         assert "exportedAt" in manifest
         assert manifest["exportedAt"].endswith("Z")
 
+    def test_manifest_has_pipeline_and_schema_versions(self, writer, sample_empresas, output_dir):
+        """pipelineVersion + schemaVersion let downstream consumers detect
+        when they need to re-run their own derivations."""
+        writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
+        writer.close()
+        manifest = writer.write_manifest()
+
+        assert "pipelineVersion" in manifest
+        assert manifest["pipelineVersion"]  # non-empty
+        assert "schemaVersion" in manifest
+        assert manifest["schemaVersion"] == "1"
+
+    def test_manifest_records_source_month_when_provided(self, writer, sample_empresas, output_dir):
+        writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
+        writer.close()
+        manifest = writer.write_manifest(source_month="2024-11")
+
+        assert manifest["sourceMonth"] == "2024-11"
+
+    def test_manifest_source_month_optional(self, writer, sample_empresas, output_dir):
+        writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
+        writer.close()
+        manifest = writer.write_manifest()
+
+        assert "sourceMonth" in manifest
+        assert manifest["sourceMonth"] is None
+
 
 class TestThreadSafety:
     def test_concurrent_writes_produce_correct_row_count(self, writer, output_dir):
