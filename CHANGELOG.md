@@ -2,6 +2,34 @@
 
 <!-- version list -->
 
+## v1.19.0 (2026-05-12)
+
+### Chores
+
+- **recipes**: Tighten empresa_detalhe release prep
+  ([`2b43d97`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/2b43d97986bf47f1c0918ed001cd58bf518e9235))
+
+### Code Style
+
+- **tests**: Apply ruff format to test_integration.py
+  ([`a15c7a9`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/a15c7a98d6ec429e4b269d7bd84a6b8a718f233d))
+
+### Documentation
+
+- Add data audit for normalization and recipes
+  ([`24b1d42`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/24b1d42e8988b708009cf77f76f1754257d0256c))
+
+### Features
+
+- **recipes**: Add empresa_detalhe for postgres
+  ([`110dedf`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/110dedf73e4b18b27585c11ea24d90b76241a371))
+
+### Testing
+
+- **recipes**: Integration tests for empresa_detalhe
+  ([`14c9e3b`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/14c9e3bd49c7d3dcf5e2eb1e773dffcf693058d5))
+
+
 ## v1.18.0 (2026-05-12)
 
 ### Chores
