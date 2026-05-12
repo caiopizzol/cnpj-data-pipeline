@@ -169,3 +169,142 @@ class TestFullPipeline:
             actual = _count_rows(test_db, table)
             assert actual > 0, f"{table} is empty after replace"
             assert actual <= expected, f"{table} has more rows ({actual}) than fixture ({expected})"
+
+
+class TestRecipeEmpresaDetalhe:
+    """Apply recipes/postgres/empresa_detalhe.sql against the fixture-loaded
+    database and verify the derived table has the expected shape.
+
+    Depends on test_db being populated by TestFullPipeline; pytest runs
+    classes in file order so the fixture state from earlier tests is
+    available here. We don't reload fixtures - the database fixture is
+    module-scoped and TestFullPipeline.test_load_all_fixtures already
+    populated it.
+    """
+
+    RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "empresa_detalhe.sql"
+
+    def test_recipe_executes(self, test_db):
+        """The recipe SQL should parse and execute without errors."""
+        sql = self.RECIPE_PATH.read_text()
+        with test_db.conn.cursor() as cur:
+            cur.execute(sql)
+        test_db.conn.commit()
+
+        # Table exists
+        with test_db.conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = 'empresa_detalhe'"
+            )
+            assert cur.fetchone() is not None, "empresa_detalhe table not created"
+
+    def test_row_count_matches_empresa_estabelecimento_join(self, test_db):
+        """The recipe INNER-JOINs empresas with estabelecimentos and then
+        LEFT-JOINs reference tables + dados_simples. So the output row count
+        must equal the cardinality of empresas JOIN estabelecimentos USING
+        (cnpj_basico) - no rows lost to the LEFT JOINs, no rows gained.
+
+        In real prod data this is also = COUNT(*) FROM estabelecimentos
+        because every estabelecimento has a parent empresa. The test
+        fixtures sample independently so overlap is partial, which is why
+        we assert against the JOIN cardinality, not the raw count."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) FROM empresas e
+                JOIN estabelecimentos s USING (cnpj_basico)
+            """)
+            expected = cur.fetchone()[0]
+        ed = _count_rows(test_db, "empresa_detalhe")
+        assert ed > 0, "empresa_detalhe is empty"
+        assert ed == expected, (
+            f"empresa_detalhe ({ed}) != empresas⋈estabelecimentos ({expected}) - "
+            f"LEFT JOINs on reference tables or dados_simples must be preserving "
+            f"all rows from the base inner join"
+        )
+
+    def test_cnpj_column_is_concatenation(self, test_db):
+        """cnpj column = cnpj_basico || cnpj_ordem || cnpj_dv."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT cnpj, cnpj_basico, cnpj_ordem, cnpj_dv
+                FROM empresa_detalhe
+                LIMIT 10
+            """)
+            for cnpj, basico, ordem, dv in cur.fetchall():
+                assert cnpj == basico + ordem + dv, f"{cnpj} != {basico}+{ordem}+{dv}"
+                assert len(cnpj) == 14, f"cnpj wrong length: {cnpj}"
+
+    def test_reference_descriptions_joined(self, test_db):
+        """When a code has a matching reference-table row, the description
+        column should be populated."""
+        with test_db.conn.cursor() as cur:
+            # At least some rows should have all reference descriptions
+            cur.execute("""
+                SELECT COUNT(*) FROM empresa_detalhe
+                WHERE cnae_fiscal_principal_descricao IS NOT NULL
+                  AND municipio_nome IS NOT NULL
+                  AND natureza_juridica_descricao IS NOT NULL
+            """)
+            count = cur.fetchone()[0]
+            assert count > 0, "No rows have all reference descriptions joined"
+
+    def test_dados_simples_columns_present(self, test_db):
+        """dados_simples LEFT JOIN should expose raw columns. Some rows may
+        have NULL Simples (no record), but the columns must exist."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'empresa_detalhe'
+                  AND column_name IN (
+                    'opcao_pelo_simples', 'data_opcao_pelo_simples',
+                    'data_exclusao_do_simples', 'opcao_pelo_mei',
+                    'data_opcao_pelo_mei', 'data_exclusao_do_mei'
+                  )
+            """)
+            cols = {row[0] for row in cur.fetchall()}
+            assert cols == {
+                "opcao_pelo_simples",
+                "data_opcao_pelo_simples",
+                "data_exclusao_do_simples",
+                "opcao_pelo_mei",
+                "data_opcao_pelo_mei",
+                "data_exclusao_do_mei",
+            }, f"Missing dados_simples columns: {cols}"
+
+    def test_no_derived_columns_leaked(self, test_db):
+        """The recipe should NOT add opinionated columns like is_ativa,
+        is_matriz, or label-substituted enums (situacao_cadastral stays
+        as the source code, not 'Ativa'). Sanity check against scope creep."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'empresa_detalhe'
+            """)
+            cols = {row[0] for row in cur.fetchall()}
+            forbidden = {
+                "is_ativa",
+                "is_matriz",
+                "is_optante_simples",
+                "is_mei",
+                "situacao_cadastral_descricao",
+                "porte_descricao",
+                "cnpj_formatado",
+                "endereco_completo",
+            }
+            leaked = cols & forbidden
+            assert not leaked, f"Recipe leaked opinionated columns: {leaked}"
+
+    def test_idempotent(self, test_db):
+        """Re-running the recipe should drop+recreate without error and
+        produce the same row count."""
+        sql = self.RECIPE_PATH.read_text()
+        count_before = _count_rows(test_db, "empresa_detalhe")
+
+        with test_db.conn.cursor() as cur:
+            cur.execute(sql)
+        test_db.conn.commit()
+
+        count_after = _count_rows(test_db, "empresa_detalhe")
+        assert count_before == count_after, (
+            f"Re-running recipe changed row count: {count_before} -> {count_after}"
+        )
