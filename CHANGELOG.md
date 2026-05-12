@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.26.0 (2026-05-12)
+
+### Features
+
+- **recipes**: Add socios_clean.sql (recipeVersion 1)
+  ([`f5133f2`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/f5133f2e0f8edc2406016799225e69d03881f0a9))
+
+
 ## v1.25.0 (2026-05-12)
 
 ### Documentation
