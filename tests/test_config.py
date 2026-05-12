@@ -28,6 +28,7 @@ class TestFromEnv:
         assert cfg.loading_strategy == "upsert"
         assert cfg.output_format == "postgres"
         assert cfg.parquet_output_dir == "./parquet"
+        assert cfg.parquet_typed_output is False
         assert cfg.post_file_command == ""
 
     def test_env_vars_override_defaults(self):
@@ -87,6 +88,20 @@ class TestFromEnv:
 
         assert cfg.loading_strategy == "replace"
         assert cfg.output_format == "parquet"
+
+    def test_parquet_typed_output_boolean_parsing(self):
+        """PARQUET_TYPED_OUTPUT should parse 'true' case-insensitively."""
+        with patch.dict("os.environ", {"PARQUET_TYPED_OUTPUT": "true"}, clear=True):
+            assert Config.from_env().parquet_typed_output is True
+
+        with patch.dict("os.environ", {"PARQUET_TYPED_OUTPUT": "TRUE"}, clear=True):
+            assert Config.from_env().parquet_typed_output is True
+
+        with patch.dict("os.environ", {"PARQUET_TYPED_OUTPUT": "false"}, clear=True):
+            assert Config.from_env().parquet_typed_output is False
+
+        with patch.dict("os.environ", {"PARQUET_TYPED_OUTPUT": "yes"}, clear=True):
+            assert Config.from_env().parquet_typed_output is False  # only "true" is truthy
 
     def test_base_url_and_share_token_override(self):
         """BASE_URL and SHARE_TOKEN should be overridable via env."""

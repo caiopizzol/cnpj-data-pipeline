@@ -8,11 +8,11 @@ Esta página define a política do projeto sobre o que entra no pipeline e o que
 
 2. **Normalização no núcleo só corrige representação e paridade.** Conversão de encoding (ISO-8859-1 → UTF-8), `0`/`00000000` → null em datas, vírgula decimal em `capital_social`, validação de UF, validação de datas impossíveis, padding de código de país. Tudo isso já acontece em `processor.py` e existe para que os arquivos sejam carregáveis em formatos previsíveis (PostgreSQL com tipos, Parquet com tipos quando `PARQUET_TYPED_OUTPUT=true`).
 
-3. **Tabelas derivadas vivem como receitas SQL.** Denormalizações como `empresa_detalhe` (joins de empresas + estabelecimentos + cnaes + municípios), tabelas de lookup para busca por prefixo, agregações por UF/CNAE — nada disso está no pipeline. Elas são entregues como arquivos SQL em `recipes/` que o usuário aplica manualmente.
+3. **Tabelas derivadas vivem como receitas SQL.** Denormalizações como `empresa_detalhe` (joins de empresas + estabelecimentos + cnaes + municípios), tabelas de lookup para busca por prefixo, agregações por UF/CNAE — nada disso está no pipeline. Quando adicionadas ao projeto, elas devem ser arquivos SQL em `recipes/` que o usuário aplica manualmente.
 
 4. **Receitas são opcionais, inspecionáveis e forkáveis.** O usuário abre o `.sql`, lê o que ele faz, copia/modifica/ignora. Não há código Python escondido executando a derivação. Não há tabelas que aparecem sem você pedir.
 
-5. **Se um runner de pós-processamento for adicionado no futuro, ele executa as receitas — não reimplementa a lógica em Python.** Os arquivos SQL continuam sendo a fonte da verdade. O runner é só conveniência (`cnpj-pipeline postprocess --recipe empresa_detalhe`).
+5. **Se um runner de pós-processamento for adicionado no futuro, ele executa as receitas — não reimplementa a lógica em Python.** Os arquivos SQL continuam sendo a fonte da verdade. O runner é só conveniência, e a forma da CLI deve ser decidida quando essa camada existir.
 
 ## Por que essa separação
 
