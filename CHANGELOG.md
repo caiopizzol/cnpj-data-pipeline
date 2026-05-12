@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v1.19.2 (2026-05-12)
+
+### Bug Fixes
+
+- **database**: Handle cross-batch PK overlap under LOADING_STRATEGY=replace
+  ([`307e08a`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/307e08a0a8eb5a1983132f59454e6942a09ad174))
+
+- **processor**: Detect column-count drift before mapping fields
+  ([`d732645`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/d7326450d611bbe9e45b0ab7111aa85492e91de2))
+
+### Code Style
+
+- **tests**: Apply ruff format to test_integration.py
+  ([`d1b72d1`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/d1b72d1edc4732c9163a503b1b4ef42b850194c2))
+
+### Documentation
+
+- Add one-line project principle to post-processing.md
+  ([`49d0cb2`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/49d0cb2a80cdb29207ebeeaffecb14ee73841a72))
+
+- Align documentation tone with brand
+  ([`0eade83`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0eade8335533d74aadaacde8f00afdc801c9d5d1))
+
+- Replace internal infra reference in data audit notes
+  ([`49850cd`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/49850cd66b0cb90815f4ae0870425dca24164696))
+
+
 ## v1.19.1 (2026-05-12)
 
 ### Bug Fixes
