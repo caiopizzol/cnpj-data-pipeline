@@ -21,14 +21,15 @@ counts (e.g. before a release or as a CI gate).
 Currently measured:
 - CNPJ check-digit validity (DV computed from the standard RFB
   modulus-11 weighted-sum algorithm vs the stored cnpj_dv).
+- Orphan FK counts against the reference tables (cnae, municipio,
+  motivo, pais, natureza_juridica).
+- EX (Exterior) UF count in estabelecimentos.
+- Sentinel-like value counts: capital_social = 999999999999,
+  representante_legal = '***000000**'.
+- CEP format validity (null, malformed, '00000000' sentinel).
 
 Planned (separate commits, one measurement at a time):
 - Phone format validity (numeric-only, valid DDD codes, length).
-- CEP format validity (8 digits, not the "00000000" sentinel).
-- Orphan FK counts (estabelecimentos.cnae_fiscal_principal ∉ cnaes etc).
-- Sentinel value counts: capital_social = 999999999999,
-  representante_legal = '***000000**'.
-- EX (Exterior) UF count, broken out from real Brazilian UFs.
 - Same-day Simples/MEI opt-in/opt-out anomaly count.
 - Null coverage by important field.
 """
@@ -125,6 +126,138 @@ def measure_cnpj_check_digits(conn, sample_pct: Optional[float] = None) -> dict:
     }
 
 
+_ORPHAN_FK_CHECKS = [
+    {
+        "label": "estabelecimentos.cnae_fiscal_principal ∉ cnaes",
+        "table": "estabelecimentos",
+        "column": "cnae_fiscal_principal",
+        "ref_table": "cnaes",
+        "ref_column": "codigo",
+    },
+    {
+        "label": "estabelecimentos.municipio ∉ municipios",
+        "table": "estabelecimentos",
+        "column": "municipio",
+        "ref_table": "municipios",
+        "ref_column": "codigo",
+    },
+    {
+        "label": "estabelecimentos.motivo_situacao_cadastral ∉ motivos",
+        "table": "estabelecimentos",
+        "column": "motivo_situacao_cadastral",
+        "ref_table": "motivos",
+        "ref_column": "codigo",
+    },
+    {
+        "label": "estabelecimentos.pais ∉ paises",
+        "table": "estabelecimentos",
+        "column": "pais",
+        "ref_table": "paises",
+        "ref_column": "codigo",
+    },
+    {
+        "label": "empresas.natureza_juridica ∉ naturezas_juridicas",
+        "table": "empresas",
+        "column": "natureza_juridica",
+        "ref_table": "naturezas_juridicas",
+        "ref_column": "codigo",
+    },
+]
+
+
+def measure_orphan_fks(conn) -> list[dict]:
+    """For each lookup relationship, count rows whose FK value has no
+    match in the reference table. NULLs are excluded - they're absence,
+    not orphans."""
+    results = []
+    with conn.cursor() as cur:
+        for check in _ORPHAN_FK_CHECKS:
+            query = f"""
+                SELECT COUNT(*)
+                FROM {check["table"]} t
+                WHERE t.{check["column"]} IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM {check["ref_table"]} r
+                      WHERE r.{check["ref_column"]} = t.{check["column"]}
+                  )
+            """
+            cur.execute(query)
+            count = cur.fetchone()[0]
+            results.append({"label": check["label"], "orphans": count})
+    return results
+
+
+def measure_exterior_uf(conn) -> dict:
+    """Count estabelecimentos with uf='EX' (Exterior). These are valid
+    rows representing addresses outside Brazil, broken out so they don't
+    look like dirty UFs."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM estabelecimentos WHERE uf = 'EX'")
+        ex = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM estabelecimentos")
+        total = cur.fetchone()[0]
+    return {"total": total, "exterior": ex}
+
+
+def measure_capital_sentinel(conn) -> dict:
+    """Count rows with the suspicious high-water capital_social value
+    999999999999. Downstream consumers often want to inspect, mask, or
+    exclude this value before ranking companies by capital."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM empresas")
+        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM empresas WHERE capital_social = 999999999999")
+        sentinel = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM empresas WHERE capital_social IS NULL")
+        nulls = cur.fetchone()[0]
+    return {"total": total, "sentinel": sentinel, "nulls": nulls}
+
+
+def measure_representante_sentinel(conn) -> dict:
+    """Count rows with representante_legal='***000000**' and
+    qualificacao_do_representante_legal='00'. This pattern commonly
+    behaves like "no representative" in the source data."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM socios")
+        total = cur.fetchone()[0]
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM socios
+            WHERE representante_legal = '***000000**'
+              AND qualificacao_do_representante_legal = '00'
+            """
+        )
+        sentinel = cur.fetchone()[0]
+    return {"total": total, "sentinel": sentinel}
+
+
+def measure_cep_validity(conn) -> dict:
+    """CEP should be 8 digits. RFB sometimes carries NULL or the
+    '00000000' sentinel; malformed (non-8-digit) values usually mean
+    upstream corruption."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM estabelecimentos")
+        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM estabelecimentos WHERE cep IS NULL")
+        nulls = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM estabelecimentos WHERE cep = '00000000'")
+        zero_sentinel = cur.fetchone()[0]
+        cur.execute(r"SELECT COUNT(*) FROM estabelecimentos WHERE cep IS NOT NULL AND cep !~ '^\d{8}$'")
+        malformed = cur.fetchone()[0]
+    return {
+        "total": total,
+        "nulls": nulls,
+        "zero_sentinel": zero_sentinel,
+        "malformed": malformed,
+    }
+
+
+def _pct(numerator: int, denominator: int) -> str:
+    if denominator == 0:
+        return "n/a"
+    return f"{numerator / denominator * 100:.4f}%"
+
+
 def format_report(measurements: dict, scope: dict) -> str:
     """Render the markdown report from a dict of measurement results."""
     lines = []
@@ -145,8 +278,8 @@ def format_report(measurements: dict, scope: dict) -> str:
     lines.append("|---|---:|---:|")
     lines.append(f"| Total rows scanned | {total:,} | 100% |")
     if total > 0:
-        lines.append(f"| Valid check digits | {cnpj['valid']:,} | {cnpj['valid'] / total * 100:.4f}% |")
-        lines.append(f"| Invalid check digits | {cnpj['invalid']:,} | {cnpj['invalid'] / total * 100:.4f}% |")
+        lines.append(f"| Valid check digits | {cnpj['valid']:,} | {_pct(cnpj['valid'], total)} |")
+        lines.append(f"| Invalid check digits | {cnpj['invalid']:,} | {_pct(cnpj['invalid'], total)} |")
     if cnpj["examples"]:
         lines.append("")
         lines.append("### First invalid examples")
@@ -155,6 +288,64 @@ def format_report(measurements: dict, scope: dict) -> str:
         lines.append("|---|---|---|---|")
         for ex in cnpj["examples"]:
             lines.append(f"| `{ex['basico']}` | `{ex['ordem']}` | `{ex['stored']}` | `{ex['expected']}` |")
+    lines.append("")
+
+    # --- Orphan FKs ---
+    lines.append("## Orphan foreign-key references")
+    lines.append("")
+    lines.append(
+        "Rows whose lookup code has no match in the reference table. "
+        "NULLs excluded. Treat these as signals to inspect; historical "
+        "or retired codes may still be legitimate source data."
+    )
+    lines.append("")
+    lines.append("| Relationship | Orphan count |")
+    lines.append("|---|---:|")
+    for row in measurements["orphan_fks"]:
+        lines.append(f"| {row['label']} | {row['orphans']:,} |")
+    lines.append("")
+
+    # --- Exterior UF ---
+    ex = measurements["exterior_uf"]
+    lines.append("## Exterior (uf='EX') estabelecimentos")
+    lines.append("")
+    lines.append("| Metric | Count | % |")
+    lines.append("|---|---:|---:|")
+    lines.append(f"| Total estabelecimentos | {ex['total']:,} | 100% |")
+    lines.append(f"| With uf='EX' | {ex['exterior']:,} | {_pct(ex['exterior'], ex['total'])} |")
+    lines.append("")
+
+    # --- Capital sentinel ---
+    cap = measurements["capital_sentinel"]
+    lines.append("## capital_social sentinel (999999999999)")
+    lines.append("")
+    lines.append("| Metric | Count | % |")
+    lines.append("|---|---:|---:|")
+    lines.append(f"| Total empresas | {cap['total']:,} | 100% |")
+    lines.append(f"| capital_social = 999999999999 | {cap['sentinel']:,} | {_pct(cap['sentinel'], cap['total'])} |")
+    lines.append(f"| capital_social IS NULL | {cap['nulls']:,} | {_pct(cap['nulls'], cap['total'])} |")
+    lines.append("")
+
+    # --- Representante sentinel ---
+    rep = measurements["representante_sentinel"]
+    lines.append("## representante_legal sentinel ('***000000**' + qualificacao '00')")
+    lines.append("")
+    lines.append("| Metric | Count | % |")
+    lines.append("|---|---:|---:|")
+    lines.append(f"| Total socios | {rep['total']:,} | 100% |")
+    lines.append(f"| Sentinel rows | {rep['sentinel']:,} | {_pct(rep['sentinel'], rep['total'])} |")
+    lines.append("")
+
+    # --- CEP validity ---
+    cep = measurements["cep_validity"]
+    lines.append("## CEP validity")
+    lines.append("")
+    lines.append("| Metric | Count | % |")
+    lines.append("|---|---:|---:|")
+    lines.append(f"| Total estabelecimentos | {cep['total']:,} | 100% |")
+    lines.append(f"| cep IS NULL | {cep['nulls']:,} | {_pct(cep['nulls'], cep['total'])} |")
+    lines.append(f"| cep = '00000000' | {cep['zero_sentinel']:,} | {_pct(cep['zero_sentinel'], cep['total'])} |")
+    lines.append(f"| cep malformed (not 8 digits) | {cep['malformed']:,} | {_pct(cep['malformed'], cep['total'])} |")
 
     return "\n".join(lines) + "\n"
 
@@ -200,8 +391,30 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("Measuring CNPJ check digits...", file=sys.stderr)
         cnpj_results = measure_cnpj_check_digits(conn, sample_pct=sample)
 
+        print("Measuring orphan FK references...", file=sys.stderr)
+        orphan_fk_results = measure_orphan_fks(conn)
+
+        print("Measuring Exterior UF count...", file=sys.stderr)
+        exterior_uf_results = measure_exterior_uf(conn)
+
+        print("Measuring capital_social sentinel...", file=sys.stderr)
+        capital_results = measure_capital_sentinel(conn)
+
+        print("Measuring representante_legal sentinel...", file=sys.stderr)
+        representante_results = measure_representante_sentinel(conn)
+
+        print("Measuring CEP validity...", file=sys.stderr)
+        cep_results = measure_cep_validity(conn)
+
     report = format_report(
-        {"cnpj_check_digits": cnpj_results},
+        {
+            "cnpj_check_digits": cnpj_results,
+            "orphan_fks": orphan_fk_results,
+            "exterior_uf": exterior_uf_results,
+            "capital_sentinel": capital_results,
+            "representante_sentinel": representante_results,
+            "cep_validity": cep_results,
+        },
         scope={"scope_str": scope_str},
     )
     print(report)
