@@ -14,6 +14,7 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 | `cnae_secundaria_exploded` | [`postgres/cnae_secundaria_exploded.sql`](postgres/cnae_secundaria_exploded.sql) | Transforma `cnae_fiscal_secundaria` em uma tabela lateral: uma linha por CNAE secundário. |
 | `socios_quality_flags` | [`postgres/socios_quality_flags.sql`](postgres/socios_quality_flags.sql) | Mede sinais de qualidade por sócio, incluindo representante legal com valor de preenchimento e referências ausentes. |
 | `socios_clean` | [`postgres/socios_clean.sql`](postgres/socios_clean.sql) | Usa `socios_quality_flags` para emitir pares cru/limpo do trio do representante e de `faixa_etaria`. |
+| `empresas_busca_nome` | [`postgres/empresas_busca_nome.sql`](postgres/empresas_busca_nome.sql) | Tabela de serviço para busca por `razao_social` em matrizes ativas. Inclui descrições de município e CNAE e índices compostos para LIKE prefixo combinado com filtros de UF, município ou CNAE. |
 
 ## Como aplicar
 
@@ -33,6 +34,9 @@ psql "$DATABASE_URL" -f recipes/postgres/cnae_secundaria_exploded.sql
 # Sinais de qualidade e camada limpa por sócio
 psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql
 psql "$DATABASE_URL" -f recipes/postgres/socios_clean.sql
+
+# Tabela de serviço para busca por nome em matrizes ativas
+psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome.sql
 ```
 
 Rode novamente após cada carga mensal para atualizar. Quando uma receita depende de outra, isso aparece no cabeçalho do SQL.
