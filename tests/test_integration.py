@@ -1002,3 +1002,140 @@ class TestRecipeSociosClean:
 
         count_after = _count_rows(test_db, "socios_clean")
         assert count_before == count_after, f"Re-running recipe changed row count: {count_before} -> {count_after}"
+
+
+class TestRecipeEmpresasBuscaNome:
+    """Apply recipes/postgres/empresas_busca_nome.sql against the fixture-loaded
+    database and verify the search-serving table has the expected shape.
+
+    Depends on test_db being populated by TestFullPipeline; pytest runs
+    classes in file order so the fixture state from earlier tests is
+    available here.
+    """
+
+    RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "empresas_busca_nome.sql"
+
+    def test_recipe_executes(self, test_db):
+        """The recipe SQL should parse and execute without errors."""
+        sql = self.RECIPE_PATH.read_text()
+        with test_db.conn.cursor() as cur:
+            cur.execute(sql)
+        test_db.conn.commit()
+
+        with test_db.conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'empresas_busca_nome'")
+            assert cur.fetchone() is not None, "empresas_busca_nome table not created"
+
+    def test_row_count_matches_active_matriz_join(self, test_db):
+        """Row count must equal empresas JOIN estabelecimentos USING (cnpj_basico)
+        filtered to active matriz. LEFT JOINs on cnaes and municipios must
+        not add or drop rows."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) FROM empresas e
+                JOIN estabelecimentos est USING (cnpj_basico)
+                WHERE est.situacao_cadastral = '02'
+                  AND est.identificador_matriz_filial = 1
+            """)
+            expected = cur.fetchone()[0]
+
+        actual = _count_rows(test_db, "empresas_busca_nome")
+        assert actual > 0, "empresas_busca_nome is empty - fixture has no active-matriz overlap"
+        assert actual == expected, (
+            f"empresas_busca_nome ({actual}) != active-matriz join ({expected}) - "
+            "reference LEFT JOINs on cnaes/municipios must preserve all rows"
+        )
+
+    def test_only_active_matriz_rows(self, test_db):
+        """Every row must satisfy the filter predicate. Guards against the
+        WHERE clause being weakened or against the type comparison drifting
+        (identificador_matriz_filial is INTEGER, situacao_cadastral is text)."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) FROM empresas_busca_nome
+                WHERE situacao_cadastral <> '02'
+                   OR identificador_matriz_filial <> 1
+            """)
+            violations = cur.fetchone()[0]
+        assert violations == 0, f"{violations} rows violate the active-matriz predicate"
+
+    def test_cnpj_column_is_concatenation(self, test_db):
+        """cnpj column = cnpj_basico || cnpj_ordem || cnpj_dv, same convention
+        as empresa_detalhe."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT cnpj, cnpj_basico, cnpj_ordem, cnpj_dv
+                FROM empresas_busca_nome
+                LIMIT 10
+            """)
+            rows = cur.fetchall()
+            assert rows, "no rows to verify cnpj concatenation"
+            for cnpj, basico, ordem, dv in rows:
+                assert cnpj == basico + ordem + dv, f"{cnpj} != {basico}+{ordem}+{dv}"
+                assert len(cnpj) == 14, f"cnpj wrong length: {cnpj}"
+
+    def test_reference_descriptions_joined(self, test_db):
+        """When estabelecimento codes have matching reference rows the
+        denormalized description columns should be populated."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) FROM empresas_busca_nome
+                WHERE cnae_descricao IS NOT NULL
+                  AND municipio_nome IS NOT NULL
+            """)
+            count = cur.fetchone()[0]
+            assert count > 0, "no rows have both cnae_descricao and municipio_nome joined"
+
+    def test_expected_indexes_exist(self, test_db):
+        """The composite indexes that justify the recipe must all be present.
+        If one is dropped or renamed, the recipe no longer provides the
+        documented access path."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT indexname FROM pg_indexes
+                WHERE tablename = 'empresas_busca_nome'
+            """)
+            indexes = {row[0] for row in cur.fetchall()}
+
+        expected = {
+            "pk_empresas_busca_nome",
+            "idx_empresas_busca_nome_cnpj",
+            "idx_empresas_busca_nome_razao_prefix",
+            "idx_empresas_busca_nome_uf_razao",
+            "idx_empresas_busca_nome_uf_municipio_razao",
+            "idx_empresas_busca_nome_uf_cnae_razao",
+        }
+        missing = expected - indexes
+        assert not missing, f"missing expected indexes: {missing}"
+
+    def test_no_derived_columns_leaked(self, test_db):
+        """The recipe filters rows but does not synthesize labels or
+        booleans. Source codes stay; no is_ativa, no situacao_cadastral_descricao."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'empresas_busca_nome'
+            """)
+            cols = {row[0] for row in cur.fetchall()}
+
+        forbidden = {
+            "is_ativa",
+            "is_matriz",
+            "situacao_cadastral_descricao",
+            "identificador_matriz_filial_descricao",
+        }
+        leaked = cols & forbidden
+        assert not leaked, f"recipe leaked opinionated columns: {leaked}"
+
+    def test_idempotent(self, test_db):
+        """Re-running the recipe should drop+recreate without error and
+        produce the same row count."""
+        sql = self.RECIPE_PATH.read_text()
+        count_before = _count_rows(test_db, "empresas_busca_nome")
+
+        with test_db.conn.cursor() as cur:
+            cur.execute(sql)
+        test_db.conn.commit()
+
+        count_after = _count_rows(test_db, "empresas_busca_nome")
+        assert count_before == count_after, f"re-running recipe changed row count: {count_before} -> {count_after}"
