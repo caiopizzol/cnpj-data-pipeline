@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v1.27.0 (2026-05-23)
+
+### Chores
+
+- **hooks**: Add ruff format --check parity step to lefthook
+  ([`45ff890`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/45ff89098f63a61b3faf5340af1cf02c18d85879))
+
+### Features
+
+- **recipes**: Add empresas_busca_nome.sql (recipeVersion 1)
+  ([#76](https://github.com/caiopizzol/cnpj-data-pipeline/pull/76),
+  [`21f9ee5`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/21f9ee54bfc925ea5118065748c80ece60bc12fd))
+
+
 ## v1.26.0 (2026-05-12)
 
 ### Features
