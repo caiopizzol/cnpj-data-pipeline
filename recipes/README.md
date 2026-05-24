@@ -15,6 +15,7 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 | `socios_quality_flags` | [`postgres/socios_quality_flags.sql`](postgres/socios_quality_flags.sql) | Mede sinais de qualidade por sócio, incluindo representante legal com valor de preenchimento e referências ausentes. |
 | `socios_clean` | [`postgres/socios_clean.sql`](postgres/socios_clean.sql) | Usa `socios_quality_flags` para emitir pares cru/limpo do trio do representante e de `faixa_etaria`. |
 | `empresas_busca_nome` | [`postgres/empresas_busca_nome.sql`](postgres/empresas_busca_nome.sql) | Tabela de serviço para busca por `razao_social` em matrizes ativas. Inclui descrições de município e CNAE e índices compostos para LIKE prefixo combinado com filtros de UF, município ou CNAE. |
+| `empresas_busca_nome_counts` | [`postgres/empresas_busca_nome_counts.sql`](postgres/empresas_busca_nome_counts.sql) | Rollups de contagem para `empresas_busca_nome` por UF, UF + município (descrição e código) e UF + CNAE. Cada lookup é O(1) via índice único parcial; serve totais exatos sem varrer milhões de linhas a cada request. |
 
 ## Como aplicar
 
@@ -37,6 +38,9 @@ psql "$DATABASE_URL" -f recipes/postgres/socios_clean.sql
 
 # Tabela de serviço para busca por nome em matrizes ativas
 psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome.sql
+
+# Rollups de contagem para empresas_busca_nome
+psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome_counts.sql
 ```
 
 Rode novamente após cada carga mensal para atualizar. Quando uma receita depende de outra, isso aparece no cabeçalho do SQL.
