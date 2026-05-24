@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.28.0 (2026-05-24)
+
+### Features
+
+- **recipes**: Add empresas_busca_nome_counts.sql (recipeVersion 1)
+  ([#77](https://github.com/caiopizzol/cnpj-data-pipeline/pull/77),
+  [`6ce72c8`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/6ce72c83a87ddbcccf26f6ca014a6103a75bf6f8))
+
+
 ## v1.27.0 (2026-05-23)
 
 ### Chores
