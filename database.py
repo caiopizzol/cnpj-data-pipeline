@@ -6,7 +6,6 @@ import os
 import time
 from pathlib import Path
 from typing import List, Set
-from urllib.parse import urlparse
 
 import polars as pl
 import psycopg2
@@ -27,26 +26,19 @@ class Database:
         self._truncated_tables: set = set(pre_truncated) if pre_truncated else set()
         self.conn = None
 
-    def _parse_url(self) -> dict:
-        """Parse DATABASE_URL into connection parameters."""
-        parsed = urlparse(self.database_url)
-        return {
-            "host": parsed.hostname,
-            "port": parsed.port or 5432,
-            "database": parsed.path[1:],
-            "user": parsed.username,
-            "password": parsed.password,
-        }
-
     def connect(self):
-        """Establish database connection with retry."""
+        """Establish database connection with retry.
+
+        Passes DATABASE_URL through to libpq verbatim so query-string
+        parameters (sslmode, options, application_name, connect_timeout,
+        multi-host URIs, etc.) reach the driver.
+        """
         if self.conn is not None:
             return
 
-        params = self._parse_url()
         for attempt in range(self.retry_attempts):
             try:
-                self.conn = psycopg2.connect(**params)
+                self.conn = psycopg2.connect(self.database_url)
                 self.conn.autocommit = False
                 return
             except psycopg2.OperationalError:
