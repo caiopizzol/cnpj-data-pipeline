@@ -114,6 +114,25 @@ PARQUET_TYPED_OUTPUT=false  # Quando true, datas e numéricos saem tipados (Date
 PROCESS_WORKERS=1        # Arquivos do mesmo grupo em paralelo (ex: 4)
 ```
 
+### `DATABASE_URL`: parâmetros libpq
+
+O `DATABASE_URL` é repassado direto ao driver, então qualquer parâmetro suportado pelo libpq funciona via query string. Útil para Postgres gerenciado (Railway, RDS, Supabase, Neon) e para isolar o pipeline em um schema próprio.
+
+Sempre coloque o valor entre aspas no shell: o `&` da query string é metacaractere e, sem aspas, faz o bash colocar o comando em background.
+
+```bash
+# SSL obrigatório
+DATABASE_URL='postgres://user:pass@host:5432/cnpj?sslmode=require'
+
+# Pipeline em schema separado
+DATABASE_URL='postgres://user:pass@host:5432/cnpj?options=-c%20search_path%3Dcnpj'
+
+# Combinado
+DATABASE_URL='postgres://user:pass@host:5432/cnpj?sslmode=require&options=-c%20search_path%3Dcnpj'
+```
+
+Sobre `search_path`: o schema precisa existir antes (`CREATE SCHEMA cnpj;`), o libpq não cria. Se você incluir `public` como fallback (`search_path=cnpj,public`) e o `public` já tiver tabelas do pipeline de uma execução anterior, o bootstrap (`ensure_schema`) detecta as tabelas no `public` e não cria nada no `cnpj`. Para isolamento estrito, deixe só `cnpj` no `search_path`, ou use um banco novo.
+
 ### Estratégia de carga (PostgreSQL)
 
 | Estratégia | Comando | Quando usar |

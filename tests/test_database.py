@@ -22,23 +22,6 @@ def connected_db(db):
     return db
 
 
-class TestParseUrl:
-    """Test DATABASE_URL parsing."""
-
-    def test_parses_full_url(self, db):
-        params = db._parse_url()
-        assert params["host"] == "localhost"
-        assert params["port"] == 5432
-        assert params["database"] == "testdb"
-        assert params["user"] == "user"
-        assert params["password"] == "pass"
-
-    def test_default_port(self):
-        db = Database("postgresql://user:pass@localhost/testdb")
-        params = db._parse_url()
-        assert params["port"] == 5432
-
-
 class TestConnect:
     """Test connection with retry logic."""
 
@@ -51,6 +34,28 @@ class TestConnect:
 
         assert db.conn is mock_conn
         assert mock_conn.autocommit is False
+
+    @patch("database.psycopg2.connect")
+    def test_passes_dsn_verbatim(self, mock_connect, db):
+        """The full DATABASE_URL must reach libpq unchanged so query-string
+        params (sslmode, options, application_name, multi-host URIs) survive.
+        """
+        mock_connect.return_value = MagicMock()
+
+        db.connect()
+
+        mock_connect.assert_called_once_with("postgresql://user:pass@localhost:5432/testdb")
+
+    @patch("database.psycopg2.connect")
+    def test_preserves_query_string_params(self, mock_connect):
+        """sslmode and options must not be dropped on the way to psycopg2."""
+        url = "postgresql://u:p@h:5432/db?sslmode=require&options=-csearch_path%3Dcnpj"
+        db = Database(url)
+        mock_connect.return_value = MagicMock()
+
+        db.connect()
+
+        mock_connect.assert_called_once_with(url)
 
     @patch("database.psycopg2.connect")
     def test_noop_when_already_connected(self, mock_connect, db):
