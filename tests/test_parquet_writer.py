@@ -162,7 +162,7 @@ class TestWriteManifest:
         assert "pipelineVersion" in manifest
         assert manifest["pipelineVersion"]  # non-empty
         assert "schemaVersion" in manifest
-        assert manifest["schemaVersion"] == "1"
+        assert manifest["schemaVersion"] == "2"
 
     def test_manifest_records_source_month_when_provided(self, writer, sample_empresas, output_dir):
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])

@@ -1,10 +1,11 @@
 -- recipes/postgres/socios_quality_flags.sql
 --
--- recipeVersion: 1
+-- recipeVersion: 2
 --
 -- Narrow per-socio table of data-quality signals. One row per socio,
--- keyed the same way as the source table: cnpj_basico +
--- identificador_de_socio + cnpj_cpf_do_socio.
+-- keyed by socios.socio_id (UUID, deterministic). The old triple
+-- (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio) is kept
+-- alongside as lookup columns but is no longer unique (issue #78).
 --
 -- No source columns are changed or duplicated here. This recipe only
 -- materializes predicates that consumers can use later in their own clean
@@ -29,6 +30,7 @@
 DROP TABLE IF EXISTS socios_quality_flags;
 CREATE TABLE socios_quality_flags AS
 SELECT
+    s.socio_id,
     s.cnpj_basico,
     s.identificador_de_socio,
     s.cnpj_cpf_do_socio,
@@ -58,6 +60,8 @@ SELECT
     (s.faixa_etaria = '0') AS faixa_etaria_nao_se_aplica
 FROM socios s;
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_socios_quality_flags_socio_id
+    ON socios_quality_flags (socio_id);
 CREATE INDEX IF NOT EXISTS idx_socios_quality_flags_basico
     ON socios_quality_flags (cnpj_basico);
 CREATE INDEX IF NOT EXISTS idx_socios_quality_flags_pais_missing

@@ -36,7 +36,8 @@ COMPRESSION = "zstd"
 # Bumped when the output schema changes shape (column added/removed/retyped,
 # table renamed). Consumers can compare against this in manifest.json to
 # detect when they need to re-run their own post-processing/derivations.
-SCHEMA_VERSION = "1"
+# v2: socios gains socio_id (UUID), deterministic primary key (issue #78).
+SCHEMA_VERSION = "2"
 
 
 def _read_pipeline_version() -> str:

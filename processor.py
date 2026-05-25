@@ -1,9 +1,11 @@
 """CSV processing and transformation for CNPJ data files using Polars."""
 
 import csv
+import hashlib
 import logging
 import os
 import tempfile
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Generator, List, Optional, Tuple
@@ -99,6 +101,21 @@ COLUMNS = {
     ],
 }
 
+# Output column lists for tables whose target schema includes columns that
+# don't appear in the source CSV. Synthetic columns are emitted by _transform.
+# Other file types insert exactly COLUMNS[file_type].
+#
+# SOCIOCSV: socio_id is a deterministic UUID derived in _transform from the
+# canonical identity tuple. It is the primary key of socios; the masked CPF
+# alone is not unique (issue #78).
+OUTPUT_COLUMNS = {
+    "SOCIOCSV": ["socio_id"] + COLUMNS["SOCIOCSV"],
+}
+
+
+def _output_columns(file_type: str) -> List[str]:
+    return OUTPUT_COLUMNS.get(file_type, COLUMNS[file_type])
+
 
 def get_file_type(filename: str) -> Optional[str]:
     """Determine file type from filename."""
@@ -187,7 +204,8 @@ def process_file(
         return
 
     table_name = FILE_MAPPINGS[file_type]
-    columns = COLUMNS[file_type]
+    input_columns = COLUMNS[file_type]
+    output_columns = _output_columns(file_type)
 
     # Convert encoding first (faster for Polars to read UTF-8)
     utf8_file = _convert_encoding(file_path)
@@ -203,7 +221,7 @@ def process_file(
                 utf8_file,
                 separator=";",
                 has_header=False,
-                new_columns=columns,
+                new_columns=input_columns,
                 encoding="utf8",
                 infer_schema_length=0,
                 null_values=[""],
@@ -222,7 +240,7 @@ def process_file(
                 df = _validate(df, file_type)
                 if typed:
                     df = _apply_typed_casts(df, file_type)
-                yield df, table_name, columns
+                yield df, table_name, output_columns
     finally:
         utf8_file.unlink(missing_ok=True)
 
@@ -265,11 +283,65 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
         needs_pad = pl.col("cep").str.contains(r"^\d{7}$")
         df = df.with_columns(pl.when(needs_pad).then(pl.col("cep").str.zfill(8)).otherwise(pl.col("cep")).alias("cep"))
 
-    # Socios: ensure cnpj_cpf_do_socio is not null (PK)
+    # Socios: backfill the masked CPF so the hash input is total. Foreign
+    # partners frequently arrive with blank CPF; without this they would all
+    # hash with cpf="" and collapse together.
     if file_type == "SOCIOCSV" and "cnpj_cpf_do_socio" in df.columns:
         df = df.with_columns(pl.col("cnpj_cpf_do_socio").fill_null("00000000000000"))
 
+    # Socios: deterministic UUID derived from the identity tuple. Lives as
+    # socios.socio_id (PK). nome_socio is normalized for hashing only; the
+    # raw column is left alone. Field separator is U+001F (unit separator)
+    # which does not appear in RFB text.
+    if file_type == "SOCIOCSV":
+        df = _add_socio_id(df)
+
     return df
+
+
+_SOCIO_ID_SEP = "\x1f"
+
+
+def _canonical_name_expr(col: str) -> pl.Expr:
+    return (
+        pl.col(col).fill_null("").str.normalize("NFC").str.replace_all(r"\s+", " ").str.strip_chars().str.to_lowercase()
+    )
+
+
+def _payload_to_uuid(payload: str) -> str:
+    digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16).digest()
+    return str(uuid.UUID(bytes=digest))
+
+
+_SOCIO_ID_INPUTS = (
+    "cnpj_basico",
+    "identificador_de_socio",
+    "cnpj_cpf_do_socio",
+    "nome_socio",
+    "data_entrada_sociedade",
+)
+
+
+def _add_socio_id(df: pl.DataFrame) -> pl.DataFrame:
+    # Partial frames in unit tests may omit identity columns; the full read
+    # path always provides them, so a missing column there is a bug surfaced
+    # elsewhere.
+    if not all(c in df.columns for c in _SOCIO_ID_INPUTS):
+        return df
+    payload = pl.concat_str(
+        [
+            pl.col("cnpj_basico").fill_null(""),
+            pl.col("identificador_de_socio").fill_null(""),
+            pl.col("cnpj_cpf_do_socio").fill_null(""),
+            _canonical_name_expr("nome_socio"),
+            pl.col("data_entrada_sociedade").cast(pl.Utf8).fill_null(""),
+        ],
+        separator=_SOCIO_ID_SEP,
+    )
+    df = df.with_columns(payload.map_elements(_payload_to_uuid, return_dtype=pl.Utf8).alias("socio_id"))
+    # OUTPUT_COLUMNS["SOCIOCSV"] puts socio_id first; align df so COPY's
+    # column list and the CSV stream agree on order.
+    return df.select(OUTPUT_COLUMNS["SOCIOCSV"])
 
 
 # Date columns by file type (shared between _transform and _validate)

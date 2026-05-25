@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS estabelecimentos (
 );
 
 CREATE TABLE IF NOT EXISTS socios (
+    socio_id UUID PRIMARY KEY,
     cnpj_basico VARCHAR(8) NOT NULL,
     identificador_de_socio VARCHAR(1) NOT NULL,
     nome_socio TEXT,
@@ -112,8 +113,7 @@ CREATE TABLE IF NOT EXISTS socios (
     qualificacao_do_representante_legal VARCHAR(2),
     faixa_etaria VARCHAR(1),
     data_criacao TIMESTAMP DEFAULT NOW() NOT NULL,
-    data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL,
-    PRIMARY KEY (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio)
+    data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS dados_simples (
@@ -148,3 +148,5 @@ CREATE INDEX IF NOT EXISTS idx_estabelecimentos_municipio ON estabelecimentos(mu
 CREATE INDEX IF NOT EXISTS idx_estabelecimentos_situacao ON estabelecimentos(situacao_cadastral);
 CREATE INDEX IF NOT EXISTS idx_estabelecimentos_cnae ON estabelecimentos(cnae_fiscal_principal);
 CREATE INDEX IF NOT EXISTS idx_socios_cnpj_basico ON socios(cnpj_basico);
+CREATE INDEX IF NOT EXISTS idx_socios_lookup
+    ON socios(cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio);

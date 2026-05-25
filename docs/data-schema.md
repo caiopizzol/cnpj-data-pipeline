@@ -96,10 +96,11 @@ erDiagram
 
 | Campo | Descrição |
 |-------|-----------|
+| socio_id | UUID determinístico, PK. Hash blake2b de (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio, nome canonicalizado, data_entrada_sociedade). Sintético: não vem da RFB. |
 | cnpj_basico | 8 primeiros dígitos |
 | identificador_de_socio | Tipo do sócio |
-| nome_socio | Nome (PF) ou Razão Social (PJ) |
-| cnpj_cpf_do_socio | CPF mascarado ou CNPJ |
+| nome_socio | Nome (PF) ou Razão Social (PJ). Cru, não normalizado. |
+| cnpj_cpf_do_socio | CPF mascarado ou CNPJ. Não é único dentro de uma empresa (vide #78); use `socio_id` como chave. |
 | qualificacao_do_socio | Código → qualificacoes_socios |
 | data_entrada_sociedade | Data de entrada |
 | pais | Código → paises (se estrangeiro) |
