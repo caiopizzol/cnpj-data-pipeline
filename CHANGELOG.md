@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.29.0 (2026-05-25)
+
+### Features
+
+- **database**: Pass DATABASE_URL DSN through to psycopg2 (#79)
+  ([#80](https://github.com/caiopizzol/cnpj-data-pipeline/pull/80),
+  [`f0cc085`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/f0cc08589c0fa45746b24ffd931ffab953bd7653))
+
+
 ## v1.28.0 (2026-05-24)
 
 ### Features
