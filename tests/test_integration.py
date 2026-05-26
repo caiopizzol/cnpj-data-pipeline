@@ -774,6 +774,7 @@ class TestRecipeSociosQualityFlags:
             cols = {row[0] for row in cur.fetchall()}
 
         assert cols == {
+            "socio_id",
             "cnpj_basico",
             "identificador_de_socio",
             "cnpj_cpf_do_socio",
@@ -791,7 +792,7 @@ class TestRecipeSociosQualityFlags:
             cur.execute("""
                 SELECT COUNT(*)
                 FROM socios_quality_flags f
-                JOIN socios s USING (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio)
+                JOIN socios s USING (socio_id)
                 WHERE f.representante_is_placeholder IS DISTINCT FROM (
                     s.representante_legal = '***000000**'
                     AND s.qualificacao_do_representante_legal = '00'
@@ -897,6 +898,7 @@ class TestRecipeSociosClean:
             cols = {row[0] for row in cur.fetchall()}
 
         assert cols == {
+            "socio_id",
             "cnpj_basico",
             "identificador_de_socio",
             "cnpj_cpf_do_socio",
@@ -921,7 +923,7 @@ class TestRecipeSociosClean:
             cur.execute("""
                 SELECT COUNT(*)
                 FROM socios_clean sc
-                JOIN socios_quality_flags f USING (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio)
+                JOIN socios_quality_flags f USING (socio_id)
                 WHERE sc.representante_is_placeholder IS DISTINCT FROM f.representante_is_placeholder
                    OR sc.pais_lookup_missing IS DISTINCT FROM f.pais_lookup_missing
                    OR sc.qualificacao_socio_lookup_missing IS DISTINCT FROM f.qualificacao_socio_lookup_missing
@@ -940,8 +942,8 @@ class TestRecipeSociosClean:
             cur.execute("""
                 SELECT COUNT(*)
                 FROM socios_clean sc
-                JOIN socios s USING (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio)
-                JOIN socios_quality_flags f USING (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio)
+                JOIN socios s USING (socio_id)
+                JOIN socios_quality_flags f USING (socio_id)
                 WHERE sc.representante_legal_raw IS DISTINCT FROM s.representante_legal
                    OR sc.nome_do_representante_raw IS DISTINCT FROM s.nome_do_representante
                    OR sc.qualificacao_do_representante_legal_raw IS DISTINCT FROM

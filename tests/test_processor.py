@@ -273,6 +273,108 @@ class TestTransform:
         assert result["cep"][6] is None
 
 
+class TestSocioId:
+    """socio_id is a deterministic UUID over the canonical identity tuple.
+
+    The masked CPF in cnpj_cpf_do_socio is not unique inside a company
+    (issue #78), so the table PK is socio_id, not the old triple.
+    """
+
+    @staticmethod
+    def _make_df(rows):
+        return pl.DataFrame(
+            {
+                "cnpj_basico": [r[0] for r in rows],
+                "identificador_de_socio": [r[1] for r in rows],
+                "nome_socio": [r[2] for r in rows],
+                "cnpj_cpf_do_socio": [r[3] for r in rows],
+                "qualificacao_do_socio": ["22"] * len(rows),
+                "data_entrada_sociedade": [r[4] for r in rows],
+                "pais": [None] * len(rows),
+                "representante_legal": [None] * len(rows),
+                "nome_do_representante": [None] * len(rows),
+                "qualificacao_do_representante_legal": [None] * len(rows),
+                "faixa_etaria": ["0"] * len(rows),
+            }
+        )
+
+    def test_old_triple_collision_yields_distinct_socio_ids(self):
+        """Two partners sharing the masked-CPF triple but with different names
+        must produce different socio_id. This is the 2026-05 case from #78."""
+        df = self._make_df(
+            [
+                ("01654767", "2", "ALICE SILVA", "***909016**", "20200101"),
+                ("01654767", "2", "BOB SOUZA", "***909016**", "20200101"),
+            ]
+        )
+
+        result = _transform(df, "SOCIOCSV")
+
+        assert result["socio_id"][0] != result["socio_id"][1]
+
+    def test_name_casing_and_whitespace_canonicalize(self):
+        """RFB cosmetic name jitter (case, double spaces) must not churn the key."""
+        df = self._make_df(
+            [
+                ("12345678", "2", "ALICE  SILVA", "***123456**", "20200101"),
+                ("12345678", "2", "alice silva", "***123456**", "20200101"),
+            ]
+        )
+
+        result = _transform(df, "SOCIOCSV")
+
+        assert result["socio_id"][0] == result["socio_id"][1]
+
+    def test_qualificacao_change_keeps_socio_id_stable(self):
+        """qualificacao_do_socio is an updateable attribute, not identity.
+        A partner whose qualification changes between months must upsert,
+        not create a ghost row."""
+        df = self._make_df(
+            [
+                ("12345678", "2", "ALICE SILVA", "***123456**", "20200101"),
+                ("12345678", "2", "ALICE SILVA", "***123456**", "20200101"),
+            ]
+        )
+        df = df.with_columns(pl.Series("qualificacao_do_socio", ["22", "49"]))
+
+        result = _transform(df, "SOCIOCSV")
+
+        assert result["socio_id"][0] == result["socio_id"][1]
+
+    def test_null_name_is_distinct_from_other_partners(self):
+        """A row with NULL nome_socio must get a valid socio_id and not
+        collide with a sibling partner under the same masked CPF."""
+        df = self._make_df(
+            [
+                ("12345678", "2", None, "***123456**", "20200101"),
+                ("12345678", "2", "ALICE SILVA", "***123456**", "20200101"),
+            ]
+        )
+
+        result = _transform(df, "SOCIOCSV")
+
+        assert result["socio_id"][0] is not None
+        assert result["socio_id"][0] != result["socio_id"][1]
+
+    def test_raw_nome_socio_unchanged(self):
+        """Canonicalization runs only against the hash input; the raw column
+        must not be mutated."""
+        df = self._make_df([("12345678", "2", "  ALICE   SILVA  ", "***123456**", "20200101")])
+
+        result = _transform(df, "SOCIOCSV")
+
+        assert result["nome_socio"][0] == "  ALICE   SILVA  "
+
+    def test_socio_id_is_uuid_string(self):
+        df = self._make_df([("12345678", "2", "ALICE SILVA", "***123456**", "20200101")])
+
+        result = _transform(df, "SOCIOCSV")
+
+        import uuid
+
+        uuid.UUID(result["socio_id"][0])  # raises if not a valid UUID string
+
+
 class TestValidate:
     """Test _validate function for format validation."""
 

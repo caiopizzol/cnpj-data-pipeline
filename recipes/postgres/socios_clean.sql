@@ -1,12 +1,13 @@
 -- recipes/postgres/socios_clean.sql
 --
--- recipeVersion: 1
--- depends on: recipes/postgres/socios_quality_flags.sql (recipeVersion 1)
+-- recipeVersion: 2
+-- depends on: recipes/postgres/socios_quality_flags.sql (recipeVersion 2)
 --
 -- Sócios-grain counterpart to estabelecimentos_clean. Narrow contract:
---   - one row per sócio (cnpj_basico + identificador_de_socio +
---     cnpj_cpf_do_socio)
---   - built from socios_quality_flags joined to socios
+--   - one row per sócio, keyed by socios.socio_id (UUID). The old triple
+--     (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio) is kept as
+--     lookup columns but is no longer unique (issue #78).
+--   - built from socios_quality_flags joined to socios on socio_id
 --   - preserves raw columns alongside clean columns
 --   - uses ONLY predicates from socios_quality_flags (single source of
 --     truth for "what counts as suspicious")
@@ -27,6 +28,7 @@
 DROP TABLE IF EXISTS socios_clean;
 CREATE TABLE socios_clean AS
 SELECT
+    f.socio_id,
     f.cnpj_basico,
     f.identificador_de_socio,
     f.cnpj_cpf_do_socio,
@@ -50,14 +52,13 @@ SELECT
     f.qualificacao_representante_lookup_missing,
     f.faixa_etaria_nao_se_aplica
 FROM socios_quality_flags f
-JOIN socios s
-    ON s.cnpj_basico = f.cnpj_basico
-   AND s.identificador_de_socio = f.identificador_de_socio
-   AND s.cnpj_cpf_do_socio = f.cnpj_cpf_do_socio;
+JOIN socios s ON s.socio_id = f.socio_id;
 
--- Composite index on the source key. Covers join-back and prefix
--- queries on cnpj_basico alone.
-CREATE INDEX IF NOT EXISTS idx_socios_clean_key
+CREATE UNIQUE INDEX IF NOT EXISTS idx_socios_clean_socio_id
+    ON socios_clean (socio_id);
+-- Composite index on the legacy lookup columns. Covers join-back and
+-- prefix queries on cnpj_basico alone. No longer unique.
+CREATE INDEX IF NOT EXISTS idx_socios_clean_lookup
     ON socios_clean (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio);
 
 ANALYZE socios_clean;
