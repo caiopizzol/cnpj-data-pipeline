@@ -189,23 +189,10 @@ EMPRESAS (1) ─── (N) ESTABELECIMENTOS
          └─── (1) DADOS_SIMPLES
 ```
 
-### Recarga necessária após o fix do #78
-
-A PK antiga de `socios` era `(cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio)`. Por design da Receita, `cnpj_cpf_do_socio` para pessoa física é o CPF descaracterizado (`***NNNNNN**`): os 3 primeiros e os 2 últimos dígitos ficam ocultos. É campo de exibição, não identificador. Duas pessoas diferentes podem legitimamente compartilhar os 6 dígitos visíveis. Sócios estrangeiros, por sua vez, não têm CPF na fonte e o pipeline preenche com zeros, criando uma segunda classe de colisão.
-
-O bug é antigo; só ficou visível agora. Em maio de 2026 uma colisão entre dois sócios PF da mesma empresa fez o modo `replace` quebrar com `duplicate key value violates unique constraint`. O modo `upsert` já vinha descartando silenciosamente o segundo sócio via `DISTINCT ON` quando isso acontecia (e acontecia mais do que parecia, principalmente entre estrangeiros com CPF zerado).
-
-A nova PK `socios.socio_id` é um UUID determinístico derivado do tuple de identidade. Serve só para a linha bruta caber no banco sem perda. Identidade de negócio (mesma pessoa entre meses, dedup por nome, etc.) fica para receitas, onde cada caso de uso decide a regra.
-
-Bancos já carregados precisam recriar `socios` e as tabelas-receita derivadas (`socios_quality_flags`, `socios_clean`). Não há migração in-app: linhas que o `upsert` já perdeu só voltam com uma recarga completa.
-
-```bash
-psql "$DATABASE_URL" -c 'DROP TABLE IF EXISTS socios_clean, socios_quality_flags, socios CASCADE;'
-psql "$DATABASE_URL" -f initial.sql
-just run --force
-```
-
-O `psql -f initial.sql` é necessário porque `ensure_schema()` só roda em bancos sem `processed_files`. Como aqui só estamos derrubando `socios` (e tabelas-receita), o bootstrap automático não dispara; o `initial.sql` recria as tabelas via `CREATE TABLE IF NOT EXISTS` sem mexer no resto.
+> [!IMPORTANT]
+> Se você já carregou dados antes da mudança para `socios.socio_id`, recrie `socios` e as receitas derivadas (`socios_quality_flags`, `socios_clean`) para preservar sócios com CPF mascarado ou documento ausente.
+>
+> Veja o passo a passo em [docs/upgrading.md](docs/upgrading.md#sociossocio_id).
 
 ## Fonte de Dados
 
