@@ -89,6 +89,21 @@ CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_razao
     ON empresas_busca_nome
     (uf, razao_social, cnpj_basico, cnpj_ordem);
 
+-- UF filter + LIKE 'PREFIX%' on razao_social. The default-opclass
+-- uf_razao above supports sort-by-razao under uf= equality but cannot
+-- range-scan LIKE 'PREFIX%' under non-C collations. This composite
+-- uses text_pattern_ops on razao_social so PG can enter at
+-- (uf=$1, razao_social>='PREFIX') and walk only matching rows in
+-- order — Index Only Scan, no heap fetch, sub-30ms even for broad
+-- common prefixes (e.g. 'COMERC%' over 27M rows).
+--
+-- Pairs with idx_..._razao_prefix above: that one serves uf-less
+-- prefix lookups (e.g. chat name resolution); this one serves
+-- uf-filtered search list queries.
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_razao_prefix
+    ON empresas_busca_nome
+    (uf, razao_social text_pattern_ops, cnpj_basico, cnpj_ordem);
+
 -- UF + município (denormalized name) + sort. Indexes municipio_nome
 -- because that's typically what consumer-facing filters expose. Add a
 -- parallel index on municipio_codigo if your callers filter by RFB code.
