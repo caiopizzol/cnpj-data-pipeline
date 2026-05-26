@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.30.0 (2026-05-26)
+
+### Documentation
+
+- Move socios upgrade instructions to docs/upgrading.md (#78)
+  ([#82](https://github.com/caiopizzol/cnpj-data-pipeline/pull/82),
+  [`7b2e4e7`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/7b2e4e75d5dfc58e5a93eac1edab70ef70b8548c))
+
+### Features
+
+- **recipes**: Add uf+razao text_pattern_ops composite index
+  ([#83](https://github.com/caiopizzol/cnpj-data-pipeline/pull/83),
+  [`bca0a8b`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/bca0a8b15442451d9cb56c7496faa8ceb2e70f9b))
+
+
 ## v1.29.1 (2026-05-26)
 
 ### Bug Fixes
