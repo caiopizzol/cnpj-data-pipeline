@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.29.1 (2026-05-26)
+
+### Bug Fixes
+
+- **socios**: Switch PK to deterministic socio_id (#78)
+  ([#81](https://github.com/caiopizzol/cnpj-data-pipeline/pull/81),
+  [`0f72d67`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0f72d67ddcc8cc6b9cc38649ded8570add3f7200))
+
+
 ## v1.29.0 (2026-05-25)
 
 ### Features
