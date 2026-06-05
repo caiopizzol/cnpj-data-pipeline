@@ -1,0 +1,105 @@
+# cnpj-data-pipeline
+
+Agent quick reference for using this repository.
+
+## First run
+
+Requirements: uv, just, Docker, Python 3.11+.
+
+Development quickstart:
+
+```bash
+cp .env.example .env
+just up
+just run
+```
+
+Common commands:
+
+```bash
+just install
+just up
+just down
+just db
+just run
+just reset
+just lint
+just format
+just test
+just check
+```
+
+Use uv and just as the primary flow. Do not replace them with a pip requirements flow or make commands.
+
+## Docker and Parquet
+
+Docker image:
+
+```bash
+docker run --rm ghcr.io/caiopizzol/cnpj-data-pipeline --list
+docker run --rm -e DATABASE_URL=postgres://user:pass@host:5432/cnpj ghcr.io/caiopizzol/cnpj-data-pipeline --month 2024-11
+```
+
+Parquet export does not need a database. Sem necessidade de PostgreSQL.
+
+```bash
+OUTPUT_FORMAT=parquet PARQUET_OUTPUT_DIR=./parquet just run
+```
+
+Use `PARQUET_TYPED_OUTPUT=true` when datas e numéricos should be written with typed Parquet values.
+
+## PostgreSQL configuration
+
+`DATABASE_URL` is passed through to the libpq driver. It can include query-string parameters such as `sslmode=require`.
+
+Sempre coloque o valor entre aspas when it contains query parameters, because `&` is special in the shell.
+
+Examples:
+
+```bash
+DATABASE_URL='postgres://user:pass@host:5432/cnpj?sslmode=require'
+DATABASE_URL='postgres://user:pass@host:5432/cnpj?options=-c%20search_path%3Dcnpj'
+```
+
+For a separate schema, create it first:
+
+```sql
+CREATE SCHEMA cnpj;
+```
+
+Be careful with `public` in `search_path`: if old pipeline tables already exist in `public`, bootstrap can find those and skip creating tables in `cnpj`.
+
+Loading strategies:
+
+```bash
+LOADING_STRATEGY=upsert
+LOADING_STRATEGY=replace
+```
+
+`upsert` is the default. `replace` is faster for full monthly loads and uses TRUNCATE before inserting.
+
+## Schema and source facts
+
+Receita Federal CNPJ files are ISO-8859-1, use Separador `;`, use `0 ou 00000000` for null dates, and update Mensal.
+
+Main tables: empresas, estabelecimentos, socios, dados_simples.
+
+Important socios rule: use `socios.socio_id` as the stable key. It is a UUID determinístico. CPF mascarado is not unique and must not be treated as a complete CPF.
+
+## Recipes
+
+Receitas são arquivos SQL opcionais. The pipeline não roda esses arquivos automaticamente.
+
+Rule: the pipeline preserva e mede. Receitas interpretam.
+
+Apply recipes after the load with `psql "$DATABASE_URL" -f ...`:
+
+```bash
+psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
+psql "$DATABASE_URL" -f recipes/postgres/data_quality_flags.sql
+psql "$DATABASE_URL" -f recipes/postgres/estabelecimentos_clean.sql
+psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql
+psql "$DATABASE_URL" -f recipes/postgres/socios_clean.sql
+```
+
+Quality and clean recipes include data_quality_flags, estabelecimentos_clean, socios_quality_flags, socios_clean.

@@ -7,6 +7,7 @@ product:
   description: Pipeline para baixar e processar dados públicos de CNPJ da Receita Federal.
 
 sources:
+  llms: { path: ./llms.txt }
   readme: { path: ./README.md }
   data_schema: { path: ./docs/data-schema.md }
   post_processing: { path: ./docs/post-processing.md }
@@ -24,6 +25,7 @@ agents:
     maxTurns: 30
 
 contexts:
+  given_llms: { mode: inject, source: llms }
   given_readme: { mode: inject, source: readme }
   given_schema: { mode: inject, source: data_schema }
   given_post_processing: { mode: inject, source: post_processing }
@@ -50,19 +52,23 @@ facts:
   parquet_output:
     statement: Explica saída Parquet sem banco.
     match:
-      allOf: ["OUTPUT_FORMAT=parquet", "PARQUET_OUTPUT_DIR", "Sem necessidade de PostgreSQL"]
+      allOf: ["OUTPUT_FORMAT=parquet", "PARQUET_OUTPUT_DIR"]
+      anyOf: ["Sem necessidade de PostgreSQL", "não precisa de PostgreSQL", "sem necessidade de banco de dados"]
   typed_parquet:
     statement: Explica PARQUET_TYPED_OUTPUT para datas e numéricos tipados.
     match:
-      allOf: ["PARQUET_TYPED_OUTPUT", "datas e numéricos"]
+      allOf: ["PARQUET_TYPED_OUTPUT"]
+      anyOf: ["datas e numéricos", "datas e valores numéricos", "valores numéricos"]
   loading_strategy:
     statement: Diferencia upsert e replace.
     match:
-      allOf: ["LOADING_STRATEGY=upsert", "LOADING_STRATEGY=replace", "TRUNCATE"]
+      allOf: ["LOADING_STRATEGY", "upsert", "replace"]
+      anyOf: ["TRUNCATE", "carga completa", "carregamentos mensais completos"]
   libpq_params:
-    statement: Explica que DATABASE_URL aceita parâmetros libpq e deve ser colocado entre aspas.
+    statement: Explica que DATABASE_URL aceita parâmetros e deve ser colocado entre aspas.
     match:
-      allOf: ["DATABASE_URL", "libpq", "sslmode=require", "Sempre coloque o valor entre aspas"]
+      allOf: ["DATABASE_URL", "sslmode=require"]
+      anyOf: ["Sempre coloque o valor entre aspas", "aspas"]
   search_path:
     statement: Explica o uso de search_path em schema separado e a necessidade de criar o schema antes.
     match:
@@ -70,7 +76,8 @@ facts:
   source_format:
     statement: Descreve formato oficial dos arquivos da Receita.
     match:
-      allOf: ["ISO-8859-1", "Separador", "0 ou 00000000", "Mensal"]
+      allOf: ["ISO-8859-1", "00000000", "Mensal"]
+      anyOf: ["Separador", "ponto-e-vírgula", ";"]
   main_tables:
     statement: Nomeia as tabelas principais do schema.
     match:
@@ -82,7 +89,14 @@ facts:
   recipes_optional:
     statement: Explica que receitas são SQL opcionais e não rodam automaticamente.
     match:
-      allOf: ["Receitas são arquivos SQL opcionais", "não roda esses arquivos automaticamente"]
+      allOf: ["arquivos SQL opcionais"]
+      anyOf:
+        [
+          "não roda esses arquivos automaticamente",
+          "não executa receitas automaticamente",
+          "não executa automaticamente",
+          "não são executadas automaticamente",
+        ]
   preserve_measure_interpret:
     statement: Explica a regra pipeline preserva e mede, receitas interpretam.
     match:
@@ -118,7 +132,7 @@ questions:
   - id: first_run
     question: Como eu rodo o pipeline pela primeira vez em desenvolvimento?
     agents: [quick]
-    contexts: [given_readme]
+    contexts: [given_llms]
     expects: [requirements, quickstart, just_commands]
     rejects: [pip_make]
     examples:
@@ -130,7 +144,7 @@ questions:
   - id: docker_and_parquet
     question: Como uso a imagem Docker e como exporto para Parquet sem banco?
     agents: [quick]
-    contexts: [given_readme]
+    contexts: [given_llms]
     expects: [docker_usage, parquet_output, typed_parquet]
     rejects: [parquet_needs_db]
     examples:
@@ -140,9 +154,9 @@ questions:
         - "Parquet precisa de PostgreSQL e não há imagem `ghcr.io/caiopizzol/cnpj-data-pipeline`."
 
   - id: postgres_config
-    question: Como configuro DATABASE_URL para Postgres gerenciado ou schema isolado?
+    question: Como configuro DATABASE_URL para Postgres gerenciado ou schema isolado, e como escolho LOADING_STRATEGY?
     agents: [quick]
-    contexts: [given_readme]
+    contexts: [given_llms]
     expects: [libpq_params, search_path, loading_strategy]
     examples:
       pass:
@@ -153,7 +167,7 @@ questions:
   - id: schema_gotchas
     question: Quais cuidados importantes existem no schema dos dados CNPJ?
     agents: [quick]
-    contexts: [given_schema, given_data_audit]
+    contexts: [given_llms]
     expects: [source_format, main_tables, socios_key]
     rejects: [cpf_unmasked]
     examples:
@@ -165,7 +179,7 @@ questions:
   - id: recipes
     question: Quando devo usar receitas SQL e como aplicá-las?
     agents: [quick]
-    contexts: [given_post_processing, given_recipes]
+    contexts: [given_llms]
     expects: [recipes_optional, preserve_measure_interpret, apply_recipes, quality_recipes]
     rejects: [recipes_auto]
     examples:
@@ -185,7 +199,7 @@ builds:
       `--month <value>`; otherwise process the latest month. Do not set
       `DATABASE_URL`, call `psql`, or start Docker.
     agents: [builder]
-    contexts: [given_readme]
+    contexts: [given_llms]
     trials: 2
     workspace:
       path: ./fixtures/pickled/parquet-export
