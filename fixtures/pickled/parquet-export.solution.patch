@@ -1,0 +1,19 @@
+diff --git a/scripts/export-parquet.sh b/scripts/export-parquet.sh
+new file mode 100755
+index 0000000..c96ef33
+--- /dev/null
++++ b/scripts/export-parquet.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++export OUTPUT_FORMAT=parquet
++export PARQUET_OUTPUT_DIR="${PARQUET_OUTPUT_DIR:-./parquet}"
++export PARQUET_TYPED_OUTPUT=true
++
++if [ $# -gt 0 ]; then
++  month="$1"
++  uv run python main.py --month "$month"
++else
++  uv run python main.py
++fi
