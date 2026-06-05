@@ -1,0 +1,202 @@
+# yaml-language-server: $schema=https://pickled.dev/schema/pickled.schema.json
+
+schemaVersion: 2
+
+product:
+  name: cnpj-data-pipeline
+  description: Pipeline para baixar e processar dados públicos de CNPJ da Receita Federal.
+
+sources:
+  readme: { path: ./README.md }
+  data_schema: { path: ./docs/data-schema.md }
+  post_processing: { path: ./docs/post-processing.md }
+  data_audit: { path: ./docs/data-audit.md }
+  recipes: { path: ./recipes/README.md }
+
+agents:
+  quick:
+    provider: claude-code
+    model: claude-haiku-4-5
+    maxTurns: 5
+  builder:
+    provider: claude-code
+    model: claude-haiku-4-5
+    maxTurns: 30
+
+contexts:
+  given_readme: { mode: inject, source: readme }
+  given_schema: { mode: inject, source: data_schema }
+  given_post_processing: { mode: inject, source: post_processing }
+  given_data_audit: { mode: inject, source: data_audit }
+  given_recipes: { mode: inject, source: recipes }
+
+facts:
+  requirements:
+    statement: Lista uv, just, Docker e Python 3.11+ como requisitos.
+    match:
+      allOf: ["uv", "just", "Docker", "Python 3.11+"]
+  quickstart:
+    statement: Mostra os comandos de início rápido.
+    match:
+      allOf: ["cp .env.example .env", "just up", "just run"]
+  just_commands:
+    statement: Mostra os comandos just principais para operar o projeto.
+    match:
+      allOf: ["just install", "just up", "just down", "just test", "just check"]
+  docker_usage:
+    statement: Mostra como usar a imagem publicada no GitHub Container Registry.
+    match:
+      allOf: ["ghcr.io/caiopizzol/cnpj-data-pipeline", "--list", "--month 2024-11"]
+  parquet_output:
+    statement: Explica saída Parquet sem banco.
+    match:
+      allOf: ["OUTPUT_FORMAT=parquet", "PARQUET_OUTPUT_DIR", "Sem necessidade de PostgreSQL"]
+  typed_parquet:
+    statement: Explica PARQUET_TYPED_OUTPUT para datas e numéricos tipados.
+    match:
+      allOf: ["PARQUET_TYPED_OUTPUT", "datas e numéricos"]
+  loading_strategy:
+    statement: Diferencia upsert e replace.
+    match:
+      allOf: ["LOADING_STRATEGY=upsert", "LOADING_STRATEGY=replace", "TRUNCATE"]
+  libpq_params:
+    statement: Explica que DATABASE_URL aceita parâmetros libpq e deve ser colocado entre aspas.
+    match:
+      allOf: ["DATABASE_URL", "libpq", "sslmode=require", "Sempre coloque o valor entre aspas"]
+  search_path:
+    statement: Explica o uso de search_path em schema separado e a necessidade de criar o schema antes.
+    match:
+      allOf: ["search_path", "CREATE SCHEMA cnpj", "public"]
+  source_format:
+    statement: Descreve formato oficial dos arquivos da Receita.
+    match:
+      allOf: ["ISO-8859-1", "Separador", "0 ou 00000000", "Mensal"]
+  main_tables:
+    statement: Nomeia as tabelas principais do schema.
+    match:
+      allOf: ["empresas", "estabelecimentos", "socios", "dados_simples"]
+  socios_key:
+    statement: Explica socio_id e CPF mascarado em socios.
+    match:
+      allOf: ["socio_id", "UUID determinístico", "CPF mascarado"]
+  recipes_optional:
+    statement: Explica que receitas são SQL opcionais e não rodam automaticamente.
+    match:
+      allOf: ["Receitas são arquivos SQL opcionais", "não roda esses arquivos automaticamente"]
+  preserve_measure_interpret:
+    statement: Explica a regra pipeline preserva e mede, receitas interpretam.
+    match:
+      allOf: ["preserva e mede", "Receitas interpretam"]
+  apply_recipes:
+    statement: Mostra como aplicar receitas com psql depois da carga.
+    match:
+      allOf: ["psql \"$DATABASE_URL\" -f", "recipes/postgres/empresa_detalhe.sql"]
+  quality_recipes:
+    statement: Nomeia receitas de qualidade e limpeza.
+    match:
+      allOf: ["data_quality_flags", "estabelecimentos_clean", "socios_quality_flags", "socios_clean"]
+
+misstatements:
+  pip_make:
+    statement: Troca uv e just por pip e make.
+    match:
+      anyOf: ["pip install -r requirements.txt", "make run"]
+  parquet_needs_db:
+    statement: Afirma que Parquet precisa de PostgreSQL.
+    match:
+      anyOf: ["Parquet precisa de PostgreSQL", "Parquet requires PostgreSQL"]
+  recipes_auto:
+    statement: Afirma que receitas rodam automaticamente na carga padrão.
+    match:
+      anyOf: ["receitas rodam automaticamente", "recipes run automatically"]
+  cpf_unmasked:
+    statement: Afirma que CPF de sócios vem completo.
+    match:
+      anyOf: ["CPF completo dos sócios", "unmasked CPF"]
+
+questions:
+  - id: first_run
+    question: Como eu rodo o pipeline pela primeira vez em desenvolvimento?
+    agents: [quick]
+    contexts: [given_readme]
+    expects: [requirements, quickstart, just_commands]
+    rejects: [pip_make]
+    examples:
+      pass:
+        - "Instale `uv`, `just`, Docker e Python 3.11+. Depois rode `cp .env.example .env`, `just up` e `just run`. Para manutenção, use `just install`, `just up`, `just down`, `just test` e `just check`."
+      fail:
+        - "Use `pip install -r requirements.txt` e depois `make run`."
+
+  - id: docker_and_parquet
+    question: Como uso a imagem Docker e como exporto para Parquet sem banco?
+    agents: [quick]
+    contexts: [given_readme]
+    expects: [docker_usage, parquet_output, typed_parquet]
+    rejects: [parquet_needs_db]
+    examples:
+      pass:
+        - "Use `ghcr.io/caiopizzol/cnpj-data-pipeline`, por exemplo com `--list` ou `--month 2024-11`. Para Parquet, defina `OUTPUT_FORMAT=parquet` e `PARQUET_OUTPUT_DIR`. Sem necessidade de PostgreSQL. `PARQUET_TYPED_OUTPUT` controla datas e numéricos tipados."
+      fail:
+        - "Parquet precisa de PostgreSQL e não há imagem `ghcr.io/caiopizzol/cnpj-data-pipeline`."
+
+  - id: postgres_config
+    question: Como configuro DATABASE_URL para Postgres gerenciado ou schema isolado?
+    agents: [quick]
+    contexts: [given_readme]
+    expects: [libpq_params, search_path, loading_strategy]
+    examples:
+      pass:
+        - "O `DATABASE_URL` aceita parâmetros libpq, como `sslmode=require`. Sempre coloque o valor entre aspas. Para schema isolado use `search_path`, crie antes com `CREATE SCHEMA cnpj`, e cuidado com `public` como fallback. `LOADING_STRATEGY=upsert` é o default; `LOADING_STRATEGY=replace` usa TRUNCATE."
+      fail:
+        - "O pipeline ignora parâmetros libpq e cria o schema indicado no search_path automaticamente."
+
+  - id: schema_gotchas
+    question: Quais cuidados importantes existem no schema dos dados CNPJ?
+    agents: [quick]
+    contexts: [given_schema, given_data_audit]
+    expects: [source_format, main_tables, socios_key]
+    rejects: [cpf_unmasked]
+    examples:
+      pass:
+        - "Os arquivos são ISO-8859-1, usam separador `;`, datas nulas podem ser `0 ou 00000000`, e a atualização é mensal. As tabelas principais são empresas, estabelecimentos, socios e dados_simples. Em socios, use `socio_id`, um UUID determinístico; CPF mascarado não é chave única."
+      fail:
+        - "Use CPF completo dos sócios como chave estável e ignore `socio_id`."
+
+  - id: recipes
+    question: Quando devo usar receitas SQL e como aplicá-las?
+    agents: [quick]
+    contexts: [given_post_processing, given_recipes]
+    expects: [recipes_optional, preserve_measure_interpret, apply_recipes, quality_recipes]
+    rejects: [recipes_auto]
+    examples:
+      pass:
+        - "Receitas são arquivos SQL opcionais; o pipeline não roda esses arquivos automaticamente. A regra é: o pipeline preserva e mede, Receitas interpretam. Depois da carga, aplique com `psql \"$DATABASE_URL\" -f recipes/postgres/empresa_detalhe.sql`. Há receitas como data_quality_flags, estabelecimentos_clean, socios_quality_flags e socios_clean."
+      fail:
+        - "As receitas rodam automaticamente durante `just run`, então não use `psql \"$DATABASE_URL\" -f`."
+
+builds:
+  - id: create_parquet_export_script
+    goal: >-
+      Create `scripts/export-parquet.sh`, a safe helper for exporting CNPJ
+      data to Parquet without PostgreSQL. The script should be executable,
+      use `set -euo pipefail`, default `PARQUET_OUTPUT_DIR` to `./parquet`,
+      set `OUTPUT_FORMAT=parquet` and `PARQUET_TYPED_OUTPUT=true`, then run
+      `uv run python main.py`. If the first argument is present, pass it as
+      `--month <value>`; otherwise process the latest month. Do not set
+      `DATABASE_URL`, call `psql`, or start Docker.
+    agents: [builder]
+    contexts: [given_readme]
+    trials: 2
+    workspace:
+      path: ./fixtures/pickled/parquet-export
+    verifier:
+      failToPass:
+        - { name: parquet export script, run: ./tests/verify-parquet-export.sh }
+      passToPass:
+        - { name: keeps fixture instructions, run: test -f README.md }
+    referenceSolution:
+      patch: ./fixtures/pickled/parquet-export.solution.patch
+
+thresholds:
+  questions: 80
+  builds: 80

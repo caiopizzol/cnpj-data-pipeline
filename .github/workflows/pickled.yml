@@ -1,0 +1,34 @@
+name: Pickled
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      max_cells:
+        description: "Abort real-agent runs above this execution count"
+        required: false
+        default: "12"
+
+jobs:
+  deterministic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - run: bunx @pickled-dev/cli test .
+      - run: bunx @pickled-dev/cli check . --plan
+      - run: bunx @pickled-dev/cli build . --plan
+
+  real-agent:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - run: bunx @pickled-dev/cli check . --max-cells "${PICKLED_MAX_CELLS:-12}"
+        env:
+          PICKLED_MAX_CELLS: ${{ inputs.max_cells }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_PICKLED }}
+      - run: bunx @pickled-dev/cli build . --max-cells 2
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_PICKLED }}
