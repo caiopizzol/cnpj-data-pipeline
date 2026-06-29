@@ -8,7 +8,7 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 
 | Receita | Arquivo | O que faz |
 |---|---|---|
-| `reference_domains_enriched` | [`postgres/reference_domains_enriched.sql`](postgres/reference_domains_enriched.sql) | Materializa `motivos_enriched`, `paises_enriched` e `qualificacoes_socios_enriched`: a tabela mensal mais linhas suplementares oficiais (SERPRO) para códigos ausentes do mês, com proveniência por linha. Não altera as tabelas cruas. Pré-requisito de `empresa_detalhe`. |
+| `reference_domains_enriched` | [`postgres/reference_domains_enriched.sql`](postgres/reference_domains_enriched.sql) | Materializa `motivos_enriched`, `paises_enriched` e `qualificacoes_socios_enriched`: a tabela mensal mais linhas suplementares oficiais (SERPRO/Receita ODS) para códigos ausentes do mês, com proveniência por linha. Não altera as tabelas cruas. Pré-requisito de `empresa_detalhe`. |
 | `empresa_detalhe` | [`postgres/empresa_detalhe.sql`](postgres/empresa_detalhe.sql) | Junta empresas, estabelecimentos, tabelas de referência (descrições de motivo/país/qualificação vêm das tabelas enriquecidas) e dados do Simples Nacional em uma tabela por estabelecimento. Preserva códigos e valores da fonte. |
 | `data_quality_flags` | [`postgres/data_quality_flags.sql`](postgres/data_quality_flags.sql) | Mede sinais de qualidade por estabelecimento, sem alterar valores. |
 | `estabelecimentos_clean` | [`postgres/estabelecimentos_clean.sql`](postgres/estabelecimentos_clean.sql) | Usa `data_quality_flags` para emitir pares cru/limpo de CEP e capital social. |

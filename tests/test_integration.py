@@ -44,7 +44,7 @@ EXPECTED_COUNTS = {
 
 # Crafted fixture rows (cnpj_basico 99000001-99000004) exercise the enriched
 # reference-domain recipe: motivo 32 (supplemental), pais 150/994 (supplemental),
-# pais 008 (unresolved orphan), qualificacao_responsavel 36 (unresolved).
+# pais 008 (unresolved orphan), qualificacao_responsavel 36 (legacy supplemental).
 ENRICHED_SUPPLEMENTAL_MOTIVO_32 = "Inexistente De Fato – Ade/Cosar"
 
 
