@@ -87,8 +87,8 @@ No PostgreSQL, todas têm a mesma forma: `(codigo, descricao, data_criacao, data
 
 A entrega mensal da Receita Federal tem alguns desencontros entre arquivos. O pipeline preserva esses valores e o `scripts/data_quality_report.py` mede cada caso. Receitas opcionais podem marcar, mascarar ou transformar valores em `NULL` quando o consumidor quiser essa interpretação. Medições abaixo em 12/05/2026 contra a entrega 2026-04.
 
-- **`estabelecimentos.motivo_situacao_cadastral = '32'`** — 18.672 linhas referenciam um código presente em `Estabelecimentos.csv` mas ausente do `Motivos.csv` da mesma entrega. O layout oficial da Receita Federal não publica a lista de motivos válidos, então não conseguimos confirmar o status do código (retirado, erro de entrega, etc.) a partir das fontes oficiais. Preservado; aparecerá como `NULL` no `LEFT JOIN` com `motivos` em receitas.
-- **`estabelecimentos.pais` órfãos** — 14 códigos distintos, 1.220 linhas. Mais frequentes: `150` (583), `367` (483), `359` (97). Quase todos em `uf='EX'`; nove linhas em UFs brasileiras (códigos `008`, `009`). É uma diferença entre `Estabelecimentos.csv` e `Paises.csv` da mesma entrega. O layout oficial da Receita Federal também não publica a lista de países válidos, então não inferimos status individual (retirado vs. ativo) sem fonte adicional.
+- **`estabelecimentos.motivo_situacao_cadastral = '32'`** — 18.672 linhas referenciam um código presente em `Estabelecimentos.csv` mas ausente do `Motivos.csv` da mesma entrega. A tabela `motivos` crua continua refletindo a entrega (sem o 32). A receita `reference_domains_enriched` resolve o código contra a tabela de domínio oficial do SERPRO: `32` = `Inexistente De Fato – Ade/Cosar` (o `15` é o `Inexistente De Fato` simples; `32` é a variante ADE/COSAR). Quem aplica a receita vê a descrição em `motivos_enriched` e em `empresa_detalhe`; quem não aplica continua vendo `NULL`.
+- **`estabelecimentos.pais` órfãos** — 14 códigos distintos, 1.220 linhas. Mais frequentes: `150` (583), `367` (483), `359` (97). Quase todos em `uf='EX'`; nove linhas em UFs brasileiras (códigos `008`, `009`). É uma diferença entre `Estabelecimentos.csv` e `Paises.csv` da mesma entrega. A receita `reference_domains_enriched` resolve os códigos confirmados contra a tabela de domínio oficial do SERPRO: `150` = `JERSEY, ILHA DO CANAL` (rótulo de confiança média: o Siscomex/ME rotula esse mesmo código como `Guernsey`), `359` = `MAN, ILHA DE`, `367` = `INGLATERRA`, `994` = `A DESIGNAR` (placeholder administrativo). Os códigos `008` e `009` ficam sem resolução de propósito: não existem em nenhuma tabela oficial de países e aparecem em UFs brasileiras, então são quase certamente lixo de digitação, não país estrangeiro.
 - **`estabelecimentos.uf = 'EX'`** — 170.865 linhas. Padrão observado para registros no exterior: as mesmas linhas costumam ter `NOME DA CIDADE NO EXTERIOR` preenchido e a coluna `pais` preenchida. O layout oficial da Receita Federal não documenta o código `EX` explicitamente; tratamos como código convencional usado pela Receita Federal, não como código oficial citado em norma.
 - **`empresas.capital_social = 999999999999`** — 124 linhas. Valor suspeito de sentinela para capital não informado/desconhecido. O layout oficial da Receita Federal não documenta este sentinela. Preservado para que o sinal continue visível; uma receita pode mascarar.
 - **`socios.representante_legal = '***000000**'` + `qualificacao_do_representante_legal = '00'`** — 26.730.045 linhas (97% dos sócios). A forma `***000000**` é consistente com a regra pública de mascaramento de CPF (LDO 2018, art. 129 §2º — ocultar os três primeiros dígitos e os dois dígitos verificadores), aplicada sobre um CPF de origem `00000000000`. A leitura "sem representante legal separado" é empírica (97% dos registros), não documentada. Preservado; uma receita pode expor `has_representante_legal` quando o consumidor quiser tratar como `NULL`.
@@ -97,6 +97,24 @@ A entrega mensal da Receita Federal tem alguns desencontros entre arquivos. O pi
   - A Receita Federal entrega alguns CEPs com 7 dígitos numéricos.
   - O pipeline padroniza exclusivamente os valores com exatamente 7 dígitos numéricos.
   - Validação de existência contra Correios/DNE está fora do núcleo.
+
+## Domínios de referência enriquecidos (receita `reference_domains_enriched`)
+
+Alguns códigos chegam em `Estabelecimentos.csv`/`Empresas.csv` mas não estão na tabela de lookup da mesma entrega mensal (`Motivos.csv`, `Paises.csv`). Isso não é erro de carga: o pipeline preserva a entrega como veio. Para quem quer a descrição mesmo assim, a receita `recipes/postgres/reference_domains_enriched.sql` materializa `motivos_enriched`, `paises_enriched` e `qualificacoes_socios_enriched`.
+
+Por que isso é uma receita, e não lógica de carga:
+
+- **A carga preserva.** As tabelas cruas (`motivos`, `paises`, `qualificacoes_socios`) continuam idênticas ao arquivo da Receita Federal. Nada é injetado nelas.
+- **A receita interpreta.** Cada tabela enriquecida é a tabela mensal MAIS linhas suplementares oficiais, inseridas só quando o código está ausente do mês (anti-join `NOT EXISTS`). A linha mensal sempre vence; `codigo` é chave primária, então um `LEFT JOIN` com a tabela enriquecida não muda contagem de linhas.
+- **Sem FK rígida na carga.** Não adicionamos `FOREIGN KEY` nem `CHECK` às tabelas cruas para rejeitar esses códigos. Entregas históricas têm códigos retirados; uma FK rígida quebraria a carga em vez de preservar o dado. O sinal de "ausente no mês" vive nas flags de qualidade, não numa restrição.
+- **Proveniência em cada linha.** Colunas `source_kind` (`receita_monthly` | `serpro_dominio`), `source_url`, `is_supplemental`, `confidence` (`high` | `medium`) e `notes`. As descrições são mantidas verbatim de cada fonte; linhas mensais vêm em maiúsculas sem acento (entrega RFB), linhas suplementares mantêm a grafia do SERPRO.
+
+Achados oficiais registrados (medição 2026-04, verificados contra as tabelas de domínio do SERPRO):
+
+- **`motivo` 32** — resolvido: `Inexistente De Fato – Ade/Cosar` (confiança alta).
+- **`pais` 150, 359, 367, 994** — resolvidos (150 com confiança média no rótulo; ver acima). Demais órfãos sem rótulo individual confirmado ficam sem resolução.
+- **`pais` 008, 009** — não resolvidos de propósito: ausentes de toda tabela oficial.
+- **`qualificacao` 36** — **não resolvido**. O código não existe em nenhuma tabela de qualificação oficial do SERPRO (sócio, responsável ou representante legal). O rótulo "Gerente-Delegado" às vezes atribuído a ele não tem fonte oficial, então não é injetado. Se o código aparecer nos dados, é tratado como código não documentado, não como "Gerente-Delegado".
 
 ## Fontes oficiais
 
@@ -107,16 +125,18 @@ Onde cada afirmação acima foi (ou não) verificada contra uma fonte oficial.
 - **Existência de um CEP específico** — a base de referência é o DNE/Correios. **Fora do escopo do núcleo do pipeline**: validar por chamada externa adicionaria dependência de autenticação, limite de uso e licenciamento, além de reduzir a reprodutibilidade da carga. Receitas ou ferramentas opcionais podem fazer essa checagem em amostra.
 - **Códigos de município e UF (geografia)** — IBGE é a fonte para enriquecimento geográfico (códigos de município, microrregião, mesorregião). IBGE **não é** fonte para validar CEP.
 - **Layout dos dados abertos do CNPJ** — Receita Federal: [`cnpj-metadados.pdf`](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf). É um documento curto; não enumera valores válidos de `motivo`, `pais`, `uf` (além do que aparece em prosa), nem documenta sentinelas como `999999999999` em `capital_social` ou `'***000000**'` em `representante_legal`.
+- **Tabelas de domínio (motivo, país, qualificação)** — SERPRO, Base de Cadastros, que opera o cadastro CNPJ para a Receita Federal e publica as tabelas de domínio como CSV: [`bcadastros.serpro.gov.br/documentacao/dominios/pj/`](https://bcadastros.serpro.gov.br/documentacao/dominios/pj/) (`motivo_situacao_cadastral.csv`, `pais.csv`, `qualificacao_socio.csv`, `qualificacao_responsavel.csv`, `qualificacao_representante_legal.csv`). É a fonte das linhas suplementares de `reference_domains_enriched`. A tabela de países do Siscomex/Ministério da Economia ([`balanca.economia.gov.br/balanca/bd/tabelas/PAIS.csv`](https://balanca.economia.gov.br/balanca/bd/tabelas/PAIS.csv)) usa a mesma numeração e serve de checagem cruzada; nos casos em que o rótulo diverge (ex.: `150`), o SERPRO prevalece por ser a fonte do cadastro CNPJ.
 
 ## Decisões para a primeira receita (empresa_detalhe)
 
 A receita `recipes/postgres/empresa_detalhe.sql` implementa:
 
-- **LEFT JOIN** com `cnaes`, `municipios`, `motivos`, `paises`, `naturezas_juridicas`: preserva linhas mesmo com códigos retirados em entregas históricas.
+- **LEFT JOIN** com `cnaes`, `municipios`, `naturezas_juridicas`, e com as tabelas enriquecidas `motivos_enriched`, `paises_enriched`, `qualificacoes_socios_enriched`: preserva linhas mesmo com códigos retirados, e resolve os códigos suplementares oficiais (ver a receita `reference_domains_enriched`). Por isso a receita depende de `reference_domains_enriched.sql`, aplicada antes.
+- **`qualificacao_responsavel_descricao`**: descrição da qualificação do responsável pela empresa, via `qualificacoes_socios_enriched`. É uma junção com tabela de referência, no mesmo padrão de `natureza_juridica_descricao`, não uma expansão de enum embutido.
 - **LEFT JOIN** com `dados_simples`: inclui colunas cruas (`opcao_pelo_simples`, datas, `opcao_pelo_mei`). Sem booleanos derivados.
 - **Coluna `cnpj`** = `cnpj_basico || cnpj_ordem || cnpj_dv`: evita repetir a concatenação em consultas.
 - **`CREATE TABLE AS`**: modelo esperado para receitas aplicadas depois do ingest.
-- **Sem descrições de enum**: `situacao_cadastral` continua sendo "02", não "Ativa". Sem booleanos (`is_ativa`, `is_matriz`). Essas escolhas ficam para receitas futuras.
+- **Sem descrições de enum embutido**: `situacao_cadastral` continua sendo "02", não "Ativa". Sem booleanos (`is_ativa`, `is_matriz`). Essas escolhas ficam para receitas futuras.
 
 ## Receitas planejadas após a primeira
 

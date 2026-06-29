@@ -48,6 +48,7 @@ Mesmo com flag opt-in:
 - CNPJ formatado com máscara como coluna separada
 - Endereço concatenado em um único campo
 - Remoção de acentos em razão social (alguns consumidores querem os acentos)
+- Resolução de códigos de domínio ausentes do mês (ex.: `motivo` 32, alguns `pais`) contra fontes oficiais externas. As tabelas cruas seguem fiéis à entrega; quem quer a descrição aplica a receita `reference_domains_enriched`, que mantém proveniência por linha. Ver [data-audit.md](data-audit.md#domínios-de-referência-enriquecidos-receita-reference_domains_enriched).
 
 Esses casos pertencem a receitas, não à carga padrão.
 

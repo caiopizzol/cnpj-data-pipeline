@@ -1,19 +1,27 @@
 -- recipes/postgres/empresa_detalhe.sql
 --
 -- Per-estabelecimento denormalization joining empresas, estabelecimentos,
--- reference tables (cnaes, municipios, motivos, paises, naturezas_juridicas),
--- and dados_simples. Preserves all source codes alongside their descriptions;
--- no derived booleans, no label-substituted enums.
+-- reference tables (cnaes, municipios, motivos, paises, naturezas_juridicas,
+-- qualificacoes_socios), and dados_simples. Preserves all source codes
+-- alongside their descriptions; no derived booleans, no label-substituted enums.
 --
--- Apply after the pipeline finishes ingest:
+-- Apply after the pipeline finishes ingest. motivo/pais/qualificacao
+-- descriptions come from the enriched lookups, so run that recipe first:
+--     psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
 --     psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
 --
 -- Re-run after each monthly ingest to refresh.
 --
+-- Dependencies: reference_domains_enriched.sql (motivos_enriched,
+-- paises_enriched, qualificacoes_socios_enriched).
+--
 -- Design choices (see docs/data-audit.md for the field-by-field rationale):
+--   - motivo/pais/qualificacao descriptions come from the *_enriched lookups so
+--     officially-resolved supplemental codes (e.g. motivo 32) get a description
+--     instead of NULL. Each enriched table is 1:1 on codigo, so these LEFT JOINs
+--     preserve row count exactly as the raw lookups did.
 --   - LEFT JOIN on reference tables: defensive against retired codes in
---     historical snapshots. Today's data has zero orphans but the
---     pipeline supports older months too.
+--     historical snapshots. Codes with no row in any source stay NULL.
 --   - dados_simples is LEFT JOINed (some companies have no record). The
 --     columns are cnpj_basico-keyed - they repeat across every
 --     estabelecimento of the same company by design.
@@ -35,6 +43,7 @@ SELECT
     e.natureza_juridica,
     n.descricao AS natureza_juridica_descricao,
     e.qualificacao_responsavel,
+    qr.descricao AS qualificacao_responsavel_descricao,
     e.capital_social,
     e.porte,
     e.ente_federativo_responsavel,
@@ -81,8 +90,9 @@ FROM empresas e
 JOIN estabelecimentos s USING (cnpj_basico)
 LEFT JOIN cnaes c ON c.codigo = s.cnae_fiscal_principal
 LEFT JOIN municipios m ON m.codigo = s.municipio
-LEFT JOIN motivos mo ON mo.codigo = s.motivo_situacao_cadastral
-LEFT JOIN paises p ON p.codigo = s.pais
+LEFT JOIN motivos_enriched mo ON mo.codigo = s.motivo_situacao_cadastral
+LEFT JOIN paises_enriched p ON p.codigo = s.pais
+LEFT JOIN qualificacoes_socios_enriched qr ON qr.codigo = e.qualificacao_responsavel
 LEFT JOIN naturezas_juridicas n ON n.codigo = e.natureza_juridica
 LEFT JOIN dados_simples ds ON ds.cnpj_basico = e.cnpj_basico;
 
