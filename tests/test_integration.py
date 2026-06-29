@@ -576,11 +576,15 @@ class TestRecipeDataQualityFlags:
     """
 
     RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "data_quality_flags.sql"
+    ENRICHED_RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "reference_domains_enriched.sql"
 
     def test_recipe_executes(self, test_db):
-        """The recipe SQL should parse and execute without errors."""
+        """The recipe SQL should parse and execute without errors. The enriched
+        flags depend on the enriched lookups, so apply those first."""
+        enriched_sql = self.ENRICHED_RECIPE_PATH.read_text()
         sql = self.RECIPE_PATH.read_text()
         with test_db.conn.cursor() as cur:
+            cur.execute(enriched_sql)
             cur.execute(sql)
         test_db.conn.commit()
 
@@ -625,6 +629,8 @@ class TestRecipeDataQualityFlags:
             "is_exterior",
             "pais_lookup_missing",
             "motivo_lookup_missing",
+            "pais_enriched_lookup_missing",
+            "motivo_enriched_lookup_missing",
             "capital_social_is_suspicious_sentinel",
         }
 
@@ -687,8 +693,54 @@ class TestRecipeDataQualityFlags:
             """)
             motivo_mismatches = cur.fetchone()[0]
 
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM data_quality_flags dq
+                JOIN estabelecimentos e USING (cnpj_basico, cnpj_ordem, cnpj_dv)
+                WHERE dq.pais_enriched_lookup_missing IS DISTINCT FROM (
+                    e.pais IS NOT NULL
+                    AND NOT EXISTS (SELECT 1 FROM paises_enriched p WHERE p.codigo = e.pais)
+                )
+                   OR dq.motivo_enriched_lookup_missing IS DISTINCT FROM (
+                    e.motivo_situacao_cadastral IS NOT NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM motivos_enriched m
+                        WHERE m.codigo = e.motivo_situacao_cadastral
+                    )
+                )
+            """)
+            enriched_mismatches = cur.fetchone()[0]
+
         assert pais_mismatches == 0, f"pais_lookup_missing mismatches for {pais_mismatches} rows"
         assert motivo_mismatches == 0, f"motivo_lookup_missing mismatches for {motivo_mismatches} rows"
+        assert enriched_mismatches == 0, f"enriched lookup-missing flags mismatch for {enriched_mismatches} rows"
+
+    def test_monthly_and_enriched_flags_diverge_on_supplemental(self, test_db):
+        """The whole point: a supplemental code (motivo 32, pais 150/994) is
+        monthly-missing but enriched-resolved; a spurious code (pais 008) is
+        missing under both."""
+        with test_db.conn.cursor() as cur:
+            # crafted motivo-32 estabelecimento: monthly-missing, enriched-resolved
+            cur.execute(
+                "SELECT motivo_lookup_missing, motivo_enriched_lookup_missing "
+                "FROM data_quality_flags WHERE cnpj_basico = '99000001'"
+            )
+            assert cur.fetchone() == (True, False), "motivo 32 should be monthly-missing, enriched-resolved"
+
+            # pais 150 and 994: monthly-missing, enriched-resolved
+            cur.execute(
+                "SELECT pais_lookup_missing, pais_enriched_lookup_missing "
+                "FROM data_quality_flags WHERE cnpj_basico IN ('99000002', '99000004') "
+                "ORDER BY cnpj_basico"
+            )
+            assert cur.fetchall() == [(True, False), (True, False)]
+
+            # pais 008: missing under both (spurious, intentionally unresolved)
+            cur.execute(
+                "SELECT pais_lookup_missing, pais_enriched_lookup_missing "
+                "FROM data_quality_flags WHERE cnpj_basico = '99000003'"
+            )
+            assert cur.fetchone() == (True, True), "spurious pais 008 must stay missing under both"
 
     def test_company_level_flag_matches_empresas_predicate(self, test_db):
         """capital_social flag should be derived from empresas, not guessed
@@ -976,11 +1028,15 @@ class TestRecipeSociosQualityFlags:
     """
 
     RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "socios_quality_flags.sql"
+    ENRICHED_RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "reference_domains_enriched.sql"
 
     def test_recipe_executes(self, test_db):
-        """The recipe SQL should parse and execute without errors."""
+        """The recipe SQL should parse and execute without errors. The enriched
+        flags depend on the enriched lookups, so apply those first."""
+        enriched_sql = self.ENRICHED_RECIPE_PATH.read_text()
         sql = self.RECIPE_PATH.read_text()
         with test_db.conn.cursor() as cur:
+            cur.execute(enriched_sql)
             cur.execute(sql)
         test_db.conn.commit()
 
@@ -1013,6 +1069,9 @@ class TestRecipeSociosQualityFlags:
             "pais_lookup_missing",
             "qualificacao_socio_lookup_missing",
             "qualificacao_representante_lookup_missing",
+            "pais_enriched_lookup_missing",
+            "qualificacao_socio_enriched_lookup_missing",
+            "qualificacao_representante_enriched_lookup_missing",
             "faixa_etaria_nao_se_aplica",
         }
 
@@ -1051,7 +1110,34 @@ class TestRecipeSociosQualityFlags:
             """)
             mismatches = cur.fetchone()[0]
 
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM socios_quality_flags f
+                JOIN socios s USING (socio_id)
+                WHERE f.pais_enriched_lookup_missing IS DISTINCT FROM (
+                    s.pais IS NOT NULL
+                    AND NOT EXISTS (SELECT 1 FROM paises_enriched p WHERE p.codigo = s.pais)
+                )
+                   OR f.qualificacao_socio_enriched_lookup_missing IS DISTINCT FROM (
+                    s.qualificacao_do_socio IS NOT NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM qualificacoes_socios_enriched q
+                        WHERE q.codigo = s.qualificacao_do_socio
+                    )
+                )
+                   OR f.qualificacao_representante_enriched_lookup_missing IS DISTINCT FROM (
+                    s.qualificacao_do_representante_legal IS NOT NULL
+                    AND s.qualificacao_do_representante_legal <> '00'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM qualificacoes_socios_enriched q
+                        WHERE q.codigo = s.qualificacao_do_representante_legal
+                    )
+                )
+            """)
+            enriched_mismatches = cur.fetchone()[0]
+
         assert mismatches == 0, f"socios_quality_flags predicate mismatches for {mismatches} rows"
+        assert enriched_mismatches == 0, f"socios enriched predicate mismatches for {enriched_mismatches} rows"
 
     def test_no_raw_or_clean_columns(self, test_db):
         """This is a flags table, not socios_clean or socios_detalhe."""
@@ -1502,3 +1588,82 @@ class TestRecipeEmpresasBuscaNomeCounts:
 
         count_after = _count_rows(test_db, "empresas_busca_nome_counts")
         assert count_before == count_after, f"re-running recipe changed row count: {count_before} -> {count_after}"
+
+
+class TestDataQualityReportMeasurements:
+    """Exercise scripts/data_quality_report.py orphan + enriched-coverage
+    measurements against the fixture-loaded database. The crafted fixture rows
+    (motivo 32, pais 150/008/994, qualificacao_responsavel 36) make the
+    monthly-vs-enriched gap observable.
+    """
+
+    ENRICHED_RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "reference_domains_enriched.sql"
+
+    @staticmethod
+    def _report_module():
+        import sys
+
+        scripts_dir = str(Path(__file__).parent.parent / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import data_quality_report
+
+        return data_quality_report
+
+    def _ensure_enriched(self, test_db):
+        with test_db.conn.cursor() as cur:
+            cur.execute(self.ENRICHED_RECIPE_PATH.read_text())
+        test_db.conn.commit()
+
+    def test_new_orphan_checks_present_and_detect_code_36(self, test_db):
+        """The orphan report now covers qualificacao_responsavel and the socios
+        relationships. Code 36 (unverified) is a real orphan and must surface."""
+        dqr = self._report_module()
+        results = {r["label"]: r["orphans"] for r in dqr.measure_orphan_fks(test_db.conn)}
+
+        for label in (
+            "empresas.qualificacao_responsavel ∉ qualificacoes_socios",
+            "socios.pais ∉ paises",
+            "socios.qualificacao_do_socio ∉ qualificacoes_socios",
+            "socios.qualificacao_do_representante_legal ∉ qualificacoes_socios (≠ '00')",
+        ):
+            assert label in results, f"missing orphan check: {label}"
+
+        # crafted empresa 99000004 carries qualificacao_responsavel '36'
+        assert results["empresas.qualificacao_responsavel ∉ qualificacoes_socios"] >= 1
+
+    def test_enriched_coverage_shows_gap_closed(self, test_db):
+        """Enriched coverage reports monthly vs enriched orphans. Supplemental
+        codes close the gap: motivo 32, pais 150/994, and qualificacao 36
+        (the legacy Gerente-Delegado code, carried by fixture empresa 99000004)."""
+        self._ensure_enriched(test_db)
+        dqr = self._report_module()
+        result = dqr.measure_enriched_orphans(test_db.conn)
+        assert result["available"] is True
+        rows = {r["label"]: r for r in result["rows"]}
+
+        motivo = rows["estabelecimentos.motivo_situacao_cadastral"]
+        assert motivo["monthly_orphans"] > motivo["enriched_orphans"], "motivo 32 should close the gap"
+
+        pais = rows["estabelecimentos.pais"]
+        assert pais["monthly_orphans"] > pais["enriched_orphans"], "pais 150/994 should close the gap"
+        assert pais["enriched_orphans"] >= 1, "spurious pais 008 must remain unresolved"
+
+        qual = rows["empresas.qualificacao_responsavel"]
+        assert qual["monthly_orphans"] > qual["enriched_orphans"], "legacy code 36 should close the gap"
+
+    def test_enriched_coverage_absent_when_tables_missing(self, test_db):
+        """When the enriched tables do not exist, the measurement degrades to
+        available=False instead of erroring."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS motivos_enriched")
+            cur.execute("DROP TABLE IF EXISTS paises_enriched")
+            cur.execute("DROP TABLE IF EXISTS qualificacoes_socios_enriched")
+        test_db.conn.commit()
+
+        dqr = self._report_module()
+        result = dqr.measure_enriched_orphans(test_db.conn)
+        assert result == {"available": False, "rows": []}
+
+        # restore for any later test that expects them
+        self._ensure_enriched(test_db)

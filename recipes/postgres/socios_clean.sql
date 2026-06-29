@@ -1,7 +1,9 @@
 -- recipes/postgres/socios_clean.sql
 --
 -- recipeVersion: 2
--- depends on: recipes/postgres/socios_quality_flags.sql (recipeVersion 2)
+-- depends on: recipes/postgres/socios_quality_flags.sql (recipeVersion 3)
+--   (v3 added the *_enriched_lookup_missing flags; this recipe selects explicit
+--    columns and is unaffected by the additions)
 --
 -- Sócios-grain counterpart to estabelecimentos_clean. Narrow contract:
 --   - one row per sócio, keyed by socios.socio_id (UUID). The old triple
