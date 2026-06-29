@@ -38,9 +38,10 @@
 --     https://bcadastros.serpro.gov.br/documentacao/dominios/pj/
 --   receita_ods: Receita Federal open-data spreadsheet, used for qualificacao 36
 --     (a legacy code absent from the current SERPRO collection CSVs).
--- Codes absent from every official table are left unresolved on purpose; they
--- still surface in the *_lookup_missing quality flags. Known unresolved pais
--- codes: 008, 009, 015, 042, 452 (008/009 appear on Brazilian UFs, so spurious).
+-- Codes absent from both supplemental sources (SERPRO + Receita ODS) are left
+-- unresolved on purpose; they still surface in the *_lookup_missing quality
+-- flags. Known unresolved pais codes: 008, 009 (appear on Brazilian UFs, so
+-- spurious) and 452 (absent from SERPRO; would need an MDIC/BACEN source).
 
 -- ---------------------------------------------------------------------------
 -- motivos_enriched
@@ -71,6 +72,10 @@ FROM (
 WHERE NOT EXISTS (SELECT 1 FROM motivos m WHERE m.codigo = s.codigo);
 ALTER TABLE motivos_enriched ADD PRIMARY KEY (codigo);
 
+-- NOTE: SERPRO's pais.csv stores codes unpadded (e.g. "15", "42"); the pipeline
+-- pads estabelecimentos/socios.pais to 3 digits (zfill). The supplemental rows
+-- below use the 3-digit form so they match the data's padded codes.
+
 -- ---------------------------------------------------------------------------
 -- paises_enriched
 -- ---------------------------------------------------------------------------
@@ -96,6 +101,8 @@ SELECT
     s.confidence, s.notes
 FROM (
     VALUES
+    ('015', 'ALAND, ILHAS', 'high', NULL),
+    ('042', 'ANTÁRTICA', 'high', NULL),
     ('150', 'JERSEY, ILHA DO CANAL', 'medium',
      'SERPRO rotula "Jersey"; a tabela Siscomex/ME rotula "Guernsey" o mesmo código. Validade do código alta; rótulo divergente entre fontes.'),
     ('151', 'CANÁRIAS, ILHAS', 'high', NULL),

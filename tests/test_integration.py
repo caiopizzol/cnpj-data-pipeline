@@ -318,6 +318,10 @@ class TestRecipeReferenceDomainsEnriched:
         rows with their official labels; codes absent from every official table
         stay unresolved (no row)."""
         expected = {
+            # 015/042 exercise the zero-padding match: SERPRO stores them as
+            # "15"/"42", the pipeline pads pais to "015"/"042".
+            "015": "ALAND, ILHAS",
+            "042": "ANTÁRTICA",
             "150": "JERSEY, ILHA DO CANAL",
             "151": "CANÁRIAS, ILHAS",
             "200": "CURACAO",
@@ -346,8 +350,8 @@ class TestRecipeReferenceDomainsEnriched:
                 assert row[0] == descricao, f"pais {codigo}: {row[0]!r}"
                 assert row[1] is True and row[2] == "serpro_dominio"
 
-            # Absent from every official pais table -> intentionally unresolved.
-            for codigo in ("008", "009", "015", "042", "452"):
+            # Absent from both supplemental sources -> intentionally unresolved.
+            for codigo in ("008", "009", "452"):
                 cur.execute("SELECT 1 FROM paises_enriched WHERE codigo = %s", (codigo,))
                 assert cur.fetchone() is None, f"pais {codigo} should stay unresolved"
 
