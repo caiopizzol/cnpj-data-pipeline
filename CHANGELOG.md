@@ -2,6 +2,43 @@
 
 <!-- version list -->
 
+## v1.31.0 (2026-06-29)
+
+### Bug Fixes
+
+- **recipes**: Resolve pais 015/042 (SERPRO stores them unpadded)
+  ([#86](https://github.com/caiopizzol/cnpj-data-pipeline/pull/86),
+  [`253ed3e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/253ed3e68b578f99ddfa8992d43e7a2105858349))
+
+- **recipes**: Resolve qualificacao 36 (legacy) and expand pais supplements
+  ([#86](https://github.com/caiopizzol/cnpj-data-pipeline/pull/86),
+  [`253ed3e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/253ed3e68b578f99ddfa8992d43e7a2105858349))
+
+### Documentation
+
+- Add agent-facing pickled context ([#85](https://github.com/caiopizzol/cnpj-data-pipeline/pull/85),
+  [`14904ae`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/14904aee94cb3ec040973409729bc21306661483))
+
+- Fix stale prose for qualificacao 36 and supplemental sources
+  ([#86](https://github.com/caiopizzol/cnpj-data-pipeline/pull/86),
+  [`253ed3e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/253ed3e68b578f99ddfa8992d43e7a2105858349))
+
+### Features
+
+- **recipes**: Add reference_domains_enriched, resolve supplemental codes
+  ([#86](https://github.com/caiopizzol/cnpj-data-pipeline/pull/86),
+  [`253ed3e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/253ed3e68b578f99ddfa8992d43e7a2105858349))
+
+- **recipes**: Enriched reference domains + resolve supplemental codes
+  ([#86](https://github.com/caiopizzol/cnpj-data-pipeline/pull/86),
+  [`253ed3e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/253ed3e68b578f99ddfa8992d43e7a2105858349))
+
+### Testing
+
+- Add pickled coverage ([#84](https://github.com/caiopizzol/cnpj-data-pipeline/pull/84),
+  [`5da70b8`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/5da70b88726cd278d14e0b6491ea574dec5ac8bc))
+
+
 ## v1.30.0 (2026-05-26)
 
 ### Documentation
