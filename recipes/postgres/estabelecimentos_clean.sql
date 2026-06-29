@@ -1,7 +1,9 @@
 -- recipes/postgres/estabelecimentos_clean.sql
 --
 -- recipeVersion: 1
--- depends on: recipes/postgres/data_quality_flags.sql (recipeVersion 1)
+-- depends on: recipes/postgres/data_quality_flags.sql (recipeVersion 2)
+--   (v2 added pais_enriched_lookup_missing / motivo_enriched_lookup_missing;
+--    this recipe selects explicit columns and is unaffected by the additions)
 --
 -- First recipe that actually mutates values. Narrow contract by design:
 --   - one row per estabelecimento
