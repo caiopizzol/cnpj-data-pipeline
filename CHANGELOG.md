@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v1.32.0 (2026-06-29)
+
+### Bug Fixes
+
+- **recipes**: Reflect qualificacao 36 supplement and cover format_report
+  ([#87](https://github.com/caiopizzol/cnpj-data-pipeline/pull/87),
+  [`2c3eea3`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/2c3eea31f441fb62765c16151bc0e948a41674ec))
+
+### Features
+
+- **recipes**: Enriched-missing quality flags + expanded report
+  ([#87](https://github.com/caiopizzol/cnpj-data-pipeline/pull/87),
+  [`2c3eea3`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/2c3eea31f441fb62765c16151bc0e948a41674ec))
+
+- **recipes**: Enriched-missing quality flags and expanded report
+  ([#87](https://github.com/caiopizzol/cnpj-data-pipeline/pull/87),
+  [`2c3eea3`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/2c3eea31f441fb62765c16151bc0e948a41674ec))
+
+
 ## v1.31.0 (2026-06-29)
 
 ### Bug Fixes
