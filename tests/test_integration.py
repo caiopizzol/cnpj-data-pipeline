@@ -314,12 +314,25 @@ class TestRecipeReferenceDomainsEnriched:
         assert confidence == "high"
 
     def test_pais_supplemental_codes(self, test_db):
-        """150/359/367/994 resolve via SERPRO supplemental rows with their
-        official labels; spurious 008/009 stay unresolved (no row)."""
+        """The SERPRO-confirmed orphan country codes resolve via supplemental
+        rows with their official labels; codes absent from every official table
+        stay unresolved (no row)."""
         expected = {
             "150": "JERSEY, ILHA DO CANAL",
+            "151": "CANÁRIAS, ILHAS",
+            "200": "CURACAO",
+            "321": "GUERNSEY",
             "359": "MAN, ILHA DE",
             "367": "INGLATERRA",
+            "393": "JERSEY",
+            "449": "MACEDÔNIA, ANT.REP.IUGOSLAVA",
+            "498": "MONTENEGRO",
+            "578": "PALESTINA",
+            "678": "SAINT KITTS E NEVIS",
+            "693": "SAO BARTOLOMEU",
+            "699": "SÃO MARTINHO, ILHA DE (PARTE HOLANDESA)",
+            "737": "SERVIA",
+            "755": "SVALBARD E JAN MAYEN",
             "994": "A DESIGNAR",
         }
         with test_db.conn.cursor() as cur:
@@ -333,23 +346,28 @@ class TestRecipeReferenceDomainsEnriched:
                 assert row[0] == descricao, f"pais {codigo}: {row[0]!r}"
                 assert row[1] is True and row[2] == "serpro_dominio"
 
-            for codigo in ("008", "009"):
+            # Absent from every official pais table -> intentionally unresolved.
+            for codigo in ("008", "009", "015", "042", "452"):
                 cur.execute("SELECT 1 FROM paises_enriched WHERE codigo = %s", (codigo,))
                 assert cur.fetchone() is None, f"pais {codigo} should stay unresolved"
 
-    def test_qualificacoes_no_unverified_supplements(self, test_db):
-        """The qualification table has no verified supplemental codes. In
-        particular code 36 ("Gerente-Delegado" is unverified) must NOT be
-        injected, and there must be zero supplemental rows."""
+    def test_qualificacao_36_legacy_supplement(self, test_db):
+        """Code 36 (Gerente-Delegado) is a legacy qualification - documented in
+        Receita's open-data table but no longer collected, so it is absent from
+        the monthly delivery and resolved via a receita_ods supplemental row. It
+        is the only supplemental qualification (nothing else is invented)."""
         with test_db.conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM qualificacoes_socios_enriched WHERE codigo = '36'")
-            has_36 = cur.fetchone() is not None
-            cur.execute("SELECT 1 FROM qualificacoes_socios WHERE codigo = '36'")
-            monthly_has_36 = cur.fetchone() is not None
-            cur.execute("SELECT COUNT(*) FROM qualificacoes_socios_enriched WHERE is_supplemental")
-            supplemental = cur.fetchone()[0]
-        assert has_36 == monthly_has_36, "code 36 presence must match the monthly table, never injected"
-        assert supplemental == 0, "qualificacoes_socios_enriched must not invent supplemental rows"
+            cur.execute(
+                "SELECT descricao, is_supplemental, source_kind, confidence "
+                "FROM qualificacoes_socios_enriched WHERE codigo = '36'"
+            )
+            row = cur.fetchone()
+            assert row is not None, "qualificacao 36 missing from qualificacoes_socios_enriched"
+            assert row[0] == "Gerente-Delegado", repr(row[0])
+            assert row[1] is True and row[2] == "receita_ods" and row[3] == "high"
+
+            cur.execute("SELECT codigo FROM qualificacoes_socios_enriched WHERE is_supplemental ORDER BY codigo")
+            assert [r[0] for r in cur.fetchall()] == ["36"], "only code 36 may be supplemented"
 
     def test_idempotent(self, test_db):
         """Re-running the recipe drops+recreates without error, same counts."""
@@ -467,8 +485,8 @@ class TestRecipeEmpresaDetalhe:
             assert pais == "008" and descricao is None, "unresolved pais 008 must stay NULL"
 
     def test_qualificacao_responsavel_descricao(self, test_db):
-        """The new qualificacao_responsavel_descricao column resolves known codes
-        and stays NULL for the unverified code 36."""
+        """The new qualificacao_responsavel_descricao column resolves codes via
+        the enriched lookup, including the legacy code 36 (Gerente-Delegado)."""
         with test_db.conn.cursor() as cur:
             cur.execute("""
                 SELECT column_name FROM information_schema.columns
@@ -477,12 +495,12 @@ class TestRecipeEmpresaDetalhe:
             """)
             assert cur.fetchone() is not None, "qualificacao_responsavel_descricao column missing"
 
-            # code 36 is unverified -> stays NULL even though the code is present.
+            # code 36 is a legacy code, resolved via the receita_ods supplement.
             cur.execute(
                 "SELECT qualificacao_responsavel, qualificacao_responsavel_descricao "
                 "FROM empresa_detalhe WHERE cnpj_basico = '99000004'"
             )
-            assert cur.fetchone() == ("36", None), "code 36 must not get an invented description"
+            assert cur.fetchone() == ("36", "Gerente-Delegado"), "legacy code 36 should resolve"
 
             # at least some rows resolve to a non-null description.
             cur.execute("SELECT COUNT(*) FROM empresa_detalhe WHERE qualificacao_responsavel_descricao IS NOT NULL")

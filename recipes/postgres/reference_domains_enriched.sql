@@ -24,26 +24,23 @@
 --   - codigo is the primary key: the enriched table is 1:1 on codigo, so a
 --     consumer LEFT JOINing it never changes row counts.
 --   - Provenance columns describe where each row came from:
---       source_kind   'receita_monthly' | 'serpro_dominio'
+--       source_kind   'receita_monthly' | 'serpro_dominio' | 'receita_ods'
 --       source_url     canonical URL for supplemental rows; NULL for monthly
 --       is_supplemental true only for the added official rows
 --       confidence    'high' | 'medium' (label uncertainty, not code validity)
---       notes         why the supplement exists / caveats
---   - Descriptions are kept verbatim from their source. Monthly rows are
---     UPPERCASE without accents (RFB delivery); SERPRO supplemental rows keep
---     SERPRO's casing and accents. Consumers that want uniform casing normalize
---     downstream; this layer does not rewrite official wording.
+--       notes         caveats (legacy code, label divergence, etc.)
+--   - Descriptions are kept verbatim from their source. Consumers that want
+--     uniform casing normalize downstream; this layer does not rewrite official
+--     wording.
 --
--- Supplemental rows below were each verified against the official SERPRO domain
--- tables (SERPRO operates the CNPJ cadastre for Receita Federal):
---   https://bcadastros.serpro.gov.br/documentacao/dominios/pj/
--- Codes that could NOT be verified against an official source are intentionally
--- left unresolved (they will still show up in the *_lookup_missing quality
--- flags). Known unresolved cases at the 2026-04 delivery: pais '008'/'009'
--- (absent from every official pais table; appear on rows with Brazilian UFs, so
--- almost certainly spurious) and qualificacao '36' (absent from every official
--- SERPRO qualification table; the "Gerente-Delegado" label sometimes claimed
--- for it has no official source).
+-- Sources (see docs/data-audit.md "Fontes oficiais"):
+--   serpro_dominio: SERPRO domain CSVs (SERPRO runs the CNPJ cadastre),
+--     https://bcadastros.serpro.gov.br/documentacao/dominios/pj/
+--   receita_ods: Receita Federal open-data spreadsheet, used for qualificacao 36
+--     (a legacy code absent from the current SERPRO collection CSVs).
+-- Codes absent from every official table are left unresolved on purpose; they
+-- still surface in the *_lookup_missing quality flags. Known unresolved pais
+-- codes: 008, 009, 015, 042, 452 (008/009 appear on Brazilian UFs, so spurious).
 
 -- ---------------------------------------------------------------------------
 -- motivos_enriched
@@ -60,25 +57,25 @@ SELECT
     NULL::text              AS notes
 FROM motivos m
 UNION ALL
-SELECT s.codigo, s.descricao, s.source_kind, s.source_url, s.is_supplemental, s.confidence, s.notes
+SELECT
+    s.codigo, s.descricao,
+    'serpro_dominio'::text AS source_kind,
+    'https://bcadastros.serpro.gov.br/documentacao/dominios/pj/motivo_situacao_cadastral.csv'::text AS source_url,
+    true AS is_supplemental,
+    s.confidence, s.notes
 FROM (
     VALUES
-    (
-        '32',
-        'Inexistente De Fato – Ade/Cosar',
-        'serpro_dominio',
-        'https://bcadastros.serpro.gov.br/documentacao/dominios/pj/motivo_situacao_cadastral.csv',
-        true,
-        'high',
-        'Ausente do Motivos.csv mensal (medido 2026-04); presente na tabela de domínio oficial do SERPRO. Código 15 = "Inexistente De Fato"; 32 é a variante ADE/COSAR.'
-    )
-) AS s(codigo, descricao, source_kind, source_url, is_supplemental, confidence, notes)
+    ('32', 'Inexistente De Fato – Ade/Cosar', 'high',
+     'Ausente do Motivos.csv mensal; presente na tabela de domínio SERPRO. Código 15 = "Inexistente De Fato"; 32 é a variante ADE/COSAR.')
+) AS s(codigo, descricao, confidence, notes)
 WHERE NOT EXISTS (SELECT 1 FROM motivos m WHERE m.codigo = s.codigo);
 ALTER TABLE motivos_enriched ADD PRIMARY KEY (codigo);
 
 -- ---------------------------------------------------------------------------
 -- paises_enriched
 -- ---------------------------------------------------------------------------
+-- Supplemental rows are the SERPRO country codes seen as orphans in the monthly
+-- delivery. The single source_url applies to all of them.
 DROP TABLE IF EXISTS paises_enriched;
 CREATE TABLE paises_enriched AS
 SELECT
@@ -91,59 +88,41 @@ SELECT
     NULL::text              AS notes
 FROM paises p
 UNION ALL
-SELECT s.codigo, s.descricao, s.source_kind, s.source_url, s.is_supplemental, s.confidence, s.notes
+SELECT
+    s.codigo, s.descricao,
+    'serpro_dominio'::text AS source_kind,
+    'https://bcadastros.serpro.gov.br/documentacao/dominios/pj/pais.csv'::text AS source_url,
+    true AS is_supplemental,
+    s.confidence, s.notes
 FROM (
     VALUES
-    (
-        '150',
-        'JERSEY, ILHA DO CANAL',
-        'serpro_dominio',
-        'https://bcadastros.serpro.gov.br/documentacao/dominios/pj/pais.csv',
-        true,
-        'medium',
-        'Ilha do Canal. SERPRO rotula "Jersey"; a tabela Siscomex/ME rotula "Guernsey" para o mesmo código. A validade do código é alta; o rótulo exato diverge entre fontes oficiais.'
-    ),
-    (
-        '359',
-        'MAN, ILHA DE',
-        'serpro_dominio',
-        'https://bcadastros.serpro.gov.br/documentacao/dominios/pj/pais.csv',
-        true,
-        'high',
-        'Ausente do Paises.csv mensal; presente na tabela de domínio oficial do SERPRO.'
-    ),
-    (
-        '367',
-        'INGLATERRA',
-        'serpro_dominio',
-        'https://bcadastros.serpro.gov.br/documentacao/dominios/pj/pais.csv',
-        true,
-        'high',
-        'Ausente do Paises.csv mensal; presente na tabela de domínio oficial do SERPRO.'
-    ),
-    (
-        '994',
-        'A DESIGNAR',
-        'serpro_dominio',
-        'https://bcadastros.serpro.gov.br/documentacao/dominios/pj/pais.csv',
-        true,
-        'high',
-        'Placeholder administrativo ("a designar"), não um país real. Presente na tabela de domínio oficial do SERPRO.'
-    )
-) AS s(codigo, descricao, source_kind, source_url, is_supplemental, confidence, notes)
+    ('150', 'JERSEY, ILHA DO CANAL', 'medium',
+     'SERPRO rotula "Jersey"; a tabela Siscomex/ME rotula "Guernsey" o mesmo código. Validade do código alta; rótulo divergente entre fontes.'),
+    ('151', 'CANÁRIAS, ILHAS', 'high', NULL),
+    ('200', 'CURACAO', 'high', NULL),
+    ('321', 'GUERNSEY', 'high', NULL),
+    ('359', 'MAN, ILHA DE', 'high', NULL),
+    ('367', 'INGLATERRA', 'high', NULL),
+    ('393', 'JERSEY', 'high', NULL),
+    ('449', 'MACEDÔNIA, ANT.REP.IUGOSLAVA', 'high', NULL),
+    ('498', 'MONTENEGRO', 'high', NULL),
+    ('578', 'PALESTINA', 'high', NULL),
+    ('678', 'SAINT KITTS E NEVIS', 'high', NULL),
+    ('693', 'SAO BARTOLOMEU', 'high', NULL),
+    ('699', 'SÃO MARTINHO, ILHA DE (PARTE HOLANDESA)', 'high', NULL),
+    ('737', 'SERVIA', 'high', NULL),
+    ('755', 'SVALBARD E JAN MAYEN', 'high', NULL),
+    ('994', 'A DESIGNAR', 'high', 'Placeholder administrativo ("a designar"), não um país real.')
+) AS s(codigo, descricao, confidence, notes)
 WHERE NOT EXISTS (SELECT 1 FROM paises p WHERE p.codigo = s.codigo);
 ALTER TABLE paises_enriched ADD PRIMARY KEY (codigo);
 
 -- ---------------------------------------------------------------------------
 -- qualificacoes_socios_enriched
 -- ---------------------------------------------------------------------------
--- No official supplemental qualification codes are currently verified, so this
--- table is the monthly delivery carried through with provenance columns for a
--- uniform interface. In particular, code '36' (claimed elsewhere as
--- "Gerente-Delegado") is absent from every official SERPRO qualification domain
--- (qualificacao_socio, qualificacao_responsavel, qualificacao_representante_legal)
--- and is left unresolved on purpose. Add VALUES rows here if a future code is
--- verified against an official source.
+-- Code 36 (Gerente-Delegado) is a legacy qualification: Receita's open-data
+-- table marks it COLETADO ATUALMENTE = "Não", which is why it is absent from
+-- the current SERPRO collection CSVs but still appears in old records.
 DROP TABLE IF EXISTS qualificacoes_socios_enriched;
 CREATE TABLE qualificacoes_socios_enriched AS
 SELECT
@@ -154,7 +133,20 @@ SELECT
     false                   AS is_supplemental,
     'high'::text            AS confidence,
     NULL::text              AS notes
-FROM qualificacoes_socios q;
+FROM qualificacoes_socios q
+UNION ALL
+SELECT
+    s.codigo, s.descricao,
+    'receita_ods'::text AS source_kind,
+    'https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/cadastros/cnpj/tabela-de-qualificacao-do-socio-representante.ods'::text AS source_url,
+    true AS is_supplemental,
+    s.confidence, s.notes
+FROM (
+    VALUES
+    ('36', 'Gerente-Delegado', 'high',
+     'Código legado (COLETADO ATUALMENTE="Não" na tabela ODS oficial da Receita); ausente das CSVs de coleta atuais do SERPRO. Corroborado pela norma idArquivoBinario=18132.')
+) AS s(codigo, descricao, confidence, notes)
+WHERE NOT EXISTS (SELECT 1 FROM qualificacoes_socios q WHERE q.codigo = s.codigo);
 ALTER TABLE qualificacoes_socios_enriched ADD PRIMARY KEY (codigo);
 
 ANALYZE motivos_enriched;
