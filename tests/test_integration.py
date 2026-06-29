@@ -36,11 +36,16 @@ EXPECTED_COUNTS = {
     "naturezas_juridicas": 91,
     "paises": 255,
     "qualificacoes_socios": 68,
-    "empresas": 2000,
-    "estabelecimentos": 2000,
+    "empresas": 2004,
+    "estabelecimentos": 2004,
     "socios": 2000,
     "dados_simples": 2000,
 }
+
+# Crafted fixture rows (cnpj_basico 99000001-99000004) exercise the enriched
+# reference-domain recipe: motivo 32 (supplemental), pais 150/994 (supplemental),
+# pais 008 (unresolved orphan), qualificacao_responsavel 36 (legacy supplemental).
+ENRICHED_SUPPLEMENTAL_MOTIVO_32 = "Inexistente De Fato – Ade/Cosar"
 
 
 def _pg_available() -> bool:
@@ -204,6 +209,181 @@ class TestFullPipeline:
         )
 
 
+class TestRecipeReferenceDomainsEnriched:
+    """Apply recipes/postgres/reference_domains_enriched.sql against the
+    fixture-loaded database and verify the enriched lookups add only verified
+    supplemental rows, preserve monthly rows, and carry provenance.
+
+    Runs before TestRecipeEmpresaDetalhe so the enriched tables exist when the
+    denormalization recipe LEFT JOINs them (pytest preserves file order).
+    """
+
+    RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "reference_domains_enriched.sql"
+
+    ENRICHED_TABLES = ("motivos_enriched", "paises_enriched", "qualificacoes_socios_enriched")
+    EXPECTED_COLUMNS = {
+        "codigo",
+        "descricao",
+        "source_kind",
+        "source_url",
+        "is_supplemental",
+        "confidence",
+        "notes",
+    }
+
+    def test_recipe_executes(self, test_db):
+        """The recipe SQL should parse and execute, creating all three tables."""
+        sql = self.RECIPE_PATH.read_text()
+        with test_db.conn.cursor() as cur:
+            cur.execute(sql)
+        test_db.conn.commit()
+
+        for table in self.ENRICHED_TABLES:
+            with test_db.conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM information_schema.tables WHERE table_name = %s",
+                    (table,),
+                )
+                assert cur.fetchone() is not None, f"{table} not created"
+
+    def test_provenance_schema(self, test_db):
+        """Every enriched table exposes the same provenance columns."""
+        for table in self.ENRICHED_TABLES:
+            with test_db.conn.cursor() as cur:
+                cur.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                    (table,),
+                )
+                cols = {row[0] for row in cur.fetchall()}
+            assert cols == self.EXPECTED_COLUMNS, f"{table} columns: {cols}"
+
+    def test_monthly_rows_preserved_and_win(self, test_db):
+        """Each enriched table is a superset of its monthly lookup: every
+        monthly (codigo, descricao) pair is present as a non-supplemental row,
+        and supplemental rows never override a monthly codigo."""
+        for monthly, enriched in (
+            ("motivos", "motivos_enriched"),
+            ("paises", "paises_enriched"),
+            ("qualificacoes_socios", "qualificacoes_socios_enriched"),
+        ):
+            with test_db.conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) FROM {monthly} mo
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM {enriched} en
+                        WHERE en.codigo = mo.codigo
+                          AND en.descricao IS NOT DISTINCT FROM mo.descricao
+                          AND en.is_supplemental = false
+                          AND en.source_kind = 'receita_monthly'
+                    )
+                    """
+                )
+                missing = cur.fetchone()[0]
+                assert missing == 0, f"{enriched} dropped/altered {missing} monthly rows"
+
+                # No codigo appears more than once (anti-join + PK guarantee).
+                cur.execute(f"SELECT codigo, COUNT(*) FROM {enriched} GROUP BY codigo HAVING COUNT(*) > 1")
+                assert cur.fetchall() == [], f"{enriched} has duplicate codigo"
+
+                # Supplemental rows must not collide with a monthly codigo.
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) FROM {enriched} en
+                    WHERE en.is_supplemental
+                      AND EXISTS (SELECT 1 FROM {monthly} mo WHERE mo.codigo = en.codigo)
+                    """
+                )
+                assert cur.fetchone()[0] == 0, f"{enriched} supplemental row overrides a monthly codigo"
+
+    def test_motivo_32_supplemental(self, test_db):
+        """motivo 32 is absent from the monthly Motivos delivery but resolves via
+        the SERPRO supplemental row, verbatim and flagged supplemental."""
+        with test_db.conn.cursor() as cur:
+            cur.execute(
+                "SELECT descricao, source_kind, is_supplemental, source_url, confidence "
+                "FROM motivos_enriched WHERE codigo = '32'"
+            )
+            row = cur.fetchone()
+        assert row is not None, "motivo 32 missing from motivos_enriched"
+        descricao, source_kind, is_supplemental, source_url, confidence = row
+        assert descricao == ENRICHED_SUPPLEMENTAL_MOTIVO_32, repr(descricao)
+        assert source_kind == "serpro_dominio"
+        assert is_supplemental is True
+        assert source_url and source_url.startswith("https://bcadastros.serpro.gov.br/")
+        assert confidence == "high"
+
+    def test_pais_supplemental_codes(self, test_db):
+        """The SERPRO-confirmed orphan country codes resolve via supplemental
+        rows with their official labels; codes absent from every official table
+        stay unresolved (no row)."""
+        expected = {
+            # 015/042 exercise the zero-padding match: SERPRO stores them as
+            # "15"/"42", the pipeline pads pais to "015"/"042".
+            "015": "ALAND, ILHAS",
+            "042": "ANTÁRTICA",
+            "150": "JERSEY, ILHA DO CANAL",
+            "151": "CANÁRIAS, ILHAS",
+            "200": "CURACAO",
+            "321": "GUERNSEY",
+            "359": "MAN, ILHA DE",
+            "367": "INGLATERRA",
+            "393": "JERSEY",
+            "449": "MACEDÔNIA, ANT.REP.IUGOSLAVA",
+            "498": "MONTENEGRO",
+            "578": "PALESTINA",
+            "678": "SAINT KITTS E NEVIS",
+            "693": "SAO BARTOLOMEU",
+            "699": "SÃO MARTINHO, ILHA DE (PARTE HOLANDESA)",
+            "737": "SERVIA",
+            "755": "SVALBARD E JAN MAYEN",
+            "994": "A DESIGNAR",
+        }
+        with test_db.conn.cursor() as cur:
+            for codigo, descricao in expected.items():
+                cur.execute(
+                    "SELECT descricao, is_supplemental, source_kind FROM paises_enriched WHERE codigo = %s",
+                    (codigo,),
+                )
+                row = cur.fetchone()
+                assert row is not None, f"pais {codigo} missing from paises_enriched"
+                assert row[0] == descricao, f"pais {codigo}: {row[0]!r}"
+                assert row[1] is True and row[2] == "serpro_dominio"
+
+            # Absent from both supplemental sources -> intentionally unresolved.
+            for codigo in ("008", "009", "452"):
+                cur.execute("SELECT 1 FROM paises_enriched WHERE codigo = %s", (codigo,))
+                assert cur.fetchone() is None, f"pais {codigo} should stay unresolved"
+
+    def test_qualificacao_36_legacy_supplement(self, test_db):
+        """Code 36 (Gerente-Delegado) is a legacy qualification - documented in
+        Receita's open-data table but no longer collected, so it is absent from
+        the monthly delivery and resolved via a receita_ods supplemental row. It
+        is the only supplemental qualification (nothing else is invented)."""
+        with test_db.conn.cursor() as cur:
+            cur.execute(
+                "SELECT descricao, is_supplemental, source_kind, confidence "
+                "FROM qualificacoes_socios_enriched WHERE codigo = '36'"
+            )
+            row = cur.fetchone()
+            assert row is not None, "qualificacao 36 missing from qualificacoes_socios_enriched"
+            assert row[0] == "Gerente-Delegado", repr(row[0])
+            assert row[1] is True and row[2] == "receita_ods" and row[3] == "high"
+
+            cur.execute("SELECT codigo FROM qualificacoes_socios_enriched WHERE is_supplemental ORDER BY codigo")
+            assert [r[0] for r in cur.fetchall()] == ["36"], "only code 36 may be supplemented"
+
+    def test_idempotent(self, test_db):
+        """Re-running the recipe drops+recreates without error, same counts."""
+        sql = self.RECIPE_PATH.read_text()
+        counts_before = {t: _count_rows(test_db, t) for t in self.ENRICHED_TABLES}
+        with test_db.conn.cursor() as cur:
+            cur.execute(sql)
+        test_db.conn.commit()
+        for table, before in counts_before.items():
+            assert _count_rows(test_db, table) == before, f"{table} row count changed on re-run"
+
+
 class TestRecipeEmpresaDetalhe:
     """Apply recipes/postgres/empresa_detalhe.sql against the fixture-loaded
     database and verify the derived table has the expected shape.
@@ -216,11 +396,15 @@ class TestRecipeEmpresaDetalhe:
     """
 
     RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "empresa_detalhe.sql"
+    ENRICHED_RECIPE_PATH = Path(__file__).parent.parent / "recipes" / "postgres" / "reference_domains_enriched.sql"
 
     def test_recipe_executes(self, test_db):
-        """The recipe SQL should parse and execute without errors."""
+        """The recipe SQL should parse and execute without errors. It depends on
+        the enriched lookups, so apply those first."""
+        enriched_sql = self.ENRICHED_RECIPE_PATH.read_text()
         sql = self.RECIPE_PATH.read_text()
         with test_db.conn.cursor() as cur:
+            cur.execute(enriched_sql)
             cur.execute(sql)
         test_db.conn.commit()
 
@@ -278,6 +462,53 @@ class TestRecipeEmpresaDetalhe:
             """)
             count = cur.fetchone()[0]
             assert count > 0, "No rows have all reference descriptions joined"
+
+    def test_enriched_motivo_description_resolves(self, test_db):
+        """The crafted motivo-32 estabelecimento (cnpj_basico 99000001) gets its
+        description from the enriched supplemental row, not NULL."""
+        with test_db.conn.cursor() as cur:
+            cur.execute(
+                "SELECT motivo_situacao_cadastral, motivo_situacao_cadastral_descricao "
+                "FROM empresa_detalhe WHERE cnpj_basico = '99000001'"
+            )
+            row = cur.fetchone()
+        assert row is not None, "crafted motivo-32 estabelecimento missing"
+        assert row[0] == "32"
+        assert row[1] == ENRICHED_SUPPLEMENTAL_MOTIVO_32, repr(row[1])
+
+    def test_enriched_pais_resolved_and_unresolved(self, test_db):
+        """pais 150/994 resolve via enriched supplements; the spurious 008 code
+        stays NULL so the gap stays visible."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("SELECT pais, pais_descricao FROM empresa_detalhe WHERE cnpj_basico = '99000002'")
+            assert cur.fetchone() == ("150", "JERSEY, ILHA DO CANAL")
+            cur.execute("SELECT pais, pais_descricao FROM empresa_detalhe WHERE cnpj_basico = '99000004'")
+            assert cur.fetchone() == ("994", "A DESIGNAR")
+            cur.execute("SELECT pais, pais_descricao FROM empresa_detalhe WHERE cnpj_basico = '99000003'")
+            pais, descricao = cur.fetchone()
+            assert pais == "008" and descricao is None, "unresolved pais 008 must stay NULL"
+
+    def test_qualificacao_responsavel_descricao(self, test_db):
+        """The new qualificacao_responsavel_descricao column resolves codes via
+        the enriched lookup, including the legacy code 36 (Gerente-Delegado)."""
+        with test_db.conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'empresa_detalhe'
+                  AND column_name = 'qualificacao_responsavel_descricao'
+            """)
+            assert cur.fetchone() is not None, "qualificacao_responsavel_descricao column missing"
+
+            # code 36 is a legacy code, resolved via the receita_ods supplement.
+            cur.execute(
+                "SELECT qualificacao_responsavel, qualificacao_responsavel_descricao "
+                "FROM empresa_detalhe WHERE cnpj_basico = '99000004'"
+            )
+            assert cur.fetchone() == ("36", "Gerente-Delegado"), "legacy code 36 should resolve"
+
+            # at least some rows resolve to a non-null description.
+            cur.execute("SELECT COUNT(*) FROM empresa_detalhe WHERE qualificacao_responsavel_descricao IS NOT NULL")
+            assert cur.fetchone()[0] > 0, "no qualificacao_responsavel descriptions resolved"
 
     def test_dados_simples_columns_present(self, test_db):
         """dados_simples LEFT JOIN should expose raw columns. Some rows may
