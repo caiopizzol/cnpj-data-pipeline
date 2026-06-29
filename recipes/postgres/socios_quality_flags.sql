@@ -23,10 +23,9 @@
 --   - Two lookup signals per domain: *_lookup_missing checks the raw MONTHLY
 --     lookup (the Receita delivery's internal gaps); *_enriched_lookup_missing
 --     checks the ENRICHED lookup (what is still unresolved after official
---     supplemental rows). For pais the two differ (paises_enriched adds rows);
---     for qualificacao they currently coincide because no official supplemental
---     qualification code is verified yet, so qualificacoes_socios_enriched
---     equals the monthly table today (see reference_domains_enriched).
+--     supplemental rows). The two differ on supplemented codes: pais orphans
+--     from the SERPRO table, and qualificacao 36 (the legacy Gerente-Delegado
+--     code) - see reference_domains_enriched.
 --   - representante_is_placeholder uses the observed pair
 --     representante_legal='***000000**' and
 --     qualificacao_do_representante_legal='00'. The masked CPF form is

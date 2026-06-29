@@ -1634,8 +1634,8 @@ class TestDataQualityReportMeasurements:
 
     def test_enriched_coverage_shows_gap_closed(self, test_db):
         """Enriched coverage reports monthly vs enriched orphans. Supplemental
-        codes (motivo 32, pais 150/994) close the gap; qualificacao has no
-        verified supplement, so its two counts coincide."""
+        codes close the gap: motivo 32, pais 150/994, and qualificacao 36
+        (the legacy Gerente-Delegado code, carried by fixture empresa 99000004)."""
         self._ensure_enriched(test_db)
         dqr = self._report_module()
         result = dqr.measure_enriched_orphans(test_db.conn)
@@ -1650,8 +1650,7 @@ class TestDataQualityReportMeasurements:
         assert pais["enriched_orphans"] >= 1, "spurious pais 008 must remain unresolved"
 
         qual = rows["empresas.qualificacao_responsavel"]
-        assert qual["monthly_orphans"] == qual["enriched_orphans"], "no verified qualificacao supplement"
-        assert qual["enriched_orphans"] >= 1, "code 36 stays unresolved"
+        assert qual["monthly_orphans"] > qual["enriched_orphans"], "legacy code 36 should close the gap"
 
     def test_enriched_coverage_absent_when_tables_missing(self, test_db):
         """When the enriched tables do not exist, the measurement degrades to

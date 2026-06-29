@@ -9,7 +9,21 @@ import pytest
 # scripts/ isn't a package; add it to sys.path so we can import directly.
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from data_quality_report import cnpj_expected_dv, sample_pct  # noqa: E402
+from data_quality_report import cnpj_expected_dv, format_report, sample_pct  # noqa: E402
+
+
+def _base_measurements(enriched_orphans):
+    """Minimal measurement dict for format_report, parameterized on the
+    enriched-coverage section under test."""
+    return {
+        "cnpj_check_digits": {"total": 0, "valid": 0, "invalid": 0, "examples": [], "scan_mode": "sample 0.1%"},
+        "orphan_fks": [{"label": "estabelecimentos.pais ∉ paises", "orphans": 3}],
+        "enriched_orphans": enriched_orphans,
+        "exterior_uf": {"total": 10, "exterior": 1},
+        "capital_sentinel": {"total": 10, "sentinel": 0, "nulls": 0},
+        "representante_sentinel": {"total": 10, "sentinel": 0},
+        "cep_validity": {"total": 10, "nulls": 0, "zero_sentinel": 0, "malformed": 0},
+    }
 
 
 class TestCnpjExpectedDV:
@@ -65,3 +79,35 @@ class TestSamplePct:
     def test_rejects_invalid_percentages(self, value):
         with pytest.raises(argparse.ArgumentTypeError):
             sample_pct(value)
+
+
+class TestFormatReportEnrichedSection:
+    """Render-level coverage for the enriched-domain coverage section."""
+
+    def test_renders_monthly_vs_enriched_table(self):
+        report = format_report(
+            _base_measurements(
+                {
+                    "available": True,
+                    "rows": [
+                        {
+                            "label": "estabelecimentos.motivo_situacao_cadastral",
+                            "monthly_orphans": 5,
+                            "enriched_orphans": 1,
+                        }
+                    ],
+                }
+            ),
+            scope={"scope_str": "Bernoulli sample 0.1%"},
+        )
+        assert "## Enriched-domain coverage" in report
+        assert "Monthly orphans" in report and "After enrichment" in report
+        assert "estabelecimentos.motivo_situacao_cadastral" in report
+
+    def test_renders_unavailable_note(self):
+        report = format_report(
+            _base_measurements({"available": False, "rows": []}),
+            scope={"scope_str": "Bernoulli sample 0.1%"},
+        )
+        assert "## Enriched-domain coverage" in report
+        assert "reference_domains_enriched.sql" in report
