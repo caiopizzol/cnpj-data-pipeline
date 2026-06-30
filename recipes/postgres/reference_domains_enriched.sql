@@ -13,6 +13,7 @@
 -- Apply after the pipeline finishes ingest, BEFORE any recipe that wants the
 -- enriched descriptions:
 --     psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
+--     psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
 --     psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
 --
 -- Dependencies: motivos, paises, qualificacoes_socios (base load).

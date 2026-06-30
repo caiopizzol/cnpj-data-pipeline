@@ -95,6 +95,9 @@ Rule: the pipeline preserva e mede. Receitas interpretam.
 Apply recipes after the load with `psql "$DATABASE_URL" -f ...`:
 
 ```bash
+# empresa_detalhe depends on the reference-domain recipes; run them first.
+psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
+psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
 psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
 psql "$DATABASE_URL" -f recipes/postgres/data_quality_flags.sql
 psql "$DATABASE_URL" -f recipes/postgres/estabelecimentos_clean.sql
