@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.35.0 (2026-06-30)
+
+### Documentation
+
+- **cnpj**: Correct stale 14-digit wording to 14-character
+  ([#91](https://github.com/caiopizzol/cnpj-data-pipeline/pull/91),
+  [`f7839bd`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/f7839bd8ff636058ac8aa1ed9f09b69b45cd4498))
+
+### Features
+
+- **cnpj**: Support alphanumeric CNPJ (Receita 2026-07)
+  ([#91](https://github.com/caiopizzol/cnpj-data-pipeline/pull/91),
+  [`f7839bd`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/f7839bd8ff636058ac8aa1ed9f09b69b45cd4498))
+
+
 ## v1.34.0 (2026-06-30)
 
 ### Features
