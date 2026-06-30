@@ -9,13 +9,14 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 | Receita | Arquivo | O que faz |
 |---|---|---|
 | `reference_domains_enriched` | [`postgres/reference_domains_enriched.sql`](postgres/reference_domains_enriched.sql) | Materializa `motivos_enriched`, `paises_enriched` e `qualificacoes_socios_enriched`: a tabela mensal mais linhas suplementares oficiais (SERPRO/Receita ODS) para códigos ausentes do mês, com proveniência por linha. Não altera as tabelas cruas. Pré-requisito de `empresa_detalhe`. |
-| `reference_domain_labels` | [`postgres/reference_domain_labels.sql`](postgres/reference_domain_labels.sql) | Materializa `portes_empresa`, `situacoes_cadastrais` e `indicadores_matriz_filial`: dicionários estáticos oficiais para os enums de `porte`, `situacao_cadastral` e `identificador_matriz_filial`, que o pacote mensal entrega só como código, sem CSV de domínio. Não altera as tabelas cruas. Pré-requisito de `empresa_detalhe`. |
+| `reference_domain_labels` | [`postgres/reference_domain_labels.sql`](postgres/reference_domain_labels.sql) | Materializa `portes_empresa`, `situacoes_cadastrais`, `indicadores_matriz_filial`, `identificadores_socio` e `faixas_etarias`: dicionários estáticos oficiais para os enums de `porte`, `situacao_cadastral`, `identificador_matriz_filial`, `identificador_de_socio` e `faixa_etaria`, que o pacote mensal entrega só como código, sem CSV de domínio. Não altera as tabelas cruas. Pré-requisito de `empresa_detalhe` e `socios_detalhe`. |
 | `empresa_detalhe` | [`postgres/empresa_detalhe.sql`](postgres/empresa_detalhe.sql) | Junta empresas, estabelecimentos, tabelas de referência (descrições de motivo/país/qualificação vêm das tabelas enriquecidas; descrições de porte/situação/matriz-filial vêm das tabelas de rótulos) e dados do Simples Nacional em uma tabela por estabelecimento. Preserva códigos e valores da fonte. |
 | `data_quality_flags` | [`postgres/data_quality_flags.sql`](postgres/data_quality_flags.sql) | Mede sinais de qualidade por estabelecimento, sem alterar valores. |
 | `estabelecimentos_clean` | [`postgres/estabelecimentos_clean.sql`](postgres/estabelecimentos_clean.sql) | Usa `data_quality_flags` para emitir pares cru/limpo de CEP e capital social. |
 | `cnae_secundaria_exploded` | [`postgres/cnae_secundaria_exploded.sql`](postgres/cnae_secundaria_exploded.sql) | Transforma `cnae_fiscal_secundaria` em uma tabela lateral: uma linha por CNAE secundário. |
 | `socios_quality_flags` | [`postgres/socios_quality_flags.sql`](postgres/socios_quality_flags.sql) | Mede sinais de qualidade por sócio, incluindo representante legal com valor de preenchimento e referências ausentes. |
 | `socios_clean` | [`postgres/socios_clean.sql`](postgres/socios_clean.sql) | Usa `socios_quality_flags` para emitir pares cru/limpo do trio do representante e de `faixa_etaria`. |
+| `socios_detalhe` | [`postgres/socios_detalhe.sql`](postgres/socios_detalhe.sql) | Tabela por sócio que junta `socios` com as descrições de qualificação e país (tabelas enriquecidas) e de `identificador_de_socio` e `faixa_etaria` (tabelas de rótulos). Preserva todos os códigos da fonte, sem mutação de valor. Equivale a `empresa_detalhe` no grão de sócio. Pré-requisitos: `reference_domains_enriched` e `reference_domain_labels`. |
 | `empresas_busca_nome` | [`postgres/empresas_busca_nome.sql`](postgres/empresas_busca_nome.sql) | Tabela de serviço para busca por `razao_social` em matrizes ativas. Inclui descrições de município e CNAE e índices compostos para LIKE prefixo combinado com filtros de UF, município ou CNAE. |
 | `empresas_busca_nome_counts` | [`postgres/empresas_busca_nome_counts.sql`](postgres/empresas_busca_nome_counts.sql) | Rollups de contagem para `empresas_busca_nome` por UF, UF + município (descrição e código) e UF + CNAE. Cada lookup é O(1) via índice único parcial; serve totais exatos sem varrer milhões de linhas a cada request. |
 
@@ -44,6 +45,9 @@ psql "$DATABASE_URL" -f recipes/postgres/cnae_secundaria_exploded.sql
 psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql
 psql "$DATABASE_URL" -f recipes/postgres/socios_clean.sql
 
+# Tabela por sócio com descrições (depende de reference_domains_enriched e reference_domain_labels)
+psql "$DATABASE_URL" -f recipes/postgres/socios_detalhe.sql
+
 # Tabela de serviço para busca por nome em matrizes ativas
 psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome.sql
 
@@ -71,6 +75,4 @@ Antes de propor uma receita nova:
 
 Receitas em discussão:
 
-- `socios_detalhe` — junções de sócios com qualificação e país. Ainda precisa decidir como expor descrições e valores sentinela.
-- `descricoes` — os enums sem CSV de domínio (`porte`, `situacao_cadastral`, `identificador_matriz_filial`) já têm rótulo via `reference_domain_labels` e aparecem em `empresa_detalhe`. Em discussão ficam só os enums ainda sem coluna de descrição (ex.: `faixa_etaria`, `identificador_de_socio`).
 - `booleanos` — colunas convenientes como `is_ativa`, `is_matriz`, `is_optante_simples_atual`. Cada uma com a regra documentada.
