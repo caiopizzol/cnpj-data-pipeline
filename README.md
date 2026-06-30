@@ -20,6 +20,9 @@
 > [!IMPORTANT]
 > **Desde v1.3.2** — _A Receita Federal migrou os arquivos CNPJ para um novo repositório Nextcloud. Esta versão já suporta a nova URL e realiza downloads via WebDAV automaticamente. Nenhuma configuração adicional necessária._
 
+> [!IMPORTANT]
+> **Desde v1.35.0** — _Suporte ao CNPJ alfanumérico da Receita Federal, previsto para novas inscrições a partir de julho de 2026. `cnpj_basico` e `cnpj_ordem` aceitam `0-9` e `A-Z`; `cnpj_dv` continua numérico. CNPJs numéricos existentes seguem compatíveis sem mudança._
+
 > [!TIP]
 > **Novo** — _Estratégia de carga configurável. Use `LOADING_STRATEGY=replace` para carga completa mais rápida (TRUNCATE + INSERT) ou `upsert` (default) para manter disponibilidade durante a carga._
 
