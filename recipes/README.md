@@ -9,7 +9,8 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 | Receita | Arquivo | O que faz |
 |---|---|---|
 | `reference_domains_enriched` | [`postgres/reference_domains_enriched.sql`](postgres/reference_domains_enriched.sql) | Materializa `motivos_enriched`, `paises_enriched` e `qualificacoes_socios_enriched`: a tabela mensal mais linhas suplementares oficiais (SERPRO/Receita ODS) para códigos ausentes do mês, com proveniência por linha. Não altera as tabelas cruas. Pré-requisito de `empresa_detalhe`. |
-| `empresa_detalhe` | [`postgres/empresa_detalhe.sql`](postgres/empresa_detalhe.sql) | Junta empresas, estabelecimentos, tabelas de referência (descrições de motivo/país/qualificação vêm das tabelas enriquecidas) e dados do Simples Nacional em uma tabela por estabelecimento. Preserva códigos e valores da fonte. |
+| `reference_domain_labels` | [`postgres/reference_domain_labels.sql`](postgres/reference_domain_labels.sql) | Materializa `portes_empresa`, `situacoes_cadastrais` e `indicadores_matriz_filial`: dicionários estáticos oficiais para os enums de `porte`, `situacao_cadastral` e `identificador_matriz_filial`, que o pacote mensal entrega só como código, sem CSV de domínio. Não altera as tabelas cruas. Pré-requisito de `empresa_detalhe`. |
+| `empresa_detalhe` | [`postgres/empresa_detalhe.sql`](postgres/empresa_detalhe.sql) | Junta empresas, estabelecimentos, tabelas de referência (descrições de motivo/país/qualificação vêm das tabelas enriquecidas; descrições de porte/situação/matriz-filial vêm das tabelas de rótulos) e dados do Simples Nacional em uma tabela por estabelecimento. Preserva códigos e valores da fonte. |
 | `data_quality_flags` | [`postgres/data_quality_flags.sql`](postgres/data_quality_flags.sql) | Mede sinais de qualidade por estabelecimento, sem alterar valores. |
 | `estabelecimentos_clean` | [`postgres/estabelecimentos_clean.sql`](postgres/estabelecimentos_clean.sql) | Usa `data_quality_flags` para emitir pares cru/limpo de CEP e capital social. |
 | `cnae_secundaria_exploded` | [`postgres/cnae_secundaria_exploded.sql`](postgres/cnae_secundaria_exploded.sql) | Transforma `cnae_fiscal_secundaria` em uma tabela lateral: uma linha por CNAE secundário. |
@@ -26,7 +27,10 @@ Depois da carga (`just run`), rode apenas as receitas que você precisa:
 # Domínios de referência enriquecidos (pré-requisito de empresa_detalhe)
 psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
 
-# Tabela denormalizada para consulta (depende de reference_domains_enriched)
+# Rótulos estáticos de domínio (pré-requisito de empresa_detalhe)
+psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
+
+# Tabela denormalizada para consulta (depende de reference_domains_enriched e reference_domain_labels)
 psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
 
 # Sinais de qualidade e camada limpa de estabelecimentos
@@ -68,5 +72,5 @@ Antes de propor uma receita nova:
 Receitas em discussão:
 
 - `socios_detalhe` — junções de sócios com qualificação e país. Ainda precisa decidir como expor descrições e valores sentinela.
-- `descricoes` — colunas adicionais com a descrição legível de enums (`situacao_cadastral_descricao`, `porte_descricao` etc.).
+- `descricoes` — os enums sem CSV de domínio (`porte`, `situacao_cadastral`, `identificador_matriz_filial`) já têm rótulo via `reference_domain_labels` e aparecem em `empresa_detalhe`. Em discussão ficam só os enums ainda sem coluna de descrição (ex.: `faixa_etaria`, `identificador_de_socio`).
 - `booleanos` — colunas convenientes como `is_ativa`, `is_matriz`, `is_optante_simples_atual`. Cada uma com a regra documentada.
