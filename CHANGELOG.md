@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.34.0 (2026-06-30)
+
+### Features
+
+- **recipes**: Socios_detalhe with sócio domain labels
+  ([`8280fb4`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/8280fb45d2d32766aded2c1d4b774ea667d95f92))
+
+
 ## v1.33.0 (2026-06-30)
 
 ### Features
