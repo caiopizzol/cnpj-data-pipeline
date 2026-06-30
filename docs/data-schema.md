@@ -39,7 +39,7 @@ erDiagram
 
 | Campo | Descrição |
 |-------|-----------|
-| cnpj_basico | 8 primeiros dígitos do CNPJ |
+| cnpj_basico | 8 primeiros caracteres do CNPJ (alfanuméricos 0-9/A-Z a partir de julho/2026) |
 | razao_social | Nome empresarial |
 | natureza_juridica | Código → naturezas_juridicas |
 | qualificacao_responsavel | Código → qualificacoes_socios |
@@ -57,9 +57,9 @@ erDiagram
 
 | Campo | Descrição |
 |-------|-----------|
-| cnpj_basico | 8 primeiros dígitos |
-| cnpj_ordem | 4 dígitos (0001=matriz) |
-| cnpj_dv | 2 dígitos verificadores |
+| cnpj_basico | 8 primeiros caracteres (alfanuméricos 0-9/A-Z) |
+| cnpj_ordem | 4 caracteres (alfanuméricos; 0001=matriz) |
+| cnpj_dv | 2 dígitos verificadores (numéricos) |
 | identificador_matriz_filial | 1=Matriz, 2=Filial |
 | nome_fantasia | Nome fantasia |
 | situacao_cadastral | Código da situação |
@@ -97,7 +97,7 @@ erDiagram
 | Campo | Descrição |
 |-------|-----------|
 | socio_id | UUID determinístico, PK. Hash blake2b de (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio, nome canonicalizado, data_entrada_sociedade). Sintético: não vem da RFB. |
-| cnpj_basico | 8 primeiros dígitos |
+| cnpj_basico | 8 primeiros caracteres (alfanuméricos 0-9/A-Z) |
 | identificador_de_socio | Tipo do sócio |
 | nome_socio | Nome (PF) ou Razão Social (PJ). Cru, não normalizado. |
 | cnpj_cpf_do_socio | CPF mascarado ou CNPJ. Não é único dentro de uma empresa (vide #78); use `socio_id` como chave. |
@@ -132,7 +132,7 @@ erDiagram
 
 | Campo | Descrição |
 |-------|-----------|
-| cnpj_basico | 8 primeiros dígitos |
+| cnpj_basico | 8 primeiros caracteres (alfanuméricos 0-9/A-Z) |
 | opcao_pelo_simples | S=Sim, N=Não, vazio=Outros |
 | data_opcao_simples | Data de opção |
 | data_exclusao_simples | Data de exclusão |

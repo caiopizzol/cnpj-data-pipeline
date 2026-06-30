@@ -378,15 +378,42 @@ class TestSocioId:
 class TestValidate:
     """Test _validate function for format validation."""
 
-    def test_validate_cnpj_basico_format(self):
-        """Test that cnpj_basico must be exactly 8 digits."""
-        df = pl.DataFrame({"cnpj_basico": ["12345678", "1234", "ABCDEFGH", None]})
+    def test_validate_cnpj_basico_format(self, caplog):
+        """cnpj_basico is 8 uppercase alphanumeric chars (0-9, A-Z) from the
+        2026-07 alphanumeric CNPJ. Validation logs malformed values but keeps
+        raw data (no nullify)."""
+        df = pl.DataFrame({"cnpj_basico": ["12345678", "12ABC678", "ABCDEFGH", "1234", "abcd1234", None]})
 
-        result = _validate(df, "EMPRECSV")
+        with caplog.at_level("WARNING"):
+            result = _validate(df, "EMPRECSV")
 
-        # Validation logs but doesn't nullify format errors (keeps raw values)
+        # Numeric and uppercase-alphanumeric stems are valid and kept as-is.
         assert result["cnpj_basico"][0] == "12345678"
-        assert result["cnpj_basico"][1] == "1234"
+        assert result["cnpj_basico"][1] == "12ABC678"
+        assert result["cnpj_basico"][2] == "ABCDEFGH"
+        # Too-short "1234" and lowercase "abcd1234" are flagged but still kept.
+        assert "cnpj_basico: 2 invalid" in caplog.text
+        assert result["cnpj_basico"][3] == "1234"
+
+    def test_validate_cnpj_ordem_alphanumeric(self, caplog):
+        """cnpj_ordem is 4 uppercase alphanumeric chars; lowercase/short warn."""
+        df = pl.DataFrame({"cnpj_ordem": ["0001", "01DE", "abcd", "12", None]})
+
+        with caplog.at_level("WARNING"):
+            result = _validate(df, "ESTABELE")
+
+        assert result["cnpj_ordem"][1] == "01DE"
+        assert "cnpj_ordem: 2 invalid" in caplog.text
+
+    def test_validate_cnpj_dv_stays_numeric(self, caplog):
+        """cnpj_dv remains 2 numeric digits even under alphanumeric CNPJ;
+        an alphabetic dv is flagged."""
+        df = pl.DataFrame({"cnpj_dv": ["91", "3X", None]})
+
+        with caplog.at_level("WARNING"):
+            _validate(df, "ESTABELE")
+
+        assert "cnpj_dv: 1 invalid" in caplog.text
 
     def test_validate_situacao_cadastral(self):
         """Test that situacao_cadastral must be 01, 02, 03, 04, or 08."""

@@ -46,9 +46,18 @@ class TestCnpjExpectedDV:
     def test_known_real_cnpjs(self, first_12, expected):
         assert cnpj_expected_dv(first_12) == expected
 
-    def test_rejects_non_digit(self):
+    def test_alphanumeric_official_example(self):
+        # Receita Federal's published alphanumeric example: 12.ABC.345/01DE-35.
+        # Stem 12ABC34501DE -> check digits 35 under the ord(c)-48 valuation.
+        assert cnpj_expected_dv("12ABC34501DE") == "35"
+
+    def test_rejects_lowercase_and_symbols(self):
+        # The stem alphabet is uppercase 0-9/A-Z only; lowercase and
+        # punctuation are not valid characters.
         with pytest.raises(ValueError):
-            cnpj_expected_dv("0000000000A1")
+            cnpj_expected_dv("0000000000a1")
+        with pytest.raises(ValueError):
+            cnpj_expected_dv("000000000.01")
 
     def test_rejects_wrong_length(self):
         with pytest.raises(ValueError):

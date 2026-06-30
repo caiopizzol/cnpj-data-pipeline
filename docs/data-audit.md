@@ -24,7 +24,7 @@ Este documento registra o que a Receita Federal entrega, o que o pipeline normal
 
 | Campo | Forma na fonte | Normalização atual | Possível normalização no núcleo | Receita relacionada | Prioridade |
 |---|---|---|---|---|---|
-| `cnpj_basico` | 8 dígitos, string | validação regex `^\d{8}$` | — | usado em todas | — |
+| `cnpj_basico` | 8 caracteres alfanuméricos (0-9, A-Z), string | validação regex `^[0-9A-Z]{8}$` | — | usado em todas | — |
 | `razao_social` | TEXT, maiúsculas, sem acentos | — | trim de espaços (a confirmar) | — | — |
 | `natureza_juridica` | 4 dígitos, string | validação regex `^\d{4}$` | — | descrição em `empresa_detalhe` | alta |
 | `qualificacao_responsavel` | 2 dígitos, string | validação regex `^\d{2}$` | — | descrição em `empresa_detalhe` (via `qualificacoes_socios_enriched`) | média |
@@ -36,7 +36,7 @@ Este documento registra o que a Receita Federal entrega, o que o pipeline normal
 
 | Campo | Forma na fonte | Normalização atual | Possível normalização no núcleo | Receita relacionada | Prioridade |
 |---|---|---|---|---|---|
-| `cnpj_basico` + `cnpj_ordem` + `cnpj_dv` | strings de 8+4+2 dígitos | — | — | coluna concatenada `cnpj` em `empresa_detalhe` | alta |
+| `cnpj_basico` + `cnpj_ordem` + `cnpj_dv` | strings de 8+4+2: basico/ordem alfanuméricos (`^[0-9A-Z]{8}$` / `^[0-9A-Z]{4}$`), dv numérico (`^\d{2}$`) — ver CNPJ alfanumérico (julho/2026) | — | — | coluna concatenada `cnpj` em `empresa_detalhe` | alta |
 | `identificador_matriz_filial` | "1" \| "2" no CSV, `INTEGER` em PostgreSQL | tipagem via schema | tipado em Parquet (v1.18+) | descrição (`identificador_matriz_filial_descricao`) em `empresa_detalhe`, via `indicadores_matriz_filial` (`reference_domain_labels`) | baixa |
 | `nome_fantasia` | TEXT, maiúsculas, sem acentos | — | trim (a confirmar) | — | — |
 | `situacao_cadastral` | "01" \| "02" \| "03" \| "04" \| "08" | validação regex | — | descrição (`situacao_cadastral_descricao`) em `empresa_detalhe`, via `situacoes_cadastrais` (`reference_domain_labels`); booleanos (`is_ativa`) em receita futura | baixa |
@@ -57,7 +57,7 @@ Este documento registra o que a Receita Federal entrega, o que o pipeline normal
 
 | Campo | Forma na fonte | Normalização atual | Possível normalização no núcleo | Receita relacionada | Prioridade |
 |---|---|---|---|---|---|
-| `cnpj_basico` | 8 dígitos | validação regex | — | — | — |
+| `cnpj_basico` | 8 caracteres alfanuméricos (0-9, A-Z) | validação regex `^[0-9A-Z]{8}$` | — | — | — |
 | `identificador_de_socio` | "1" \| "2" \| "3" | validação regex | — | descrições em `socios_detalhe` | baixa |
 | `nome_socio` | TEXT | — | — | — | — |
 | `cnpj_cpf_do_socio` | já mascarado pela Receita Federal: `***123456**` (CPF) ou CNPJ completo | substitui null por "00000000000000" para manter a chave primária | — | — | — |
@@ -72,7 +72,7 @@ Este documento registra o que a Receita Federal entrega, o que o pipeline normal
 
 | Campo | Forma na fonte | Normalização atual | Possível normalização no núcleo | Receita relacionada | Prioridade |
 |---|---|---|---|---|---|
-| `cnpj_basico` | 8 dígitos, PK | validação regex | — | — | — |
+| `cnpj_basico` | 8 caracteres alfanuméricos (0-9, A-Z), PK | validação regex `^[0-9A-Z]{8}$` | — | — | — |
 | `opcao_pelo_simples` | "S" \| "N" | validação regex | — | incluído cru em `empresa_detalhe` | alta |
 | `data_opcao_pelo_simples`, `data_exclusao_do_simples`, `data_opcao_pelo_mei`, `data_exclusao_do_mei` | YYYYMMDD ou null | normalização de datas | tipado em Parquet (v1.18+) | incluído cru em `empresa_detalhe` | alta |
 | `opcao_pelo_mei` | "S" \| "N" | validação regex | — | incluído cru em `empresa_detalhe` | alta |
