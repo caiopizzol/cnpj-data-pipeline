@@ -50,21 +50,29 @@ from typing import Optional
 import psycopg2
 
 # CNPJ check-digit algorithm (Brazilian RFB modulus-11 weighted sum).
-# Given 12 leading digits, compute DV1 with weights _W1, then DV2 with
-# weights _W2 over the 13 digits (12 + DV1). Rule: if (11 - sum%11) >= 10,
+# Given the 12-character stem, compute DV1 with weights _W1, then DV2 with
+# weights _W2 over the 13 values (12 + DV1). Rule: if (11 - sum%11) >= 10,
 # the digit is 0; otherwise (11 - sum%11).
+#
+# AIDEV-NOTE: cnpj-alphanumeric: from 2026-07 the stem (basico+ordem) may
+# contain A-Z as well as 0-9 (Receita Federal / Serpro). The published rule
+# values each character as ord(c) - 48, so '0'..'9' -> 0..9 and 'A'..'Z' ->
+# 17..42; the weights, modulus, and the two check digits stay numeric and
+# unchanged. Existing all-digit CNPJs are a strict subset and still validate.
 _W1 = (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
 _W2 = (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+_CNPJ_STEM_CHARS = frozenset("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 
 def cnpj_expected_dv(first_12: str) -> str:
-    """Compute the 2-character check-digit string for a 12-digit CNPJ stem.
+    """Compute the 2-character check-digit string for a 12-character CNPJ stem.
 
-    Raises ValueError if input isn't exactly 12 digits.
+    The stem is the 8-char basico + 4-char ordem, each char in 0-9 or A-Z.
+    Raises ValueError if input isn't exactly 12 such characters.
     """
-    if len(first_12) != 12 or not first_12.isdigit():
-        raise ValueError(f"expected 12 digits, got {first_12!r}")
-    d = [int(c) for c in first_12]
+    if len(first_12) != 12 or any(c not in _CNPJ_STEM_CHARS for c in first_12):
+        raise ValueError(f"expected 12 alphanumeric (0-9, A-Z) chars, got {first_12!r}")
+    d = [ord(c) - 48 for c in first_12]
     s1 = sum(d[i] * _W1[i] for i in range(12))
     dv1 = 11 - (s1 % 11)
     if dv1 >= 10:

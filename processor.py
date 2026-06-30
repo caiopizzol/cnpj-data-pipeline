@@ -391,26 +391,26 @@ _VALID_UFS = {
 # Format validation rules: (column, regex pattern, description)
 _FORMAT_RULES: dict[str, list[tuple[str, str, str]]] = {
     "EMPRECSV": [
-        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("cnpj_basico", r"^[0-9A-Z]{8}$", "8 caracteres alfanuméricos"),
         ("natureza_juridica", r"^\d{4}$", "4 dígitos"),
         ("qualificacao_responsavel", r"^\d{2}$", "2 dígitos"),
         ("porte", r"^(00|01|03|05)$", "00, 01, 03 ou 05"),
     ],
     "ESTABELE": [
-        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
-        ("cnpj_ordem", r"^\d{4}$", "4 dígitos"),
+        ("cnpj_basico", r"^[0-9A-Z]{8}$", "8 caracteres alfanuméricos"),
+        ("cnpj_ordem", r"^[0-9A-Z]{4}$", "4 caracteres alfanuméricos"),
         ("cnpj_dv", r"^\d{2}$", "2 dígitos"),
         ("situacao_cadastral", r"^(01|02|03|04|08)$", "01, 02, 03, 04 ou 08"),
         ("cep", r"^\d{8}$", "8 dígitos"),
         ("cnae_fiscal_principal", r"^\d{7}$", "7 dígitos"),
     ],
     "SOCIOCSV": [
-        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("cnpj_basico", r"^[0-9A-Z]{8}$", "8 caracteres alfanuméricos"),
         ("identificador_de_socio", r"^[123]$", "1, 2 ou 3"),
         ("faixa_etaria", r"^\d$", "1 dígito"),
     ],
     "SIMPLESCSV": [
-        ("cnpj_basico", r"^\d{8}$", "8 dígitos"),
+        ("cnpj_basico", r"^[0-9A-Z]{8}$", "8 caracteres alfanuméricos"),
         ("opcao_pelo_simples", r"^[SN]$", "S ou N"),
         ("opcao_pelo_mei", r"^[SN]$", "S ou N"),
     ],

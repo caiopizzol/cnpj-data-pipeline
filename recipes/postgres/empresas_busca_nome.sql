@@ -26,7 +26,7 @@
 --     does not enforce that invariant and the recipe does not assume it.
 --   - cnpj column is materialized as basico||ordem||dv, the same pattern
 --     as empresa_detalhe.sql. Lets consumers point-lookup by the
---     14-digit string without repeating the concatenation.
+--     14-character string without repeating the concatenation.
 --   - Source codes are preserved alongside denormalized descriptions
 --     (municipio_codigo + municipio_nome, cnae_fiscal_principal +
 --     cnae_descricao) so consumers can re-join the reference tables
@@ -72,7 +72,7 @@ ALTER TABLE empresas_busca_nome
     PRIMARY KEY (cnpj_basico, cnpj_ordem, cnpj_dv);
 
 -- Single-column index on the materialized cnpj for callers that look
--- up by the concatenated 14-digit string instead of the component tuple.
+-- up by the concatenated 14-character string instead of the component tuple.
 CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_cnpj
     ON empresas_busca_nome (cnpj);
 
