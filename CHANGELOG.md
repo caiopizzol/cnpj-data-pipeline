@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.33.0 (2026-06-30)
+
+### Features
+
+- **recipes**: Add SERPRO domain labels for porte, situacao, matriz/filial
+  ([`673c66c`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/673c66c7473b3efc803a5bcb0047ea6bda4b1f5b))
+
+
 ## v1.32.0 (2026-06-29)
 
 ### Bug Fixes
