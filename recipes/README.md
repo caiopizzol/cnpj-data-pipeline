@@ -14,6 +14,7 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 | `data_quality_flags` | [`postgres/data_quality_flags.sql`](postgres/data_quality_flags.sql) | Mede sinais de qualidade por estabelecimento, sem alterar valores. |
 | `estabelecimentos_clean` | [`postgres/estabelecimentos_clean.sql`](postgres/estabelecimentos_clean.sql) | Usa `data_quality_flags` para emitir pares cru/limpo de CEP e capital social. |
 | `cnae_secundaria_exploded` | [`postgres/cnae_secundaria_exploded.sql`](postgres/cnae_secundaria_exploded.sql) | Transforma `cnae_fiscal_secundaria` em uma tabela lateral: uma linha por CNAE secundário. |
+| `cnaes_hierarquia` | [`postgres/cnaes_hierarquia.sql`](postgres/cnaes_hierarquia.sql) | Tabela derivada por subclasse CNAE (grão = `cnaes.codigo`) com os níveis da hierarquia: `divisao`/`grupo`/`classe` (substrings do código) e `secao` (correspondência oficial IBGE/CONCLA CNAE 2.3, `NULL` para divisões desconhecidas). Não altera a tabela `cnaes`. |
 | `socios_quality_flags` | [`postgres/socios_quality_flags.sql`](postgres/socios_quality_flags.sql) | Mede sinais de qualidade por sócio, incluindo representante legal com valor de preenchimento e referências ausentes. |
 | `socios_clean` | [`postgres/socios_clean.sql`](postgres/socios_clean.sql) | Usa `socios_quality_flags` para emitir pares cru/limpo do trio do representante e de `faixa_etaria`. |
 | `socios_detalhe` | [`postgres/socios_detalhe.sql`](postgres/socios_detalhe.sql) | Tabela por sócio que junta `socios` com as descrições de qualificação e país (tabelas enriquecidas) e de `identificador_de_socio` e `faixa_etaria` (tabelas de rótulos). Preserva todos os códigos da fonte, sem mutação de valor. Equivale a `empresa_detalhe` no grão de sócio. Pré-requisitos: `reference_domains_enriched` e `reference_domain_labels`. |
@@ -40,6 +41,9 @@ psql "$DATABASE_URL" -f recipes/postgres/estabelecimentos_clean.sql
 
 # CNAEs secundários em tabela lateral
 psql "$DATABASE_URL" -f recipes/postgres/cnae_secundaria_exploded.sql
+
+# Hierarquia CNAE (seção/divisão/grupo/classe) por subclasse
+psql "$DATABASE_URL" -f recipes/postgres/cnaes_hierarquia.sql
 
 # Sinais de qualidade e camada limpa por sócio
 psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql

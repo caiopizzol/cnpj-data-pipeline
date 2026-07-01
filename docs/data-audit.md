@@ -137,6 +137,18 @@ Dois campos vizinhos ficam fora desta receita de propósito:
 - **`situacao_especial`** já chega por extenso (texto legível, não código), então não há tabela de domínio a aplicar: fica como veio.
 - **`ente_federativo_responsavel`** é adiado: é o nome do ente público em texto livre, não um enum com tabela de código simples.
 
+## Hierarquia CNAE (receita `cnaes_hierarquia`)
+
+A tabela `cnaes` é plana (`codigo` de 7 dígitos, `descricao`), sem os níveis hierárquicos. A receita `recipes/postgres/cnaes_hierarquia.sql` deriva-os numa tabela por subclasse (grão = `cnaes.codigo`, mesma cardinalidade), sem alterar a tabela crua.
+
+`divisao`, `grupo` e `classe` são substrings do código, sem fonte externa:
+
+- `divisao` = `codigo[1..2]` (ex.: `0111301` → `01`)
+- `grupo` = `codigo[1..3]` (→ `011`)
+- `classe` = `codigo[1..4]` `-` `codigo[5]`, formato `DDDD-D` (→ `0111-3`)
+
+A **seção** (`A`–`U`) não é derivável do código: vem da correspondência divisão→seção do CNAE 2.3 (planilha oficial IBGE/CONCLA, ver Fontes oficiais). Uma divisão fora da lista oficial fica com `secao = NULL`; todo código real da Receita cai numa divisão válida. A tabela traz só os códigos e a `descricao` da subclasse — sem nomes de seção/divisão/grupo.
+
 ## Fontes oficiais
 
 Onde cada afirmação acima foi (ou não) verificada contra uma fonte oficial.
@@ -146,6 +158,7 @@ Onde cada afirmação acima foi (ou não) verificada contra uma fonte oficial.
 - **Forma do CEP (8 algarismos numéricos)** — Correios: ["O CEP é um conjunto numérico constituído de oito algarismos"](https://www.correios.com.br/enviar/precisa-de-ajuda/tudo-sobre-cep).
 - **Existência de um CEP específico** — a base de referência é o DNE/Correios. **Fora do escopo do núcleo do pipeline**: validar por chamada externa adicionaria dependência de autenticação, limite de uso e licenciamento, além de reduzir a reprodutibilidade da carga. Receitas ou ferramentas opcionais podem fazer essa checagem em amostra.
 - **Códigos de município e UF (geografia)** — IBGE é a fonte para enriquecimento geográfico (códigos de município, microrregião, mesorregião). IBGE **não é** fonte para validar CEP.
+- **Hierarquia CNAE (seção)** — IBGE/CONCLA. A correspondência divisão→seção do CNAE-Subclasses 2.3 (21 seções, 87 divisões) vem da planilha oficial [`CNAE_Subclasses_2_3_Estrutura_Detalhada.xlsx`](https://concla.ibge.gov.br/images/concla/documentacao/CNAE_Subclasses_2_3_Estrutura_Detalhada.xlsx), estabelecida pela Resolução CONCLA nº 2, de 19/11/2018 (DOU nº 222). Os 87 pares em `cnaes_hierarquia` foram derivados do parse dessa planilha.
 - **Layout dos dados abertos do CNPJ** — Receita Federal: [`cnpj-metadados.pdf`](https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf). É um documento curto; não enumera valores válidos de `motivo`, `pais`, `uf` (além do que aparece em prosa), nem documenta sentinelas como `999999999999` em `capital_social` ou `'***000000**'` em `representante_legal`.
 - **Tabelas de domínio (motivo, país, qualificação)** — SERPRO, Base de Cadastros, que opera o cadastro CNPJ para a Receita Federal e publica as tabelas de domínio como CSV: [`bcadastros.serpro.gov.br/documentacao/dominios/pj/`](https://bcadastros.serpro.gov.br/documentacao/dominios/pj/) (`motivo_situacao_cadastral.csv`, `pais.csv`, `qualificacao_socio.csv`, `qualificacao_responsavel.csv`, `qualificacao_representante_legal.csv`). É a fonte das linhas suplementares de `reference_domains_enriched`. A tabela de países do Siscomex/Ministério da Economia ([`balanca.economia.gov.br/balanca/bd/tabelas/PAIS.csv`](https://balanca.economia.gov.br/balanca/bd/tabelas/PAIS.csv)) usa a mesma numeração e serve de checagem cruzada; nos casos em que o rótulo diverge (ex.: `150`), o SERPRO prevalece por ser a fonte do cadastro CNPJ.
 - **Tabelas de domínio (porte, situação cadastral, matriz/filial)** — mesmos diretórios do SERPRO: `porte_empresa.csv`, `situacao_cadastral.csv` e `indicador_matriz.csv`. Diferente das anteriores, o pacote mensal do CNPJ não traz CSV de domínio para esses três campos, então a CSV do SERPRO não é fonte suplementar, é a fonte única dos rótulos de `reference_domain_labels`. A única exceção é o `porte` `00` (Não informado), ausente da CSV do SERPRO e tirado do layout do CNPJ da Receita (`cnpj-metadados.pdf`).
