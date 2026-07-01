@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v1.36.0 (2026-07-01)
+
+### Documentation
+
+- Note alphanumeric CNPJ support (v1.35.0) in README
+  ([#92](https://github.com/caiopizzol/cnpj-data-pipeline/pull/92),
+  [`c113470`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/c113470f9693d03d2196f68ad0fcd130132bbef1))
+
+- **cnpj**: Document the lowercase-input policy for alphanumeric CNPJ
+  ([#93](https://github.com/caiopizzol/cnpj-data-pipeline/pull/93),
+  [`d3ba638`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/d3ba63860e14b7c081ffa19f2a4e77e300305bc4))
+
+### Features
+
+- **recipes**: Add cnaes_hierarquia hierarchy recipe
+  ([#95](https://github.com/caiopizzol/cnpj-data-pipeline/pull/95),
+  [`b644fca`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/b644fcae123f9aecc083fd99f4424cdf6ac3a431))
+
+
 ## v1.35.0 (2026-06-30)
 
 ### Documentation
