@@ -1,5 +1,6 @@
 """Tests for downloader module."""
 
+import logging
 import zipfile
 from unittest.mock import MagicMock, patch
 
@@ -7,7 +8,7 @@ import pytest
 import requests
 
 from config import Config
-from downloader import CNPJ_FILE_PATTERNS, Downloader, DownloadIncompleteError
+from downloader import CNPJ_FILE_PATTERNS, Downloader, DownloadIncompleteError, DownloadStalledError
 
 
 def _webdav_xml(entries: list[str]) -> bytes:
@@ -66,11 +67,24 @@ class _ScriptedGet:
         self.calls: list[dict[str, object]] = []
 
     def __call__(self, url: str, **kwargs):
-        self.calls.append({"url": url, "headers": kwargs.get("headers") or {}})
+        self.calls.append({"url": url, "headers": kwargs.get("headers") or {}, "timeout": kwargs.get("timeout")})
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class _FakeClock:
+    def __init__(self, times: list[float]):
+        self._times = iter(times)
+        self.current = 0.0
+
+    def __call__(self) -> float:
+        try:
+            self.current = next(self._times)
+        except StopIteration:
+            pass
+        return self.current
 
 
 class TestFilePatternMatching:
@@ -121,6 +135,18 @@ class TestGetAvailableDirectories:
             result = downloader.get_available_directories()
 
             assert result == ["2024-01", "2024-02", "2024-03"]
+
+    def test_propfind_uses_metadata_read_timeout(self, downloader, config):
+        """Discovery calls should keep the longer metadata read timeout."""
+        config.stall_timeout = 2
+        xml = _webdav_xml(["/public.php/webdav/", "/public.php/webdav/2024-03/"])
+        with patch("requests.request") as mock_req:
+            mock_req.return_value = MagicMock(content=xml, status_code=207)
+            mock_req.return_value.raise_for_status = MagicMock()
+
+            downloader.get_available_directories()
+
+            assert mock_req.call_args.kwargs["timeout"] == (config.connect_timeout, config.read_timeout)
 
     def test_raises_on_network_error(self, downloader):
         """Test that network errors are propagated."""
@@ -273,9 +299,27 @@ class TestDownloadAndExtract:
             assert "ESTABELE.D51213" in names
             assert "README.txt" not in names
 
-    def test_resumes_after_timeout_with_range_header(self, downloader, tmp_path, monkeypatch):
+    def test_download_stream_uses_stall_timeout(self, downloader, config, tmp_path):
+        """Streaming data requests should use stall_timeout as the read timeout."""
+        config.stall_timeout = 7
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+
+        with patch("requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.headers = {"content-length": str(len(zip_content))}
+            mock_response.iter_content = MagicMock(return_value=[zip_content])
+            mock_response.raise_for_status = MagicMock()
+            mock_get.return_value = mock_response
+
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+            assert mock_get.call_args.kwargs["timeout"] == (config.connect_timeout, config.stall_timeout)
+
+    def test_resumes_after_timeout_with_range_header(self, downloader, tmp_path, monkeypatch, caplog):
         """A stalled stream should retry from the bytes already saved in .part."""
         downloader.config.keep_files = True
+        downloader.config.stall_timeout = 7
+        caplog.set_level(logging.WARNING, logger="downloader")
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         split_at = len(zip_content) // 2
         scripted_get = _ScriptedGet(
@@ -301,6 +345,35 @@ class TestDownloadAndExtract:
         assert len(result) == 1
         assert scripted_get.calls[0]["headers"] == {"Accept-Encoding": "identity"}
         assert scripted_get.calls[1]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={split_at}-"}
+        assert f"Cnaes.zip stalled: no bytes for 7s, resuming from offset {split_at}" in caplog.text
+
+    def test_stream_timeout_error_is_distinct_download_failure(self, downloader, tmp_path, monkeypatch):
+        """A final stalled attempt should surface a distinct resumable-download error."""
+        downloader.config.retry_attempts = 1
+        downloader.config.stall_timeout = 7
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        split_at = len(zip_content) // 2
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[:split_at], requests.exceptions.Timeout("stalled stream")],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadStalledError, match=f"resuming from offset {split_at}"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_data_get_read_timeout_is_distinct_download_failure(self, downloader, monkeypatch):
+        """A data request read timeout before the body is still a resumable stall."""
+        downloader.config.retry_attempts = 1
+        downloader.config.stall_timeout = 7
+        monkeypatch.setattr(requests, "get", MagicMock(side_effect=requests.exceptions.ReadTimeout("slow stream")))
+
+        with pytest.raises(DownloadStalledError, match="resuming from offset 0"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
 
     def test_resume_appends_to_existing_partial_file(self, downloader, tmp_path, monkeypatch):
         """A leftover .part file is appended to instead of redownloading from byte zero."""
@@ -483,6 +556,88 @@ class TestCachedDownload:
             # Should not have made any HTTP requests
             mock_get.assert_not_called()
             assert len(result) == 1
+
+
+class TestProgressLogging:
+    """Test periodic progress logs when tqdm output is disabled."""
+
+    def test_logs_progress_at_configured_cadence(self, downloader, tmp_path, monkeypatch, caplog):
+        downloader.config.progress_log_interval = 5
+        downloader.config.stall_timeout = 60
+        monkeypatch.setenv("TQDM_DISABLE", "1")
+        monkeypatch.setattr("downloader.monotonic", _FakeClock([0.0, 2.0, 5.0, 8.0, 10.0]))
+        caplog.set_level(logging.INFO, logger="downloader")
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "x" * 200})
+        first = len(zip_content) // 4
+        second = len(zip_content) // 2
+        third = len(zip_content) * 3 // 4
+        chunks = [
+            zip_content[:first],
+            zip_content[first:second],
+            zip_content[second:third],
+            zip_content[third:],
+        ]
+        scripted_get = _ScriptedGet(
+            [_ScriptedResponse(chunks=chunks, headers={"content-length": str(len(zip_content))})]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        progress_logs = [record.message for record in caplog.records if "progress:" in record.message]
+        first_logged_bytes = len(chunks[0]) + len(chunks[1])
+        first_rate = first_logged_bytes / 5
+        first_eta = (len(zip_content) - first_logged_bytes) / first_rate
+        final_rate = (len(zip_content) - first_logged_bytes) / 5
+        assert len(progress_logs) == 2
+        assert (
+            f"Cnaes.zip progress: {first_logged_bytes}/{len(zip_content)} bytes "
+            f"({first_logged_bytes / len(zip_content) * 100:.1f}%), {first_rate:.1f} B/s, "
+            f"ETA {first_eta:.1f}s"
+        ) in progress_logs
+        assert (
+            f"Cnaes.zip progress: {len(zip_content)}/{len(zip_content)} bytes (100.0%), {final_rate:.1f} B/s, ETA 0.0s"
+        ) in progress_logs
+
+    def test_progress_logging_is_silent_when_tqdm_is_enabled(self, downloader, tmp_path, monkeypatch, caplog):
+        downloader.config.progress_log_interval = 1
+        downloader.config.stall_timeout = 60
+        monkeypatch.delenv("TQDM_DISABLE", raising=False)
+        monkeypatch.setattr("downloader.monotonic", _FakeClock([0.0, 2.0, 4.0, 6.0]))
+        caplog.set_level(logging.INFO, logger="downloader")
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "x" * 200})
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[:10], zip_content[10:]], headers={"content-length": str(len(zip_content))}
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert not [record for record in caplog.records if "progress:" in record.message]
+
+    def test_progress_logging_is_silent_when_interval_is_zero(self, downloader, tmp_path, monkeypatch, caplog):
+        downloader.config.progress_log_interval = 0
+        downloader.config.stall_timeout = 60
+        monkeypatch.setenv("TQDM_DISABLE", "1")
+        monkeypatch.setattr("downloader.monotonic", _FakeClock([0.0, 2.0, 4.0, 6.0]))
+        caplog.set_level(logging.INFO, logger="downloader")
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "x" * 200})
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[:10], zip_content[10:]], headers={"content-length": str(len(zip_content))}
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert not [record for record in caplog.records if "progress:" in record.message]
 
 
 def _create_test_zip(tmp_path, files: dict) -> bytes:
@@ -842,3 +997,72 @@ class TestResumeEdgeCases:
 
         assert not (tmp_path / "Cnaes.zip").exists()
         assert (tmp_path / "Empresas0.zip.2024-03.part").exists()
+
+    def test_empty_keepalive_chunks_past_stall_timeout_raise(self, downloader, tmp_path, monkeypatch):
+        import downloader as downloader_module
+
+        downloader.config.retry_attempts = 1
+        downloader.config.stall_timeout = 30
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        clock = iter([0.0, 0.0, 100.0, 200.0, 300.0, 400.0, 500.0])
+        monkeypatch.setattr(downloader_module, "monotonic", lambda: next(clock))
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[b"", b"", zip_content],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadStalledError, match="stalled: no bytes"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_connection_error_read_timeout_maps_to_stall_and_resumes(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = True
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        split_at = len(zip_content) // 2
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[
+                        zip_content[:split_at],
+                        requests.exceptions.ConnectionError("Read timed out."),
+                    ],
+                    headers={"content-length": str(len(zip_content))},
+                ),
+                _ScriptedResponse(
+                    chunks=[zip_content[split_at:]],
+                    headers={
+                        "content-range": f"bytes {split_at}-{len(zip_content) - 1}/{len(zip_content)}",
+                    },
+                    status_code=206,
+                ),
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+        assert scripted_get.calls[1]["headers"]["Range"] == f"bytes={split_at}-"
+
+    def test_other_connection_errors_propagate_unmapped(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[
+                        zip_content[:4],
+                        requests.exceptions.ConnectionError("Connection reset by peer"),
+                    ],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(requests.exceptions.ConnectionError, match="reset by peer"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")

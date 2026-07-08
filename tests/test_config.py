@@ -24,6 +24,8 @@ class TestFromEnv:
         assert cfg.retry_delay == 5
         assert cfg.connect_timeout == 30
         assert cfg.read_timeout == 300
+        assert cfg.stall_timeout == 30
+        assert cfg.progress_log_interval == 30
         assert cfg.keep_files is False
         assert cfg.loading_strategy == "upsert"
         assert cfg.output_format == "postgres"
@@ -39,6 +41,8 @@ class TestFromEnv:
             "DOWNLOAD_WORKERS": "8",
             "PROCESS_WORKERS": "4",
             "RETRY_ATTEMPTS": "5",
+            "STALL_TIMEOUT": "12",
+            "PROGRESS_LOG_INTERVAL": "45",
         }
         with patch.dict("os.environ", env, clear=True):
             cfg = Config.from_env()
@@ -48,14 +52,26 @@ class TestFromEnv:
         assert cfg.download_workers == 8
         assert cfg.process_workers == 4
         assert cfg.retry_attempts == 5
+        assert cfg.stall_timeout == 12
+        assert cfg.progress_log_interval == 45
 
     def test_int_coercion(self):
         """Integer env vars should be correctly coerced."""
-        with patch.dict("os.environ", {"BATCH_SIZE": "1000", "CONNECT_TIMEOUT": "60"}, clear=True):
+        env = {
+            "BATCH_SIZE": "1000",
+            "CONNECT_TIMEOUT": "60",
+            "READ_TIMEOUT": "120",
+            "STALL_TIMEOUT": "15",
+            "PROGRESS_LOG_INTERVAL": "0",
+        }
+        with patch.dict("os.environ", env, clear=True):
             cfg = Config.from_env()
 
         assert cfg.batch_size == 1000
         assert cfg.connect_timeout == 60
+        assert cfg.read_timeout == 120
+        assert cfg.stall_timeout == 15
+        assert cfg.progress_log_interval == 0
 
     def test_invalid_int_raises(self):
         """Non-numeric integer env vars should raise ValueError."""

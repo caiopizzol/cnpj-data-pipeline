@@ -7,7 +7,8 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Iterator, List, Mapping, Tuple
+from time import monotonic
+from typing import Callable, Iterator, List, Mapping, Tuple
 from xml.etree import ElementTree
 
 import requests
@@ -49,6 +50,10 @@ UNSATISFIED_CONTENT_RANGE_RE = re.compile(r"bytes \*/(\d+)")
 
 class DownloadIncompleteError(RuntimeError):
     """Raised when a response ends before the advertised ZIP size is reached."""
+
+
+class DownloadStalledError(DownloadIncompleteError):
+    """Raised when a download stream stops yielding bytes past the stall timeout."""
 
 
 class Downloader:
@@ -186,7 +191,9 @@ class Downloader:
 
         return extracted_files
 
-    def _download_zip(self, url: str, directory: str, filename: str, zip_path: Path, log) -> None:
+    def _download_zip(
+        self, url: str, directory: str, filename: str, zip_path: Path, log: Callable[[str], None]
+    ) -> None:
         """Download a ZIP through a resumable .part file and validate it."""
         # The .part name carries the source directory (month): CNPJ file names
         # repeat across monthly directories, and resuming (or 416-finalizing)
@@ -206,7 +213,8 @@ class Downloader:
                 if zip_path.exists():
                     zip_path.unlink()
 
-                logger.warning(f"Download attempt {attempt + 1} failed: {e}")
+                if not isinstance(e, DownloadStalledError):
+                    logger.warning(f"Download attempt {attempt + 1} failed: {e}")
                 if attempt < self.config.retry_attempts - 1:
                     time.sleep(self.config.retry_delay)
                 else:
@@ -218,13 +226,16 @@ class Downloader:
         if offset:
             headers["Range"] = f"bytes={offset}-"
 
-        response = requests.get(
-            url,
-            auth=self.auth,
-            headers=headers,
-            stream=True,
-            timeout=(self.config.connect_timeout, self.config.read_timeout),
-        )
+        try:
+            response = requests.get(
+                url,
+                auth=self.auth,
+                headers=headers,
+                stream=True,
+                timeout=(self.config.connect_timeout, self.config.stall_timeout),
+            )
+        except requests.exceptions.ReadTimeout as exc:
+            raise self._stalled_error(filename, offset) from exc
 
         status_code = self._status_code(response)
         if offset and status_code == 416:
@@ -248,6 +259,13 @@ class Downloader:
 
         expected_total, write_offset = self._prepare_download_response(response, filename, part_path, offset)
 
+        tqdm_disabled = bool(os.environ.get("TQDM_DISABLE"))
+        progress_log_interval = self.config.progress_log_interval if tqdm_disabled else 0
+        downloaded_bytes = write_offset
+        last_log_at = monotonic()
+        last_log_bytes = downloaded_bytes
+        last_byte_at = last_log_at
+
         with tqdm(
             total=expected_total,
             initial=write_offset,
@@ -255,13 +273,45 @@ class Downloader:
             unit_scale=True,
             desc=f"Downloading {filename}",
             leave=False,
+            disable=tqdm_disabled,
         ) as pbar:
             with part_path.open("ab") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if not chunk:
-                        continue
-                    f.write(chunk)
-                    pbar.update(len(chunk))
+                try:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        now = monotonic()
+                        if not chunk:
+                            # Keep-alive chunks carry no data; only here can
+                            # elapsed time mean a stall. A non-empty chunk is
+                            # progress by definition, however slowly it came -
+                            # the socket read timeout is the stall authority.
+                            if now - last_byte_at > self.config.stall_timeout:
+                                raise self._stalled_error(filename, downloaded_bytes)
+                            continue
+
+                        chunk_size = len(chunk)
+                        f.write(chunk)
+                        downloaded_bytes += chunk_size
+                        last_byte_at = now
+                        pbar.update(chunk_size)
+
+                        if progress_log_interval and now - last_log_at >= progress_log_interval:
+                            elapsed = now - last_log_at
+                            bytes_since_last_log = downloaded_bytes - last_log_bytes
+                            rate = bytes_since_last_log / elapsed if elapsed > 0 else 0
+                            percent = downloaded_bytes / expected_total * 100 if expected_total else 0.0
+                            eta = "unknown" if rate <= 0 else f"{(expected_total - downloaded_bytes) / rate:.1f}s"
+                            logger.info(
+                                f"{filename} progress: {downloaded_bytes}/{expected_total} bytes "
+                                f"({percent:.1f}%), {rate:.1f} B/s, ETA {eta}"
+                            )
+                            last_log_at = now
+                            last_log_bytes = downloaded_bytes
+                except requests.exceptions.Timeout as exc:
+                    raise self._stalled_error(filename, downloaded_bytes) from exc
+                except requests.exceptions.ConnectionError as exc:
+                    if self._is_read_timeout(exc):
+                        raise self._stalled_error(filename, downloaded_bytes) from exc
+                    raise
 
         current_size = part_path.stat().st_size
         if current_size > expected_total:
@@ -273,6 +323,15 @@ class Downloader:
 
         part_path.replace(zip_path)
         self._validate_zip_file(zip_path)
+
+    def _stalled_error(self, filename: str, resume_offset: int) -> DownloadStalledError:
+        message = f"{filename} stalled: no bytes for {self.config.stall_timeout}s, resuming from offset {resume_offset}"
+        logger.warning(message)
+        return DownloadStalledError(message)
+
+    @staticmethod
+    def _is_read_timeout(exc: requests.exceptions.ConnectionError) -> bool:
+        return "read timed out" in str(exc).lower()
 
     def _prepare_download_response(
         self,
