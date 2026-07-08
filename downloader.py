@@ -163,7 +163,7 @@ class Downloader:
         if self.config.keep_files and zip_path.exists() and zipfile.is_zipfile(zip_path):
             log(f"Using cached: {filename}")
         else:
-            self._download_zip(url, filename, zip_path, log)
+            self._download_zip(url, directory, filename, zip_path, log)
 
         # Extract CSV files
         extracted_files = []
@@ -186,9 +186,13 @@ class Downloader:
 
         return extracted_files
 
-    def _download_zip(self, url: str, filename: str, zip_path: Path, log) -> None:
+    def _download_zip(self, url: str, directory: str, filename: str, zip_path: Path, log) -> None:
         """Download a ZIP through a resumable .part file and validate it."""
-        part_path = zip_path.with_name(f"{zip_path.name}.part")
+        # The .part name carries the source directory (month): CNPJ file names
+        # repeat across monthly directories, and resuming (or 416-finalizing)
+        # a partial that belongs to another month would corrupt the dataset.
+        directory_slug = re.sub(r"[^A-Za-z0-9_-]", "_", directory) or "root"
+        part_path = zip_path.with_name(f"{zip_path.name}.{directory_slug}.part")
 
         if zip_path.exists():
             zip_path.unlink()
@@ -210,7 +214,9 @@ class Downloader:
 
     def _download_zip_once(self, url: str, filename: str, zip_path: Path, part_path: Path) -> None:
         offset = part_path.stat().st_size if part_path.exists() else 0
-        headers = {"Range": f"bytes={offset}-"} if offset else {}
+        headers = {"Accept-Encoding": "identity"}
+        if offset:
+            headers["Range"] = f"bytes={offset}-"
 
         response = requests.get(
             url,

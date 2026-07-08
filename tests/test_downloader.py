@@ -299,15 +299,15 @@ class TestDownloadAndExtract:
         result = downloader._download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
-        assert scripted_get.calls[0]["headers"] == {}
-        assert scripted_get.calls[1]["headers"] == {"Range": f"bytes={split_at}-"}
+        assert scripted_get.calls[0]["headers"] == {"Accept-Encoding": "identity"}
+        assert scripted_get.calls[1]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={split_at}-"}
 
     def test_resume_appends_to_existing_partial_file(self, downloader, tmp_path, monkeypatch):
         """A leftover .part file is appended to instead of redownloading from byte zero."""
         downloader.config.keep_files = True
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         split_at = len(zip_content) // 2
-        part_path = tmp_path / "Cnaes.zip.part"
+        part_path = tmp_path / "Cnaes.zip.2024-03.part"
         part_path.write_bytes(zip_content[:split_at])
         scripted_get = _ScriptedGet(
             [
@@ -325,14 +325,14 @@ class TestDownloadAndExtract:
 
         downloader._download_and_extract("2024-03", "Cnaes.zip")
 
-        assert scripted_get.calls[0]["headers"] == {"Range": f"bytes={split_at}-"}
+        assert scripted_get.calls[0]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={split_at}-"}
         assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
 
     def test_server_ignoring_range_discards_partial_and_restarts(self, downloader, tmp_path, monkeypatch):
         """A 200 response to a Range request is a clean restart, not an append."""
         downloader.config.keep_files = True
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
-        part_path = tmp_path / "Cnaes.zip.part"
+        part_path = tmp_path / "Cnaes.zip.2024-03.part"
         part_path.write_bytes(b"stale-part")
         scripted_get = _ScriptedGet(
             [
@@ -347,7 +347,10 @@ class TestDownloadAndExtract:
 
         downloader._download_and_extract("2024-03", "Cnaes.zip")
 
-        assert scripted_get.calls[0]["headers"] == {"Range": f"bytes={len(b'stale-part')}-"}
+        assert scripted_get.calls[0]["headers"] == {
+            "Accept-Encoding": "identity",
+            "Range": f"bytes={len(b'stale-part')}-",
+        }
         assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
 
     def test_final_size_mismatch_raises_without_final_zip(self, downloader, tmp_path, monkeypatch):
@@ -379,7 +382,7 @@ class TestDownloadAndExtract:
             downloader._download_and_extract("2024-03", "Cnaes.zip")
 
         assert not (tmp_path / "Cnaes.zip").exists()
-        assert (tmp_path / "Cnaes.zip.part").read_bytes() == zip_content[:second_split]
+        assert (tmp_path / "Cnaes.zip.2024-03.part").read_bytes() == zip_content[:second_split]
 
     def test_corrupt_zip_is_retried_then_raises(self, downloader, tmp_path, monkeypatch):
         """Downloaded bytes must be a readable ZIP before extraction starts."""
@@ -405,7 +408,7 @@ class TestDownloadAndExtract:
 
         assert len(scripted_get.calls) == 2
         assert not (tmp_path / "Cnaes.zip").exists()
-        assert not (tmp_path / "Cnaes.zip.part").exists()
+        assert not (tmp_path / "Cnaes.zip.2024-03.part").exists()
 
 
 class TestDownloadFiles:
@@ -503,7 +506,7 @@ class TestResumeEdgeCases:
     def test_416_with_matching_total_finalizes_partial(self, downloader, tmp_path, monkeypatch):
         downloader.config.keep_files = True
         zip_content = self._zip(tmp_path)
-        part_path = tmp_path / "Cnaes.zip.part"
+        part_path = tmp_path / "Cnaes.zip.2024-03.part"
         part_path.write_bytes(zip_content)
         scripted_get = _ScriptedGet(
             [
@@ -525,7 +528,7 @@ class TestResumeEdgeCases:
     def test_416_with_mismatched_total_discards_partial(self, downloader, tmp_path, monkeypatch):
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
-        part_path = tmp_path / "Cnaes.zip.part"
+        part_path = tmp_path / "Cnaes.zip.2024-03.part"
         part_path.write_bytes(zip_content[: len(zip_content) // 2])
         scripted_get = _ScriptedGet(
             [
@@ -545,7 +548,7 @@ class TestResumeEdgeCases:
     def test_416_without_content_range_discards_partial(self, downloader, tmp_path, monkeypatch):
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
-        part_path = tmp_path / "Cnaes.zip.part"
+        part_path = tmp_path / "Cnaes.zip.2024-03.part"
         part_path.write_bytes(zip_content[:10])
         scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[], headers={}, status_code=416)])
         monkeypatch.setattr(requests, "get", scripted_get)
@@ -558,7 +561,7 @@ class TestResumeEdgeCases:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content) // 2
-        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:offset])
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:offset])
         scripted_get = _ScriptedGet(
             [
                 _ScriptedResponse(
@@ -577,7 +580,7 @@ class TestResumeEdgeCases:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content)
-        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content)
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content)
         scripted_get = _ScriptedGet(
             [
                 _ScriptedResponse(
@@ -596,7 +599,7 @@ class TestResumeEdgeCases:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content) // 2
-        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:offset])
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:offset])
         scripted_get = _ScriptedGet(
             [
                 _ScriptedResponse(
@@ -618,7 +621,7 @@ class TestResumeEdgeCases:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content) // 2
-        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:offset])
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:offset])
         scripted_get = _ScriptedGet(
             [
                 _ScriptedResponse(
@@ -636,7 +639,7 @@ class TestResumeEdgeCases:
     def test_resume_with_unexpected_status_raises(self, downloader, tmp_path, monkeypatch):
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
-        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:10])
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:10])
         scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[], headers={}, status_code=204)])
         monkeypatch.setattr(requests, "get", scripted_get)
 
@@ -677,3 +680,24 @@ class TestResumeEdgeCases:
         with pytest.raises(DownloadIncompleteError, match="expected"):
             downloader._download_and_extract("2024-03", "Cnaes.zip")
         assert not (tmp_path / "Cnaes.zip").exists()
+
+    def test_stale_partial_from_other_month_is_not_resumed(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = True
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        other_month_part = tmp_path / "Cnaes.zip.2024-02.part"
+        other_month_part.write_bytes(b"stale bytes from another month")
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+        assert "Range" not in scripted_get.calls[0]["headers"]
+        assert other_month_part.read_bytes() == b"stale bytes from another month"

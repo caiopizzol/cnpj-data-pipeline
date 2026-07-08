@@ -2,13 +2,6 @@
 
 <!-- version list -->
 
-## Unreleased
-
-### Bug Fixes
-
-- **downloader**: Resume interrupted large ZIP downloads from partial files
-
-
 ## v1.36.0 (2026-07-01)
 
 ### Documentation
