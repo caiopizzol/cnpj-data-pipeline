@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from config import Config
-from downloader import CNPJ_FILE_PATTERNS, Downloader
+from downloader import CNPJ_FILE_PATTERNS, Downloader, DownloadIncompleteError
 
 
 def _webdav_xml(entries: list[str]) -> bytes:
@@ -492,3 +492,188 @@ def _create_test_zip(tmp_path, files: dict) -> bytes:
     content = zip_path.read_bytes()
     zip_path.unlink()
     return content
+
+
+class TestResumeEdgeCases:
+    """Branch coverage for the resume protocol's error and finalize paths."""
+
+    def _zip(self, tmp_path):
+        return _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+
+    def test_416_with_matching_total_finalizes_partial(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = True
+        zip_content = self._zip(tmp_path)
+        part_path = tmp_path / "Cnaes.zip.part"
+        part_path.write_bytes(zip_content)
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[],
+                    headers={"content-range": f"bytes */{len(zip_content)}"},
+                    status_code=416,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+        assert not part_path.exists()
+        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+
+    def test_416_with_mismatched_total_discards_partial(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        part_path = tmp_path / "Cnaes.zip.part"
+        part_path.write_bytes(zip_content[: len(zip_content) // 2])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[],
+                    headers={"content-range": f"bytes */{len(zip_content)}"},
+                    status_code=416,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="differs from remote size"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+        assert not part_path.exists()
+
+    def test_416_without_content_range_discards_partial(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        part_path = tmp_path / "Cnaes.zip.part"
+        part_path.write_bytes(zip_content[:10])
+        scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[], headers={}, status_code=416)])
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="did not report the remote size"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+        assert not part_path.exists()
+
+    def test_206_resuming_at_wrong_offset_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        offset = len(zip_content) // 2
+        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:offset])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[offset - 1 :]],
+                    headers={"content-range": f"bytes {offset - 1}-{len(zip_content) - 1}/{len(zip_content)}"},
+                    status_code=206,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="server resumed at byte"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_206_with_remote_smaller_than_partial_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        offset = len(zip_content)
+        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content)
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[],
+                    headers={"content-range": f"bytes {offset}-{offset}/{offset - 1}"},
+                    status_code=206,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="exceeds remote size"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_206_content_length_mismatching_range_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        offset = len(zip_content) // 2
+        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:offset])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[offset:]],
+                    headers={
+                        "content-range": f"bytes {offset}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": "1",
+                    },
+                    status_code=206,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="Content-Length mismatch"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_206_with_invalid_content_range_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        offset = len(zip_content) // 2
+        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:offset])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[offset:]],
+                    headers={"content-range": "bytes nonsense"},
+                    status_code=206,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="Invalid Content-Range"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_resume_with_unexpected_status_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        (tmp_path / "Cnaes.zip.part").write_bytes(zip_content[:10])
+        scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[], headers={}, status_code=204)])
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="server returned HTTP 204"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_missing_content_length_on_fresh_download_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[zip_content], headers={})])
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="Missing Content-Length"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_invalid_content_length_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[zip_content], headers={"content-length": "many"})])
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="Invalid Content-Length"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_overlong_body_discards_partial_and_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = self._zip(tmp_path)
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content],
+                    headers={"content-length": str(len(zip_content) - 4)},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="expected"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+        assert not (tmp_path / "Cnaes.zip").exists()
