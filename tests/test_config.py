@@ -25,6 +25,7 @@ class TestFromEnv:
         assert cfg.connect_timeout == 30
         assert cfg.read_timeout == 300
         assert cfg.stall_timeout == 30
+        assert cfg.stall_degrade_threshold == 3
         assert cfg.progress_log_interval == 30
         assert cfg.keep_files is False
         assert cfg.loading_strategy == "upsert"
@@ -42,6 +43,7 @@ class TestFromEnv:
             "PROCESS_WORKERS": "4",
             "RETRY_ATTEMPTS": "5",
             "STALL_TIMEOUT": "12",
+            "STALL_DEGRADE_THRESHOLD": "2",
             "PROGRESS_LOG_INTERVAL": "45",
         }
         with patch.dict("os.environ", env, clear=True):
@@ -53,6 +55,7 @@ class TestFromEnv:
         assert cfg.process_workers == 4
         assert cfg.retry_attempts == 5
         assert cfg.stall_timeout == 12
+        assert cfg.stall_degrade_threshold == 2
         assert cfg.progress_log_interval == 45
 
     def test_int_coercion(self):
@@ -62,6 +65,7 @@ class TestFromEnv:
             "CONNECT_TIMEOUT": "60",
             "READ_TIMEOUT": "120",
             "STALL_TIMEOUT": "15",
+            "STALL_DEGRADE_THRESHOLD": "4",
             "PROGRESS_LOG_INTERVAL": "0",
         }
         with patch.dict("os.environ", env, clear=True):
@@ -71,6 +75,7 @@ class TestFromEnv:
         assert cfg.connect_timeout == 60
         assert cfg.read_timeout == 120
         assert cfg.stall_timeout == 15
+        assert cfg.stall_degrade_threshold == 4
         assert cfg.progress_log_interval == 0
 
     def test_invalid_int_raises(self):
