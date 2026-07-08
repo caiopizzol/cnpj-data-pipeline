@@ -332,7 +332,7 @@ class Downloader:
 
     def _required_content_length(self, headers: Mapping[str, str], filename: str) -> int:
         content_length = self._content_length(headers, filename, required=True)
-        if content_length is None:
+        if content_length is None:  # pragma: no cover - required=True already raised
             raise DownloadIncompleteError(f"Missing Content-Length for {filename}")
         return content_length
 

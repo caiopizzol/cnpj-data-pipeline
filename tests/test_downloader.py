@@ -701,3 +701,111 @@ class TestResumeEdgeCases:
         assert len(result) == 1
         assert "Range" not in scripted_get.calls[0]["headers"]
         assert other_month_part.read_bytes() == b"stale bytes from another month"
+
+    def test_preexisting_final_zip_is_replaced(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = False
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        stale_final = tmp_path / "Cnaes.zip"
+        stale_final.write_bytes(b"not the zip we want")
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    # An empty leading chunk exercises the keep-alive skip.
+                    chunks=[b"", zip_content],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+
+    def test_206_without_content_length_is_accepted(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = True
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        offset = len(zip_content) // 2
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:offset])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[offset:]],
+                    headers={"content-range": f"bytes {offset}-{len(zip_content) - 1}/{len(zip_content)}"},
+                    status_code=206,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+
+    def test_206_missing_content_range_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:10])
+        scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[], headers={}, status_code=206)])
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="Missing Content-Range"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_206_reversed_content_range_raises(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:10])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[],
+                    headers={"content-range": "bytes 9-3/100"},
+                    status_code=206,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="Invalid Content-Range"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_416_with_malformed_content_range_discards_partial(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        part_path = tmp_path / "Cnaes.zip.2024-03.part"
+        part_path.write_bytes(zip_content[:10])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[],
+                    headers={"content-range": "weird"},
+                    status_code=416,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadIncompleteError, match="did not report the remote size"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+        assert not part_path.exists()
+
+    def test_zip_with_corrupt_member_crc_is_rejected(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = bytearray(_create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test-payload-long-enough"}))
+        # Flip a byte inside the member payload: the archive structure stays
+        # readable, but testzip() reports the CRC mismatch.
+        marker = zip_content.find(b"0111301")
+        zip_content[marker] ^= 0xFF
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[bytes(zip_content)],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(zipfile.BadZipFile, match="Corrupt ZIP member"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
