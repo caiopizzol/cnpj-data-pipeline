@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.38.0 (2026-07-08)
+
+### Features
+
+- **downloader**: Degrade concurrency when the server stalls parallel streams
+  ([#98](https://github.com/caiopizzol/cnpj-data-pipeline/pull/98),
+  [`b4d4c75`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/b4d4c75dd9b59a7ad82b958c3bfcc065afa27734))
+
+
 ## v1.37.0 (2026-07-08)
 
 ### Bug Fixes
