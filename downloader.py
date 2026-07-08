@@ -14,6 +14,7 @@ from typing import Callable, Iterator, List, Mapping, Tuple
 from xml.etree import ElementTree
 
 import requests
+import urllib3.exceptions
 from tqdm import tqdm
 
 from config import Config
@@ -178,6 +179,7 @@ class Downloader:
 
     def download_file(self, directory: str, filename: str) -> List[Path]:
         """Download and extract a single ZIP file. Returns list of extracted CSV paths."""
+        self._prune_stale_partials(directory)
         return self._download_and_extract(directory, filename)
 
     def download_files(self, directory: str, files: List[str]) -> Iterator[Tuple[Path, str]]:
@@ -192,6 +194,8 @@ class Downloader:
         """
         if not files:
             return
+
+        self._prune_stale_partials(directory)
 
         # Split into reference and data files
         reference_files = [f for f in files if f in REFERENCE_FILES]
@@ -290,6 +294,24 @@ class Downloader:
 
         return extracted_files
 
+    @staticmethod
+    def _directory_slug(directory: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_-]", "_", directory) or "root"
+
+    def _prune_stale_partials(self, directory: str) -> None:
+        """Delete .part resume files left over from other source directories.
+        cleanup() deliberately preserves partials so a failed run can resume,
+        but a partial from another month can never be resumed (its slug will
+        never match) - without pruning, every failed historical attempt would
+        retain multi-GB files forever."""
+        suffix = f".{self._directory_slug(directory)}.part"
+        # Only touch downloader-owned resume files ({name}.zip.{slug}.part):
+        # TEMP_DIR may be shared, and unrelated *.part files are not ours to delete.
+        for part_file in self.temp_path.glob("*.zip.*.part"):
+            if not part_file.name.endswith(suffix):
+                logger.info(f"Removing stale partial from another source directory: {part_file.name}")
+                part_file.unlink(missing_ok=True)
+
     def _download_zip(
         self,
         url: str,
@@ -303,8 +325,7 @@ class Downloader:
         # The .part name carries the source directory (month): CNPJ file names
         # repeat across monthly directories, and resuming (or 416-finalizing)
         # a partial that belongs to another month would corrupt the dataset.
-        directory_slug = re.sub(r"[^A-Za-z0-9_-]", "_", directory) or "root"
-        part_path = zip_path.with_name(f"{zip_path.name}.{directory_slug}.part")
+        part_path = zip_path.with_name(f"{zip_path.name}.{self._directory_slug(directory)}.part")
 
         if zip_path.exists():
             zip_path.unlink()
@@ -439,6 +460,23 @@ class Downloader:
 
     @staticmethod
     def _is_read_timeout(exc: requests.exceptions.ConnectionError) -> bool:
+        """True when a ConnectionError is a read timeout in disguise.
+        requests' iter_content re-raises urllib3's ReadTimeoutError as
+        ConnectionError(e), so the typed evidence lives in the args and the
+        exception chain; the string match stays as a last-resort fallback."""
+        seen: set[int] = set()
+        stack: list[BaseException] = [exc]
+        while stack:
+            current = stack.pop()
+            if id(current) in seen:
+                continue
+            seen.add(id(current))
+            if isinstance(current, (urllib3.exceptions.ReadTimeoutError, TimeoutError)):
+                return True
+            stack.extend(arg for arg in current.args if isinstance(arg, BaseException))
+            for linked in (current.__cause__, current.__context__):
+                if linked is not None:
+                    stack.append(linked)
         return "read timed out" in str(exc).lower()
 
     def _prepare_download_response(
