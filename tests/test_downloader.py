@@ -1203,6 +1203,8 @@ class TestStalePartialPruning:
         stale.write_bytes(b"stale month")
         same_month_other_file = downloader.temp_path / "Empresas0.zip.2026-06.part"
         same_month_other_file.write_bytes(b"current month")
+        unrelated = downloader.temp_path / "not-ours.part"
+        unrelated.write_bytes(b"someone else's file")
 
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         scripted_get = _ScriptedGet(
@@ -1214,6 +1216,7 @@ class TestStalePartialPruning:
 
         assert not stale.exists()
         assert same_month_other_file.exists()
+        assert unrelated.exists()
 
     def test_download_files_prunes_partials_from_other_directories(self, downloader, tmp_path, monkeypatch):
         stale = downloader.temp_path / "Socios9.zip.2026-05.part"

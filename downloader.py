@@ -305,7 +305,9 @@ class Downloader:
         never match) - without pruning, every failed historical attempt would
         retain multi-GB files forever."""
         suffix = f".{self._directory_slug(directory)}.part"
-        for part_file in self.temp_path.glob("*.part"):
+        # Only touch downloader-owned resume files ({name}.zip.{slug}.part):
+        # TEMP_DIR may be shared, and unrelated *.part files are not ours to delete.
+        for part_file in self.temp_path.glob("*.zip.*.part"):
             if not part_file.name.endswith(suffix):
                 logger.info(f"Removing stale partial from another source directory: {part_file.name}")
                 part_file.unlink(missing_ok=True)
