@@ -20,7 +20,11 @@ class Config:
     retry_attempts: int = 3
     retry_delay: int = 5
     connect_timeout: int = 30
+    # Metadata calls use read_timeout; streaming downloads use stall_timeout
+    # as the between-bytes read timeout so silent streams resume quickly.
     read_timeout: int = 300
+    stall_timeout: int = 30
+    progress_log_interval: int = 30
     keep_files: bool = False
     loading_strategy: str = "upsert"  # "upsert" or "replace"
     output_format: str = "postgres"  # "postgres" or "parquet"
@@ -48,6 +52,8 @@ class Config:
             retry_delay=int(os.getenv("RETRY_DELAY", "5")),
             connect_timeout=int(os.getenv("CONNECT_TIMEOUT", "30")),
             read_timeout=int(os.getenv("READ_TIMEOUT", "300")),
+            stall_timeout=int(os.getenv("STALL_TIMEOUT", "30")),
+            progress_log_interval=int(os.getenv("PROGRESS_LOG_INTERVAL", "30")),
             keep_files=os.getenv("KEEP_DOWNLOADED_FILES", "false").lower() == "true",
             loading_strategy=os.getenv("LOADING_STRATEGY", "upsert").lower(),
             output_format=os.getenv("OUTPUT_FORMAT", "postgres").lower(),
