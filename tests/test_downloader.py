@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+import urllib3.exceptions
 
 from config import Config
 from downloader import (
@@ -1172,3 +1173,59 @@ class TestResumeEdgeCases:
 
         with pytest.raises(requests.exceptions.ConnectionError, match="reset by peer"):
             downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+
+class TestReadTimeoutDetection:
+    def test_typed_read_timeout_in_args(self):
+        inner = urllib3.exceptions.ReadTimeoutError(None, "/url", "the socket gave up")
+        assert Downloader._is_read_timeout(requests.exceptions.ConnectionError(inner))
+
+    def test_typed_read_timeout_in_cause_chain(self):
+        exc = requests.exceptions.ConnectionError("proxy failure")
+        exc.__cause__ = TimeoutError("no matching phrase here")
+        assert Downloader._is_read_timeout(exc)
+
+    def test_string_fallback_still_matches(self):
+        assert Downloader._is_read_timeout(requests.exceptions.ConnectionError("Read timed out."))
+
+    def test_unrelated_connection_error_is_not_a_timeout(self):
+        assert not Downloader._is_read_timeout(requests.exceptions.ConnectionError("Connection reset by peer"))
+
+    def test_self_referencing_chain_terminates(self):
+        exc = requests.exceptions.ConnectionError("reset")
+        exc.__context__ = exc
+        assert not Downloader._is_read_timeout(exc)
+
+
+class TestStalePartialPruning:
+    def test_download_file_prunes_partials_from_other_directories(self, downloader, tmp_path, monkeypatch):
+        stale = downloader.temp_path / "Empresas0.zip.2026-05.part"
+        stale.write_bytes(b"stale month")
+        same_month_other_file = downloader.temp_path / "Empresas0.zip.2026-06.part"
+        same_month_other_file.write_bytes(b"current month")
+
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        scripted_get = _ScriptedGet(
+            [_ScriptedResponse(chunks=[zip_content], headers={"content-length": str(len(zip_content))})]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        downloader.download_file("2026-06", "Cnaes.zip")
+
+        assert not stale.exists()
+        assert same_month_other_file.exists()
+
+    def test_download_files_prunes_partials_from_other_directories(self, downloader, tmp_path, monkeypatch):
+        stale = downloader.temp_path / "Socios9.zip.2026-05.part"
+        stale.write_bytes(b"stale month")
+
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        scripted_get = _ScriptedGet(
+            [_ScriptedResponse(chunks=[zip_content], headers={"content-length": str(len(zip_content))})]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        results = list(downloader.download_files("2026-06", ["Cnaes.zip"]))
+
+        assert len(results) == 1
+        assert not stale.exists()
