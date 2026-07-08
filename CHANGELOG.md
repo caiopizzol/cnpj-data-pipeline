@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v1.38.1 (2026-07-08)
+
+### Bug Fixes
+
+- **downloader**: Detect read timeouts by exception type, prune stale partials
+  ([#99](https://github.com/caiopizzol/cnpj-data-pipeline/pull/99),
+  [`9c412c2`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/9c412c2030e94e3622053d56629f4d6c04091a26))
+
+- **downloader**: Prune only downloader-owned resume files in shared temp dirs
+  ([#99](https://github.com/caiopizzol/cnpj-data-pipeline/pull/99),
+  [`9c412c2`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/9c412c2030e94e3622053d56629f4d6c04091a26))
+
+- **downloader**: Typed read-timeout detection and stale-partial pruning
+  ([#99](https://github.com/caiopizzol/cnpj-data-pipeline/pull/99),
+  [`9c412c2`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/9c412c2030e94e3622053d56629f4d6c04091a26))
+
+
 ## v1.38.0 (2026-07-08)
 
 ### Features
