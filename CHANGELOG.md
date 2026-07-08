@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v1.36.1 (2026-07-08)
+
+### Bug Fixes
+
+- **downloader**: Crc-validate cached zips and keep .part resume state across runs
+  ([#96](https://github.com/caiopizzol/cnpj-data-pipeline/pull/96),
+  [`2579958`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/257995822e286778df4f76fe4b40ec3b073c89b4))
+
+- **downloader**: Resume large downloads instead of restarting from zero
+  ([#96](https://github.com/caiopizzol/cnpj-data-pipeline/pull/96),
+  [`2579958`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/257995822e286778df4f76fe4b40ec3b073c89b4))
+
+- **downloader**: Scope partials by month, force identity encoding on ranged downloads
+  ([#96](https://github.com/caiopizzol/cnpj-data-pipeline/pull/96),
+  [`2579958`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/257995822e286778df4f76fe4b40ec3b073c89b4))
+
+### Testing
+
+- **downloader**: Cover remaining resume branches
+  ([#96](https://github.com/caiopizzol/cnpj-data-pipeline/pull/96),
+  [`2579958`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/257995822e286778df4f76fe4b40ec3b073c89b4))
+
+- **downloader**: Cover resume error and finalize branches
+  ([#96](https://github.com/caiopizzol/cnpj-data-pipeline/pull/96),
+  [`2579958`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/257995822e286778df4f76fe4b40ec3b073c89b4))
+
+
 ## v1.36.0 (2026-07-01)
 
 ### Documentation
