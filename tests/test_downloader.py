@@ -809,3 +809,36 @@ class TestResumeEdgeCases:
 
         with pytest.raises(zipfile.BadZipFile, match="Corrupt ZIP member"):
             downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_corrupt_cached_zip_is_redownloaded(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = True
+        zip_content = bytearray(_create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test-payload-long-enough"}))
+        good_zip = bytes(zip_content)
+        marker = zip_content.find(b"0111301")
+        zip_content[marker] ^= 0xFF
+        (tmp_path / "Cnaes.zip").write_bytes(bytes(zip_content))
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[good_zip],
+                    headers={"content-length": str(len(good_zip))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+        assert len(scripted_get.calls) == 1
+        assert (tmp_path / "Cnaes.zip").read_bytes() == good_zip
+
+    def test_cleanup_preserves_part_files(self, downloader, tmp_path):
+        downloader.config.keep_files = False
+        (tmp_path / "Cnaes.zip").write_bytes(b"done")
+        (tmp_path / "Empresas0.zip.2024-03.part").write_bytes(b"resume me")
+
+        downloader.cleanup()
+
+        assert not (tmp_path / "Cnaes.zip").exists()
+        assert (tmp_path / "Empresas0.zip.2024-03.part").exists()

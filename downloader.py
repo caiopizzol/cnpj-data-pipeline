@@ -160,7 +160,7 @@ class Downloader:
         # Use info logging when tqdm is disabled (e.g., Docker, CI)
         log = logger.info if os.environ.get("TQDM_DISABLE") else logger.debug
 
-        if self.config.keep_files and zip_path.exists() and zipfile.is_zipfile(zip_path):
+        if self.config.keep_files and zip_path.exists() and self._cached_zip_is_valid(zip_path):
             log(f"Using cached: {filename}")
         else:
             self._download_zip(url, directory, filename, zip_path, log)
@@ -389,11 +389,27 @@ class Downloader:
         status_code = getattr(response, "status_code", 200)
         return status_code if isinstance(status_code, int) else 200
 
+    def _cached_zip_is_valid(self, zip_path: Path) -> bool:
+        """CRC-validate a cached ZIP; delete it when corrupt so it is re-downloaded."""
+        try:
+            self._validate_zip_file(zip_path)
+        except (zipfile.BadZipFile, OSError) as exc:
+            logger.warning(f"Cached ZIP {zip_path.name} is invalid ({exc}); re-downloading")
+            zip_path.unlink(missing_ok=True)
+            return False
+        return True
+
     def cleanup(self):
-        """Clean up temporary files."""
+        """Clean up temporary files, preserving .part resume state.
+
+        cleanup() runs in main's finally block, so it also executes after a
+        failed run - deleting partials there would forfeit cross-run resume,
+        which is the whole point of the .part protocol. Stale partials are
+        reconciled per-file on the next download (resumed or discarded).
+        """
         if self.config.keep_files:
             return
 
         for file in self.temp_path.glob("*"):
-            if file.is_file():
+            if file.is_file() and file.suffix != ".part":
                 file.unlink()
