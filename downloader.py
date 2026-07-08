@@ -280,12 +280,13 @@ class Downloader:
                     for chunk in response.iter_content(chunk_size=8192):
                         now = monotonic()
                         if not chunk:
+                            # Keep-alive chunks carry no data; only here can
+                            # elapsed time mean a stall. A non-empty chunk is
+                            # progress by definition, however slowly it came -
+                            # the socket read timeout is the stall authority.
                             if now - last_byte_at > self.config.stall_timeout:
                                 raise self._stalled_error(filename, downloaded_bytes)
                             continue
-
-                        if now - last_byte_at > self.config.stall_timeout:
-                            raise self._stalled_error(filename, downloaded_bytes)
 
                         chunk_size = len(chunk)
                         f.write(chunk)
