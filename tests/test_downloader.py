@@ -43,6 +43,36 @@ def downloader(config):
     return Downloader(config)
 
 
+class _ScriptedResponse:
+    def __init__(self, chunks: list[bytes | Exception], headers: dict[str, str], status_code: int = 200):
+        self._chunks = chunks
+        self.headers = headers
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.exceptions.HTTPError(str(self.status_code))
+
+    def iter_content(self, chunk_size: int):
+        for chunk in self._chunks:
+            if isinstance(chunk, Exception):
+                raise chunk
+            yield chunk
+
+
+class _ScriptedGet:
+    def __init__(self, responses: list[_ScriptedResponse | Exception]):
+        self._responses = responses
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(self, url: str, **kwargs):
+        self.calls.append({"url": url, "headers": kwargs.get("headers") or {}})
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
 class TestFilePatternMatching:
     """Test file pattern matching functionality used in the project."""
 
@@ -242,6 +272,140 @@ class TestDownloadAndExtract:
             assert "CNAECSV.D51213" in names
             assert "ESTABELE.D51213" in names
             assert "README.txt" not in names
+
+    def test_resumes_after_timeout_with_range_header(self, downloader, tmp_path, monkeypatch):
+        """A stalled stream should retry from the bytes already saved in .part."""
+        downloader.config.keep_files = True
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        split_at = len(zip_content) // 2
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[:split_at], requests.exceptions.Timeout("stalled stream")],
+                    headers={"content-length": str(len(zip_content))},
+                ),
+                _ScriptedResponse(
+                    chunks=[zip_content[split_at:]],
+                    headers={
+                        "content-range": f"bytes {split_at}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": str(len(zip_content) - split_at),
+                    },
+                    status_code=206,
+                ),
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+        assert scripted_get.calls[0]["headers"] == {}
+        assert scripted_get.calls[1]["headers"] == {"Range": f"bytes={split_at}-"}
+
+    def test_resume_appends_to_existing_partial_file(self, downloader, tmp_path, monkeypatch):
+        """A leftover .part file is appended to instead of redownloading from byte zero."""
+        downloader.config.keep_files = True
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        split_at = len(zip_content) // 2
+        part_path = tmp_path / "Cnaes.zip.part"
+        part_path.write_bytes(zip_content[:split_at])
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[split_at:]],
+                    headers={
+                        "content-range": f"bytes {split_at}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": str(len(zip_content) - split_at),
+                    },
+                    status_code=206,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert scripted_get.calls[0]["headers"] == {"Range": f"bytes={split_at}-"}
+        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+
+    def test_server_ignoring_range_discards_partial_and_restarts(self, downloader, tmp_path, monkeypatch):
+        """A 200 response to a Range request is a clean restart, not an append."""
+        downloader.config.keep_files = True
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        part_path = tmp_path / "Cnaes.zip.part"
+        part_path.write_bytes(b"stale-part")
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content],
+                    headers={"content-length": str(len(zip_content))},
+                    status_code=200,
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert scripted_get.calls[0]["headers"] == {"Range": f"bytes={len(b'stale-part')}-"}
+        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+
+    def test_final_size_mismatch_raises_without_final_zip(self, downloader, tmp_path, monkeypatch):
+        """A short final size is retried, then left as .part without publishing a bad ZIP."""
+        downloader.config.keep_files = True
+        downloader.config.retry_attempts = 2
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        first_split = len(zip_content) // 3
+        second_split = first_split * 2
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[:first_split]],
+                    headers={"content-length": str(len(zip_content))},
+                ),
+                _ScriptedResponse(
+                    chunks=[zip_content[first_split:second_split]],
+                    headers={
+                        "content-range": f"bytes {first_split}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": str(len(zip_content) - first_split),
+                    },
+                    status_code=206,
+                ),
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(RuntimeError, match="Incomplete download"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert not (tmp_path / "Cnaes.zip").exists()
+        assert (tmp_path / "Cnaes.zip.part").read_bytes() == zip_content[:second_split]
+
+    def test_corrupt_zip_is_retried_then_raises(self, downloader, tmp_path, monkeypatch):
+        """Downloaded bytes must be a readable ZIP before extraction starts."""
+        downloader.config.keep_files = True
+        downloader.config.retry_attempts = 2
+        corrupt_content = b"not a zip file"
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[corrupt_content],
+                    headers={"content-length": str(len(corrupt_content))},
+                ),
+                _ScriptedResponse(
+                    chunks=[corrupt_content],
+                    headers={"content-length": str(len(corrupt_content))},
+                ),
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(zipfile.BadZipFile):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(scripted_get.calls) == 2
+        assert not (tmp_path / "Cnaes.zip").exists()
+        assert not (tmp_path / "Cnaes.zip.part").exists()
 
 
 class TestDownloadFiles:
