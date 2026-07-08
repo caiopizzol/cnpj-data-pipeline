@@ -8,7 +8,13 @@ import pytest
 import requests
 
 from config import Config
-from downloader import CNPJ_FILE_PATTERNS, Downloader, DownloadIncompleteError, DownloadStalledError
+from downloader import (
+    CNPJ_FILE_PATTERNS,
+    AdaptiveDownloadConcurrency,
+    Downloader,
+    DownloadIncompleteError,
+    DownloadStalledError,
+)
 
 
 def _webdav_xml(entries: list[str]) -> bytes:
@@ -500,6 +506,106 @@ class TestDownloadFiles:
 
             with pytest.raises(requests.exceptions.Timeout):
                 list(downloader.download_files("2024-03", ["Cnaes.zip"]))
+
+
+class TestAdaptiveDownloadConcurrency:
+    """Test adaptive concurrency degradation decisions."""
+
+    def test_degrades_from_four_to_two_to_one_at_threshold_crossings(self, caplog):
+        caplog.set_level(logging.WARNING, logger="downloader")
+        adaptive_concurrency = AdaptiveDownloadConcurrency(initial_concurrency=4, stall_degrade_threshold=2)
+
+        assert adaptive_concurrency.current_concurrency == 4
+        assert adaptive_concurrency.record_stall() is None
+        assert adaptive_concurrency.current_concurrency == 4
+
+        first_degradation = adaptive_concurrency.record_stall()
+        assert first_degradation is not None
+        assert first_degradation.previous_concurrency == 4
+        assert first_degradation.new_concurrency == 2
+        assert adaptive_concurrency.current_concurrency == 2
+
+        assert adaptive_concurrency.record_stall() is None
+        assert adaptive_concurrency.current_concurrency == 2
+
+        second_degradation = adaptive_concurrency.record_stall()
+        assert second_degradation is not None
+        assert second_degradation.previous_concurrency == 2
+        assert second_degradation.new_concurrency == 1
+        assert adaptive_concurrency.current_concurrency == 1
+
+        assert "2 stalls at concurrency 4, degrading to 2 for the rest of the run" in caplog.text
+        assert "4 stalls at concurrency 2, degrading to 1 for the rest of the run" in caplog.text
+
+    def test_degradation_never_scales_back_up(self):
+        adaptive_concurrency = AdaptiveDownloadConcurrency(initial_concurrency=4, stall_degrade_threshold=1)
+
+        for _ in range(5):
+            adaptive_concurrency.record_stall()
+
+        assert adaptive_concurrency.current_concurrency == 1
+        assert adaptive_concurrency.stall_count == 5
+
+    def test_stalls_below_threshold_leave_concurrency_unchanged(self, caplog):
+        caplog.set_level(logging.WARNING, logger="downloader")
+        adaptive_concurrency = AdaptiveDownloadConcurrency(initial_concurrency=4, stall_degrade_threshold=3)
+
+        adaptive_concurrency.record_stall()
+        adaptive_concurrency.record_stall()
+
+        assert adaptive_concurrency.current_concurrency == 4
+        assert "degrading" not in caplog.text
+
+
+class TestAdaptiveDownloadIntegration:
+    """Test adaptive degradation through the resumable download path."""
+
+    def test_stalled_file_resumes_and_completes_after_degrading_to_one(self, downloader, tmp_path, monkeypatch, caplog):
+        downloader.config.download_workers = 4
+        downloader.config.stall_degrade_threshold = 1
+        downloader.config.retry_attempts = 3
+        downloader.config.retry_delay = 0
+        downloader.config.keep_files = True
+        monkeypatch.setenv("TQDM_DISABLE", "1")
+        caplog.set_level(logging.WARNING, logger="downloader")
+        zip_content = _create_test_zip(tmp_path, {"EMPRECSV.D51213": "0111301;Test"})
+        first_split = len(zip_content) // 3
+        second_split = first_split * 2
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[zip_content[:first_split], requests.exceptions.Timeout("stalled stream")],
+                    headers={"content-length": str(len(zip_content))},
+                ),
+                _ScriptedResponse(
+                    chunks=[zip_content[first_split:second_split], requests.exceptions.Timeout("stalled stream")],
+                    headers={
+                        "content-range": f"bytes {first_split}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": str(len(zip_content) - first_split),
+                    },
+                    status_code=206,
+                ),
+                _ScriptedResponse(
+                    chunks=[zip_content[second_split:]],
+                    headers={
+                        "content-range": f"bytes {second_split}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": str(len(zip_content) - second_split),
+                    },
+                    status_code=206,
+                ),
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = list(downloader.download_files("2024-03", ["Empresas0.zip"]))
+
+        assert len(result) == 1
+        assert result[0][1] == "Empresas0.zip"
+        assert scripted_get.calls[0]["headers"] == {"Accept-Encoding": "identity"}
+        assert scripted_get.calls[1]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={first_split}-"}
+        assert scripted_get.calls[2]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={second_split}-"}
+        assert "1 stalls at concurrency 4, degrading to 2 for the rest of the run" in caplog.text
+        assert "2 stalls at concurrency 2, degrading to 1 for the rest of the run" in caplog.text
 
 
 class TestCleanup:

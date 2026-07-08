@@ -5,8 +5,10 @@ import os
 import re
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from time import monotonic
 from typing import Callable, Iterator, List, Mapping, Tuple
 from xml.etree import ElementTree
@@ -54,6 +56,67 @@ class DownloadIncompleteError(RuntimeError):
 
 class DownloadStalledError(DownloadIncompleteError):
     """Raised when a download stream stops yielding bytes past the stall timeout."""
+
+
+@dataclass(frozen=True)
+class ConcurrencyDegradation:
+    """A one-way adaptive concurrency change triggered by cumulative stalls."""
+
+    stall_count: int
+    previous_concurrency: int
+    new_concurrency: int
+
+
+class AdaptiveDownloadConcurrency:
+    """Track stream stalls and reduce download concurrency for the current run."""
+
+    def __init__(self, initial_concurrency: int, stall_degrade_threshold: int):
+        self._current_concurrency = initial_concurrency
+        self._stall_degrade_threshold = max(1, stall_degrade_threshold)
+        self._next_degrade_at = self._stall_degrade_threshold
+        self._stall_count = 0
+        self._lock = Lock()
+
+    @property
+    def current_concurrency(self) -> int:
+        with self._lock:
+            return self._current_concurrency
+
+    @property
+    def stall_count(self) -> int:
+        with self._lock:
+            return self._stall_count
+
+    def record_stall(self) -> ConcurrencyDegradation | None:
+        degradation: ConcurrencyDegradation | None = None
+        with self._lock:
+            self._stall_count += 1
+            if self._stall_count >= self._next_degrade_at:
+                new_concurrency = self._degraded_concurrency(self._current_concurrency)
+                if new_concurrency < self._current_concurrency:
+                    degradation = ConcurrencyDegradation(
+                        stall_count=self._stall_count,
+                        previous_concurrency=self._current_concurrency,
+                        new_concurrency=new_concurrency,
+                    )
+                    self._current_concurrency = new_concurrency
+                self._next_degrade_at += self._stall_degrade_threshold
+
+        if degradation is not None:
+            logger.warning(
+                f"{degradation.stall_count} stalls at concurrency {degradation.previous_concurrency}, "
+                f"degrading to {degradation.new_concurrency} for the rest of the run"
+            )
+
+        return degradation
+
+    @staticmethod
+    def _degraded_concurrency(current_concurrency: int) -> int:
+        if current_concurrency > 2:
+            return 2
+        if current_concurrency > 1:
+            return 1
+        return current_concurrency
 
 
 class Downloader:
@@ -133,30 +196,66 @@ class Downloader:
         # Split into reference and data files
         reference_files = [f for f in files if f in REFERENCE_FILES]
         data_files = [f for f in files if f not in REFERENCE_FILES]
+        adaptive_concurrency = AdaptiveDownloadConcurrency(
+            self.config.download_workers,
+            self.config.stall_degrade_threshold,
+        )
 
         # Process reference files first (sequentially)
         for filename in reference_files:
-            for csv_path in self._download_and_extract(directory, filename):
+            for csv_path in self._download_and_extract(directory, filename, adaptive_concurrency.record_stall):
                 yield csv_path, filename
 
         # Process data files in parallel
         if data_files:
-            yield from self._download_parallel(directory, data_files)
+            yield from self._download_parallel(directory, data_files, adaptive_concurrency)
 
-    def _download_parallel(self, directory: str, files: List[str]) -> Iterator[Tuple[Path, str]]:
+    def _download_parallel(
+        self,
+        directory: str,
+        files: List[str],
+        adaptive_concurrency: AdaptiveDownloadConcurrency,
+    ) -> Iterator[Tuple[Path, str]]:
         """Download data files in parallel using ThreadPoolExecutor."""
         with ThreadPoolExecutor(max_workers=self.config.download_workers) as executor:
-            future_to_filename = {
-                executor.submit(self._download_and_extract, directory, filename): filename for filename in files
-            }
+            next_file_index = 0
+            future_to_filename: dict[Future[List[Path]], str] = {}
 
-            for future in as_completed(future_to_filename):
-                filename = future_to_filename[future]
-                extracted_files = future.result()
-                for csv_path in extracted_files:
-                    yield csv_path, filename
+            def submit_until_limit() -> None:
+                nonlocal next_file_index
+                while (
+                    next_file_index < len(files) and len(future_to_filename) < adaptive_concurrency.current_concurrency
+                ):
+                    filename = files[next_file_index]
+                    next_file_index += 1
+                    future = executor.submit(
+                        self._download_and_extract,
+                        directory,
+                        filename,
+                        adaptive_concurrency.record_stall,
+                    )
+                    future_to_filename[future] = filename
 
-    def _download_and_extract(self, directory: str, filename: str) -> List[Path]:
+            submit_until_limit()
+            while future_to_filename:
+                completed_futures, _ = wait(future_to_filename, return_when=FIRST_COMPLETED)
+                completed_downloads: list[tuple[str, List[Path]]] = []
+                for future in completed_futures:
+                    filename = future_to_filename.pop(future)
+                    extracted_files = future.result()
+                    completed_downloads.append((filename, extracted_files))
+                submit_until_limit()
+
+                for filename, extracted_files in completed_downloads:
+                    for csv_path in extracted_files:
+                        yield csv_path, filename
+
+    def _download_and_extract(
+        self,
+        directory: str,
+        filename: str,
+        record_stall: Callable[[], ConcurrencyDegradation | None] | None = None,
+    ) -> List[Path]:
         """Download a single ZIP file and extract CSV files."""
         url = f"{self.config.base_url}/{directory}/{filename}"
         zip_path = self.temp_path / filename
@@ -168,7 +267,7 @@ class Downloader:
         if self.config.keep_files and zip_path.exists() and self._cached_zip_is_valid(zip_path):
             log(f"Using cached: {filename}")
         else:
-            self._download_zip(url, directory, filename, zip_path, log)
+            self._download_zip(url, directory, filename, zip_path, log, record_stall)
 
         # Extract CSV files
         extracted_files = []
@@ -192,7 +291,13 @@ class Downloader:
         return extracted_files
 
     def _download_zip(
-        self, url: str, directory: str, filename: str, zip_path: Path, log: Callable[[str], None]
+        self,
+        url: str,
+        directory: str,
+        filename: str,
+        zip_path: Path,
+        log: Callable[[str], None],
+        record_stall: Callable[[], ConcurrencyDegradation | None] | None,
     ) -> None:
         """Download a ZIP through a resumable .part file and validate it."""
         # The .part name carries the source directory (month): CNPJ file names
@@ -213,7 +318,10 @@ class Downloader:
                 if zip_path.exists():
                     zip_path.unlink()
 
-                if not isinstance(e, DownloadStalledError):
+                if isinstance(e, DownloadStalledError):
+                    if record_stall is not None:
+                        record_stall()
+                else:
                     logger.warning(f"Download attempt {attempt + 1} failed: {e}")
                 if attempt < self.config.retry_attempts - 1:
                     time.sleep(self.config.retry_delay)
