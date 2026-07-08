@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v1.37.0 (2026-07-08)
+
+### Bug Fixes
+
+- **downloader**: Only treat empty keep-alive chunks as stall evidence, document new env knobs
+  ([#97](https://github.com/caiopizzol/cnpj-data-pipeline/pull/97),
+  [`7c2e32e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/7c2e32eec21e3d097e23fc1128cee1d39c75477c))
+
+### Features
+
+- **downloader**: Stall watchdog and periodic progress logging
+  ([#97](https://github.com/caiopizzol/cnpj-data-pipeline/pull/97),
+  [`7c2e32e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/7c2e32eec21e3d097e23fc1128cee1d39c75477c))
+
+### Testing
+
+- **downloader**: Cover stall-mapping branches (empty-chunk raise, ConnectionError read-timeout,
+  unmapped ConnectionError) ([#97](https://github.com/caiopizzol/cnpj-data-pipeline/pull/97),
+  [`7c2e32e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/7c2e32eec21e3d097e23fc1128cee1d39c75477c))
+
+
 ## v1.36.1 (2026-07-08)
 
 ### Bug Fixes
