@@ -997,3 +997,72 @@ class TestResumeEdgeCases:
 
         assert not (tmp_path / "Cnaes.zip").exists()
         assert (tmp_path / "Empresas0.zip.2024-03.part").exists()
+
+    def test_empty_keepalive_chunks_past_stall_timeout_raise(self, downloader, tmp_path, monkeypatch):
+        import downloader as downloader_module
+
+        downloader.config.retry_attempts = 1
+        downloader.config.stall_timeout = 30
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        clock = iter([0.0, 0.0, 100.0, 200.0, 300.0, 400.0, 500.0])
+        monkeypatch.setattr(downloader_module, "monotonic", lambda: next(clock))
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[b"", b"", zip_content],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadStalledError, match="stalled: no bytes"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+    def test_connection_error_read_timeout_maps_to_stall_and_resumes(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = True
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        split_at = len(zip_content) // 2
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[
+                        zip_content[:split_at],
+                        requests.exceptions.ConnectionError("Read timed out."),
+                    ],
+                    headers={"content-length": str(len(zip_content))},
+                ),
+                _ScriptedResponse(
+                    chunks=[zip_content[split_at:]],
+                    headers={
+                        "content-range": f"bytes {split_at}-{len(zip_content) - 1}/{len(zip_content)}",
+                    },
+                    status_code=206,
+                ),
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+        assert scripted_get.calls[1]["headers"]["Range"] == f"bytes={split_at}-"
+
+    def test_other_connection_errors_propagate_unmapped(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 1
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+        scripted_get = _ScriptedGet(
+            [
+                _ScriptedResponse(
+                    chunks=[
+                        zip_content[:4],
+                        requests.exceptions.ConnectionError("Connection reset by peer"),
+                    ],
+                    headers={"content-length": str(len(zip_content))},
+                )
+            ]
+        )
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(requests.exceptions.ConnectionError, match="reset by peer"):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
