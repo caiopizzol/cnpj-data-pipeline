@@ -111,6 +111,7 @@ CONNECT_TIMEOUT=30
 READ_TIMEOUT=300
 STALL_TIMEOUT=30
 PROGRESS_LOG_INTERVAL=30
+STALL_DEGRADE_THRESHOLD=3  # Stalls acumulados até reduzir a concorrência
 KEEP_DOWNLOADED_FILES=false
 LOADING_STRATEGY=upsert  # "upsert" ou "replace"
 OUTPUT_FORMAT=postgres   # "postgres" ou "parquet"
@@ -118,6 +119,24 @@ PARQUET_OUTPUT_DIR=./parquet
 PARQUET_TYPED_OUTPUT=false  # Quando true, datas e numéricos saem tipados (Date, Float64, Int32)
 PROCESS_WORKERS=1        # Arquivos do mesmo grupo em paralelo (ex: 4)
 ```
+
+### Downloads resilientes
+
+O servidor da Receita costuma travar streams grandes (e recusa conexões
+quando várias baixam em paralelo). Os downloads são retomáveis via arquivo
+`.part`, e as variáveis acima não têm mais o sentido óbvio dos nomes:
+
+- `RETRY_ATTEMPTS` conta **falhas consecutivas sem progresso**, não falhas
+  totais. Qualquer byte novo gravado no `.part` zera o orçamento, então um
+  arquivo grande sobrevive a muitos stalls produtivos.
+- `RETRY_DELAY` é a base de um backoff exponencial (dobra a cada falha sem
+  progresso, teto de 120s), não um atraso fixo.
+- Stalls e connect timeouts repetidos reduzem a concorrência de download
+  (`DOWNLOAD_WORKERS` -> 2 -> 1) a partir de `STALL_DEGRADE_THRESHOLD`, sem
+  voltar a subir na mesma execução.
+- Cada tentativa HTTP (inclusive as retentativas) passa pela concorrência
+  adaptativa, então ao degradar para 1 as retentativas serializam em vez de
+  reconectar em paralelo.
 
 ### `DATABASE_URL`: parâmetros libpq
 
