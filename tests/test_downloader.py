@@ -365,7 +365,16 @@ class TestDownloadAndExtract:
                 _ScriptedResponse(
                     chunks=[zip_content[:split_at], requests.exceptions.Timeout("stalled stream")],
                     headers={"content-length": str(len(zip_content))},
-                )
+                ),
+                # The retry resumes but receives nothing: no progress, budget exhausted.
+                _ScriptedResponse(
+                    chunks=[requests.exceptions.Timeout("stalled again")],
+                    headers={
+                        "content-range": f"bytes {split_at}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": str(len(zip_content) - split_at),
+                    },
+                    status_code=206,
+                ),
             ]
         )
         monkeypatch.setattr(requests, "get", scripted_get)
@@ -454,6 +463,19 @@ class TestDownloadAndExtract:
                     },
                     status_code=206,
                 ),
+            ]
+            + [
+                # Productive attempts reset the budget; only these two
+                # empty-handed retries count against retry_attempts=2.
+                _ScriptedResponse(
+                    chunks=[],
+                    headers={
+                        "content-range": f"bytes {second_split}-{len(zip_content) - 1}/{len(zip_content)}",
+                        "content-length": str(len(zip_content) - second_split),
+                    },
+                    status_code=206,
+                )
+                for _ in range(2)
             ]
         )
         monkeypatch.setattr(requests, "get", scripted_get)
@@ -1161,10 +1183,7 @@ class TestResumeEdgeCases:
         scripted_get = _ScriptedGet(
             [
                 _ScriptedResponse(
-                    chunks=[
-                        zip_content[:4],
-                        requests.exceptions.ConnectionError("Connection reset by peer"),
-                    ],
+                    chunks=[requests.exceptions.ConnectionError("Connection reset by peer")],
                     headers={"content-length": str(len(zip_content))},
                 )
             ]
@@ -1232,3 +1251,53 @@ class TestStalePartialPruning:
 
         assert len(results) == 1
         assert not stale.exists()
+
+
+class TestRetryBudgetResetsOnProgress:
+    """Observed live 2026-07-08: Receita stalls big files every few dozen MB.
+    Each stall resumes with progress, so a fixed total-failure budget made
+    large files structurally undownloadable once stalls > retry_attempts."""
+
+    def test_more_stalls_than_retry_attempts_complete_when_each_makes_progress(self, downloader, tmp_path, monkeypatch):
+        downloader.config.keep_files = True
+        downloader.config.retry_attempts = 2
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test" * 200})
+        total = len(zip_content)
+        cuts = [0, total // 4, total // 2, (total * 3) // 4]
+        responses = []
+        for i, start in enumerate(cuts):
+            end = cuts[i + 1] if i + 1 < len(cuts) else total
+            chunks = [zip_content[start:end]]
+            if end < total:
+                chunks.append(requests.exceptions.Timeout("stalled"))
+            headers = {"content-length": str(total - start)}
+            status = 200
+            if start:
+                headers["content-range"] = f"bytes {start}-{total - 1}/{total}"
+                status = 206
+            responses.append(_ScriptedResponse(chunks=chunks, headers=headers, status_code=status))
+        scripted_get = _ScriptedGet(responses)
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(result) == 1
+        assert len(scripted_get.calls) == 4  # 3 stalls survived a budget of 2
+
+    def test_consecutive_no_progress_stalls_still_exhaust_the_budget(self, downloader, tmp_path, monkeypatch):
+        downloader.config.retry_attempts = 2
+        zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
+
+        def stall():
+            return _ScriptedResponse(
+                chunks=[requests.exceptions.Timeout("wedged")],
+                headers={"content-length": str(len(zip_content))},
+            )
+
+        scripted_get = _ScriptedGet([stall(), stall()])
+        monkeypatch.setattr(requests, "get", scripted_get)
+
+        with pytest.raises(DownloadStalledError):
+            downloader._download_and_extract("2024-03", "Cnaes.zip")
+
+        assert len(scripted_get.calls) == 2
