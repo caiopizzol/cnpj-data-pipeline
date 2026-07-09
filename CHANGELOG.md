@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.38.2 (2026-07-09)
+
+### Bug Fixes
+
+- **downloader**: Reset the retry budget when a stalled attempt made progress
+  ([#101](https://github.com/caiopizzol/cnpj-data-pipeline/pull/101),
+  [`565c03e`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/565c03e437e68fa6442e94696371891c44aeaade))
+
+
 ## v1.38.1 (2026-07-08)
 
 ### Bug Fixes
