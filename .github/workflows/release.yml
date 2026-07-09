@@ -36,7 +36,7 @@ jobs:
 
       - name: AI Release Notes
         if: success()
-        uses: caiopizzol/semantic-release-ai-notes@main
+        uses: caiopizzol/semantic-release-ai-notes@v0.3.1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: claude-haiku-4-5
