@@ -1387,3 +1387,34 @@ class TestAttemptLevelConcurrency:
             )
 
         assert sleeps == [40, 80, 120]  # 40*2^2=160 capped at MAX_RETRY_BACKOFF_SECONDS
+
+    def test_stall_is_recorded_while_the_permit_is_still_held(self, downloader, monkeypatch):
+        """Waiters must wake to the degraded limit; recording after release
+        races one more attempt through at the old concurrency."""
+        downloader.config.retry_attempts = 1
+        adaptive = AdaptiveDownloadConcurrency(4, 1)
+        active_at_record = []
+        original = adaptive.record_stall
+
+        def spy():
+            active_at_record.append(adaptive._active_streams)
+            return original()
+
+        monkeypatch.setattr(adaptive, "record_stall", spy)
+        monkeypatch.setattr(
+            requests,
+            "get",
+            MagicMock(side_effect=requests.exceptions.ConnectTimeout("refused")),
+        )
+
+        with pytest.raises(requests.exceptions.ConnectTimeout):
+            downloader._download_zip(
+                "https://example/x.zip",
+                "2024-03",
+                "Cnaes.zip",
+                downloader.temp_path / "Cnaes.zip",
+                logging.getLogger(__name__).debug,
+                adaptive,
+            )
+
+        assert active_at_record == [1]

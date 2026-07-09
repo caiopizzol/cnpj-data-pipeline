@@ -370,18 +370,23 @@ class Downloader:
             try:
                 log(f"Downloading {filename}...")
                 with adaptive.stream_permit() if adaptive is not None else nullcontext():
-                    self._download_zip_once(url, filename, zip_path, part_path)
+                    try:
+                        self._download_zip_once(url, filename, zip_path, part_path)
+                    except (DownloadStalledError, requests.exceptions.ConnectTimeout):
+                        # ConnectTimeout counts as server pressure alongside
+                        # stalls: a server that stops accepting connections
+                        # after stalling streams is telling us the same thing.
+                        # Record while the permit is still held, so waiters
+                        # wake to the degraded limit rather than racing one
+                        # more attempt through at the old concurrency.
+                        if adaptive is not None:
+                            adaptive.record_stall()
+                        raise
                 return
             except Exception as e:
                 if zip_path.exists():
                     zip_path.unlink()
 
-                # ConnectTimeout counts as server pressure alongside stalls:
-                # a server that stops accepting connections after stalling
-                # streams is telling us the same thing a stalled stream does.
-                if isinstance(e, (DownloadStalledError, requests.exceptions.ConnectTimeout)):
-                    if adaptive is not None:
-                        adaptive.record_stall()
                 if not isinstance(e, DownloadStalledError):
                     logger.warning(f"Download attempt failed: {e}")
 
