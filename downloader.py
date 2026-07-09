@@ -330,7 +330,16 @@ class Downloader:
         if zip_path.exists():
             zip_path.unlink()
 
-        for attempt in range(self.config.retry_attempts):
+        # retry_attempts bounds CONSECUTIVE failures without forward progress,
+        # not total failures: a stall that grew the .part file is the resume
+        # path working, and Receita routinely stalls every few dozen MB, so a
+        # large file can accumulate many productive stalls. Counting those
+        # against a fixed budget makes big files structurally undownloadable.
+        # Only a retry that adds no bytes (server wedged, restart-from-zero)
+        # burns an attempt.
+        progress_marker = part_path.stat().st_size if part_path.exists() else 0
+        failures_without_progress = 0
+        while True:
             try:
                 log(f"Downloading {filename}...")
                 self._download_zip_once(url, filename, zip_path, part_path)
@@ -343,11 +352,17 @@ class Downloader:
                     if record_stall is not None:
                         record_stall()
                 else:
-                    logger.warning(f"Download attempt {attempt + 1} failed: {e}")
-                if attempt < self.config.retry_attempts - 1:
-                    time.sleep(self.config.retry_delay)
+                    logger.warning(f"Download attempt failed: {e}")
+
+                part_size = part_path.stat().st_size if part_path.exists() else 0
+                if part_size > progress_marker:
+                    progress_marker = part_size
+                    failures_without_progress = 0
                 else:
+                    failures_without_progress += 1
+                if failures_without_progress >= self.config.retry_attempts:
                     raise
+                time.sleep(self.config.retry_delay)
 
     def _download_zip_once(self, url: str, filename: str, zip_path: Path, part_path: Path) -> None:
         offset = part_path.stat().st_size if part_path.exists() else 0
