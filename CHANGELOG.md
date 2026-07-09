@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.38.3 (2026-07-09)
+
+### Bug Fixes
+
+- **downloader**: Gate every attempt on adaptive concurrency, back off no-progress retries
+  ([#102](https://github.com/caiopizzol/cnpj-data-pipeline/pull/102),
+  [`444bef0`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/444bef08072fa8d3be83edf277b2033d8f1382e0))
+
+- **downloader**: Record adaptive stalls before the stream permit releases
+  ([#102](https://github.com/caiopizzol/cnpj-data-pipeline/pull/102),
+  [`444bef0`](https://github.com/caiopizzol/cnpj-data-pipeline/commit/444bef08072fa8d3be83edf277b2033d8f1382e0))
+
+
 ## v1.38.2 (2026-07-09)
 
 ### Bug Fixes
