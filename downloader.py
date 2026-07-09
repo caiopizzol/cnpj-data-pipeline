@@ -6,9 +6,10 @@ import re
 import time
 import zipfile
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
+from threading import Condition, Lock
 from time import monotonic
 from typing import Callable, Iterator, List, Mapping, Tuple
 from xml.etree import ElementTree
@@ -59,6 +60,10 @@ class DownloadStalledError(DownloadIncompleteError):
     """Raised when a download stream stops yielding bytes past the stall timeout."""
 
 
+# Ceiling for the exponential no-progress retry backoff in _download_zip.
+MAX_RETRY_BACKOFF_SECONDS = 120
+
+
 @dataclass(frozen=True)
 class ConcurrencyDegradation:
     """A one-way adaptive concurrency change triggered by cumulative stalls."""
@@ -77,11 +82,33 @@ class AdaptiveDownloadConcurrency:
         self._next_degrade_at = self._stall_degrade_threshold
         self._stall_count = 0
         self._lock = Lock()
+        self._permits = Condition(self._lock)
+        self._active_streams = 0
 
     @property
     def current_concurrency(self) -> int:
         with self._lock:
             return self._current_concurrency
+
+    @contextmanager
+    def stream_permit(self) -> Iterator[None]:
+        """Gate one HTTP attempt (connect + stream) on the CURRENT concurrency.
+        _download_parallel only limits how many file downloads are submitted;
+        files already in flight when concurrency degrades would otherwise keep
+        reconnecting in parallel on every retry - observed live 2026-07-09 as
+        a 4-wide reconnect storm after degradation to 1, which Receita answered
+        with connect timeouts until the retry budget died. Every attempt must
+        hold a permit, so degradation serializes retries too."""
+        with self._permits:
+            while self._active_streams >= self._current_concurrency:
+                self._permits.wait()
+            self._active_streams += 1
+        try:
+            yield
+        finally:
+            with self._permits:
+                self._active_streams -= 1
+                self._permits.notify_all()
 
     @property
     def stall_count(self) -> int:
@@ -207,7 +234,7 @@ class Downloader:
 
         # Process reference files first (sequentially)
         for filename in reference_files:
-            for csv_path in self._download_and_extract(directory, filename, adaptive_concurrency.record_stall):
+            for csv_path in self._download_and_extract(directory, filename, adaptive_concurrency):
                 yield csv_path, filename
 
         # Process data files in parallel
@@ -236,7 +263,7 @@ class Downloader:
                         self._download_and_extract,
                         directory,
                         filename,
-                        adaptive_concurrency.record_stall,
+                        adaptive_concurrency,
                     )
                     future_to_filename[future] = filename
 
@@ -258,7 +285,7 @@ class Downloader:
         self,
         directory: str,
         filename: str,
-        record_stall: Callable[[], ConcurrencyDegradation | None] | None = None,
+        adaptive: AdaptiveDownloadConcurrency | None = None,
     ) -> List[Path]:
         """Download a single ZIP file and extract CSV files."""
         url = f"{self.config.base_url}/{directory}/{filename}"
@@ -271,7 +298,7 @@ class Downloader:
         if self.config.keep_files and zip_path.exists() and self._cached_zip_is_valid(zip_path):
             log(f"Using cached: {filename}")
         else:
-            self._download_zip(url, directory, filename, zip_path, log, record_stall)
+            self._download_zip(url, directory, filename, zip_path, log, adaptive)
 
         # Extract CSV files
         extracted_files = []
@@ -319,7 +346,7 @@ class Downloader:
         filename: str,
         zip_path: Path,
         log: Callable[[str], None],
-        record_stall: Callable[[], ConcurrencyDegradation | None] | None,
+        adaptive: AdaptiveDownloadConcurrency | None,
     ) -> None:
         """Download a ZIP through a resumable .part file and validate it."""
         # The .part name carries the source directory (month): CNPJ file names
@@ -342,16 +369,25 @@ class Downloader:
         while True:
             try:
                 log(f"Downloading {filename}...")
-                self._download_zip_once(url, filename, zip_path, part_path)
+                with adaptive.stream_permit() if adaptive is not None else nullcontext():
+                    try:
+                        self._download_zip_once(url, filename, zip_path, part_path)
+                    except (DownloadStalledError, requests.exceptions.ConnectTimeout):
+                        # ConnectTimeout counts as server pressure alongside
+                        # stalls: a server that stops accepting connections
+                        # after stalling streams is telling us the same thing.
+                        # Record while the permit is still held, so waiters
+                        # wake to the degraded limit rather than racing one
+                        # more attempt through at the old concurrency.
+                        if adaptive is not None:
+                            adaptive.record_stall()
+                        raise
                 return
             except Exception as e:
                 if zip_path.exists():
                     zip_path.unlink()
 
-                if isinstance(e, DownloadStalledError):
-                    if record_stall is not None:
-                        record_stall()
-                else:
+                if not isinstance(e, DownloadStalledError):
                     logger.warning(f"Download attempt failed: {e}")
 
                 part_size = part_path.stat().st_size if part_path.exists() else 0
@@ -362,7 +398,12 @@ class Downloader:
                     failures_without_progress += 1
                 if failures_without_progress >= self.config.retry_attempts:
                     raise
-                time.sleep(self.config.retry_delay)
+                # Exponential backoff on consecutive no-progress failures: a
+                # fixed delay re-hammers a refusing server on a tight cadence
+                # (observed as connect-timeout loops every ~35s); progress
+                # resets the backoff along with the failure budget.
+                backoff = self.config.retry_delay * (2 ** max(0, failures_without_progress - 1))
+                time.sleep(min(backoff, MAX_RETRY_BACKOFF_SECONDS))
 
     def _download_zip_once(self, url: str, filename: str, zip_path: Path, part_path: Path) -> None:
         offset = part_path.stat().st_size if part_path.exists() else 0

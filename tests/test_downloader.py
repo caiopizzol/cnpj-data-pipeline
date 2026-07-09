@@ -1301,3 +1301,120 @@ class TestRetryBudgetResetsOnProgress:
             downloader._download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(scripted_get.calls) == 2
+
+
+class TestAttemptLevelConcurrency:
+    """Live failure 2026-07-09: after degradation to 1, four in-flight file
+    workers kept reconnecting in parallel every ~35s and Receita answered
+    with connect timeouts until every retry budget died. Degradation must
+    govern attempts, not just file submissions."""
+
+    def test_stream_permit_blocks_attempts_beyond_degraded_concurrency(self):
+        import threading
+
+        adaptive = AdaptiveDownloadConcurrency(2, 1)
+        first_holds = threading.Event()
+        release_first = threading.Event()
+        second_acquired = threading.Event()
+
+        def first():
+            with adaptive.stream_permit():
+                first_holds.set()
+                release_first.wait(timeout=5)
+
+        def second():
+            with adaptive.stream_permit():
+                second_acquired.set()
+
+        t1 = threading.Thread(target=first)
+        t1.start()
+        assert first_holds.wait(timeout=5)
+
+        adaptive.record_stall()
+        assert adaptive.current_concurrency == 1
+
+        t2 = threading.Thread(target=second)
+        t2.start()
+        assert not second_acquired.wait(timeout=0.2), "second attempt ran despite degradation to 1"
+
+        release_first.set()
+        assert second_acquired.wait(timeout=5)
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+    def test_connect_timeout_counts_as_adaptive_stall_signal(self, downloader, monkeypatch):
+        downloader.config.retry_attempts = 1
+        adaptive = AdaptiveDownloadConcurrency(4, 3)
+        monkeypatch.setattr(
+            requests,
+            "get",
+            MagicMock(side_effect=requests.exceptions.ConnectTimeout("refused")),
+        )
+
+        with pytest.raises(requests.exceptions.ConnectTimeout):
+            downloader._download_zip(
+                "https://example/x.zip",
+                "2024-03",
+                "Cnaes.zip",
+                downloader.temp_path / "Cnaes.zip",
+                logging.getLogger(__name__).debug,
+                adaptive,
+            )
+
+        assert adaptive.stall_count == 1
+
+    def test_no_progress_retries_back_off_exponentially_with_a_cap(self, downloader, monkeypatch):
+        import downloader as downloader_module
+
+        downloader.config.retry_attempts = 4
+        downloader.config.retry_delay = 40
+        sleeps = []
+        monkeypatch.setattr(downloader_module.time, "sleep", sleeps.append)
+        monkeypatch.setattr(
+            requests,
+            "get",
+            MagicMock(side_effect=requests.exceptions.ConnectTimeout("refused")),
+        )
+
+        with pytest.raises(requests.exceptions.ConnectTimeout):
+            downloader._download_zip(
+                "https://example/x.zip",
+                "2024-03",
+                "Cnaes.zip",
+                downloader.temp_path / "Cnaes.zip",
+                logging.getLogger(__name__).debug,
+                None,
+            )
+
+        assert sleeps == [40, 80, 120]  # 40*2^2=160 capped at MAX_RETRY_BACKOFF_SECONDS
+
+    def test_stall_is_recorded_while_the_permit_is_still_held(self, downloader, monkeypatch):
+        """Waiters must wake to the degraded limit; recording after release
+        races one more attempt through at the old concurrency."""
+        downloader.config.retry_attempts = 1
+        adaptive = AdaptiveDownloadConcurrency(4, 1)
+        active_at_record = []
+        original = adaptive.record_stall
+
+        def spy():
+            active_at_record.append(adaptive._active_streams)
+            return original()
+
+        monkeypatch.setattr(adaptive, "record_stall", spy)
+        monkeypatch.setattr(
+            requests,
+            "get",
+            MagicMock(side_effect=requests.exceptions.ConnectTimeout("refused")),
+        )
+
+        with pytest.raises(requests.exceptions.ConnectTimeout):
+            downloader._download_zip(
+                "https://example/x.zip",
+                "2024-03",
+                "Cnaes.zip",
+                downloader.temp_path / "Cnaes.zip",
+                logging.getLogger(__name__).debug,
+                adaptive,
+            )
+
+        assert active_at_record == [1]
