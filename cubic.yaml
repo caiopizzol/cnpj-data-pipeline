@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+
+version: 1
+
+reviews:
+  custom_rules:
+    - name: Preserve pipeline completion semantics
+      file_paths:
+        - .cubic/agents/pipeline-completion.md
+      include:
+        - main.py
+        - processor.py
+        - database.py
+        - parquet_writer.py
+
+    - name: Keep persisted data contracts aligned
+      file_paths:
+        - .cubic/agents/data-contracts.md
+      include:
+        - processor.py
+        - database.py
+        - parquet_writer.py
+        - initial.sql
+        - recipes/**
+        - docs/data-schema.md
+        - docs/post-processing.md
