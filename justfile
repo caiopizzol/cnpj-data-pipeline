@@ -16,7 +16,7 @@ down:
 db:
     docker exec -it cnpj-pipeline-postgres psql -U postgres -d cnpj
 
-# Run pipeline
+# Run pipeline once
 run *ARGS:
     uv run python main.py {{ARGS}}
 

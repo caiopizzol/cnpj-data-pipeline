@@ -3,11 +3,11 @@
 CNPJ Data Pipeline - Download and process Brazilian company data from Receita Federal.
 
 Usage:
-    python main.py                    # Process latest month
+    python main.py                    # Process latest month once
     python main.py --list             # List available months
     python main.py --month 2024-11    # Process specific month
-    python main.py --month 2024-11 --force   # Force re-process
-    docker compose up                 # Run with Docker
+    python main.py --month 2024-11 --force   # Force PostgreSQL re-processing
+    docker compose up                 # Run once with Docker
 """
 
 import argparse
@@ -79,7 +79,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="CNPJ Data Pipeline - Download and process Brazilian company data")
     parser.add_argument("--list", "-l", action="store_true", help="List available months without processing")
     parser.add_argument("--month", "-m", type=str, help="Specific month to process (format: YYYY-MM, e.g., 2024-11)")
-    parser.add_argument("--force", "-f", action="store_true", help="Force re-processing even if already processed")
+    parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force PostgreSQL re-processing even if already processed",
+    )
     return parser.parse_args()
 
 

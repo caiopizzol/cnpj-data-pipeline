@@ -49,7 +49,7 @@ brew install uv just
 ```bash
 cp .env.example .env
 just up      # Iniciar PostgreSQL
-just run     # Executar pipeline
+just run     # Processar a competência mais recente uma vez
 ```
 
 ## Via Docker
@@ -60,10 +60,10 @@ Imagem pronta publicada a cada release no GitHub Container Registry. Não precis
 # Listar meses disponíveis
 docker run --rm ghcr.io/caiopizzol/cnpj-data-pipeline --list
 
-# Processar um mês em um Postgres seu
+# Processar a competência mais recente uma vez em um Postgres seu
 docker run --rm \
   -e DATABASE_URL=postgres://user:pass@host:5432/cnpj \
-  ghcr.io/caiopizzol/cnpj-data-pipeline --month 2024-11
+  ghcr.io/caiopizzol/cnpj-data-pipeline
 
 # Exportar para Parquet (sem banco)
 docker run --rm \
@@ -95,8 +95,14 @@ just check   # Rodar todos (lint, format, test)
 just run                          # Processar mês mais recente
 just run --list                   # Listar meses disponíveis
 just run --month 2024-11          # Processar mês específico
-just run --month 2024-11 --force  # Forçar reprocessamento
+just run --month 2024-11 --force  # Reprocessar mês no PostgreSQL
 ```
+
+### Atualizações recorrentes
+
+Cada comando executa o pipeline uma vez e encerra. Sem `--month`, ele seleciona a competência mais recente disponível. No PostgreSQL, arquivos já processados são ignorados.
+
+Para manter a base atualizada, configure um cron job ou outro scheduler para executar periodicamente `just run` ou `docker compose run --rm pipeline`. Não use `--force` nas execuções agendadas.
 
 ## Configuração
 
@@ -161,8 +167,8 @@ Sobre `search_path`: o schema precisa existir antes (`CREATE SCHEMA cnpj;`), o l
 
 | Estratégia | Comando | Quando usar |
 |------------|---------|-------------|
-| `upsert` | `LOADING_STRATEGY=upsert just run` | Atualização incremental. Banco continua acessível durante a carga. |
-| `replace` | `LOADING_STRATEGY=replace just run` | Carga completa mensal. Mais rápido — faz TRUNCATE e insere direto. |
+| `upsert` | `LOADING_STRATEGY=upsert just run` | Insere registros novos e atualiza existentes. O banco continua acessível durante a carga. |
+| `replace` | `LOADING_STRATEGY=replace just run` | Substitui os dados da competência processada. Mais rápido, mas faz TRUNCATE antes da carga. |
 
 ### Formato de saída
 
@@ -226,7 +232,7 @@ Estes dados são **públicos e oficiais**, disponibilizados pela própria Receit
 |---|---|
 | **Fonte** | [Portal de Dados Abertos — CNPJ](https://dados.gov.br/dados/conjuntos-dados/cadastro-nacional-da-pessoa-juridica---cnpj) |
 | **Repositório** | [Receita Federal — Nextcloud](https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9) |
-| **Atualização** | Mensal |
+| **Publicação da fonte** | Mensal, pela Receita Federal |
 | **Formato** | CSV (`;` separador, ISO-8859-1) |
 | **Base legal** | [Lei 12.527/2011](https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm) (Lei de Acesso à Informação), art. 8° |
 | **Regulamentação** | [Decreto 10.046/2019](https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2019/decreto/D10046.htm) |
