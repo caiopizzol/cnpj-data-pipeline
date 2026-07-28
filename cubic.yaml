@@ -3,24 +3,5 @@
 version: 1
 
 reviews:
-  custom_rules:
-    - name: Preserve pipeline completion semantics
-      file_paths:
-        - .cubic/agents/pipeline-completion.md
-      include:
-        - main.py
-        - processor.py
-        - database.py
-        - parquet_writer.py
-
-    - name: Keep persisted data contracts aligned
-      file_paths:
-        - .cubic/agents/data-contracts.md
-      include:
-        - processor.py
-        - database.py
-        - parquet_writer.py
-        - initial.sql
-        - recipes/**
-        - docs/data-schema.md
-        - docs/post-processing.md
+  custom_instructions: >-
+    Focus review on semantic regressions that could publish incomplete monthly output or make the same Receita Federal record differ across CSV transformation, PostgreSQL, and Parquet. Flag completion state or input cleanup that can occur before every selected output is durable, and contract changes that leave column order, keys, types, recipes, documentation, or Parquet schema metadata inconsistent.
