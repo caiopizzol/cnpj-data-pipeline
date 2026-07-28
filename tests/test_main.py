@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import polars as pl
 import pytest
 
-from main import _parquet_worker, _pg_worker, get_file_priority, group_files_by_dependency, main
+from main import _parquet_worker, _pg_worker, get_file_priority, group_files_by_dependency, main, parse_args
 
 
 class TestGetFilePriority:
@@ -62,6 +62,18 @@ class TestGroupFilesByDependency:
         groups = group_files_by_dependency(files)
         assert len(groups[0]) == 1
         assert all(len(g) == 0 for g in groups[1:])
+
+
+class TestParseArgs:
+    """Test the public command-line arguments."""
+
+    @patch("sys.argv", ["main.py", "--month", "2024-11", "--force"])
+    def test_parses_month_and_force(self):
+        args = parse_args()
+
+        assert args.list is False
+        assert args.month == "2024-11"
+        assert args.force is True
 
 
 class TestMain:
