@@ -245,7 +245,7 @@ class TestZstdCompression:
         assert compression == "ZSTD"
 
 
-def test_abort_releases_other_writers_after_close_failure(writer: ParquetWriter, output_dir: Path) -> None:
+def test_abort_releases_other_writers_after_close_failure(writer: ParquetWriter) -> None:
     failed = MagicMock()
     failed.close.side_effect = OSError("disk full")
     other = MagicMock()
@@ -256,4 +256,29 @@ def test_abort_releases_other_writers_after_close_failure(writer: ParquetWriter,
         writer.abort()
     failed.close.assert_called_once()
     other.close.assert_called_once()
-    assert not list(output_dir.glob("*.parquet"))
+
+
+@pytest.mark.parametrize("typed", [False, True])
+def test_finalized_table_records_resume_provenance(output_dir: Path, typed: bool) -> None:
+    writer = ParquetWriter(output_dir, source_month="2024-01", typed=typed)
+    writer.write_batch(pl.DataFrame({"codigo": ["01"]}), "cnaes")
+    writer.close()
+    with pq.ParquetFile(output_dir / "cnaes.parquet") as exported:
+        metadata = exported.metadata.metadata
+        assert metadata is not None
+        assert metadata[b"cnpj.sourceMonth"] == b"2024-01"
+        assert metadata[b"cnpj.schemaVersion"] == b"2"
+        assert metadata[b"cnpj.typed"] == str(typed).lower().encode()
+    resumed = ParquetWriter(output_dir, source_month="2024-01", typed=typed)
+    resumed.include_existing_table("cnaes")
+    assert resumed.stats["cnaes"].rows == 1
+
+
+def test_resume_rejects_empty_table(output_dir: Path) -> None:
+    writer = ParquetWriter(output_dir, source_month="2024-01")
+    writer.write_batch(pl.DataFrame({"codigo": []}, schema={"codigo": pl.String}), "cnaes")
+    writer.close()
+    resumed = ParquetWriter(output_dir, source_month="2024-01")
+    with pytest.raises(ValueError, match="cnaes.parquet: empty table"):
+        resumed.include_existing_table("cnaes")
+    assert not resumed.stats

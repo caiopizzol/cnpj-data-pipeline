@@ -30,5 +30,7 @@ Execute com `cnpj-pipeline`, `python main.py`, `just run` ou Docker.
 ## Antes de usar
 
 - Cada execução processa um mês e termina. No PostgreSQL, a base não é atualizada inteira de uma só vez. Bancos existentes podem precisar de [atualização do schema](docs/upgrading.md).
-- No Parquet, tabelas em gravação usam `.partial` e são refeitas após falha. Arquivos `.parquet` existentes precisam ter metadados legíveis e entram no manifesto, mas mês, schema e completude de arquivos antigos não são conferidos. Remova arquivos antigos ilegíveis para refazer a tabela; `.partial` de execuções encerradas pode ser apagado. `schemaVersion` é igual nos modos string e tipado: confira os tipos no próprio arquivo.
+- No Parquet, tabelas em gravação usam `.partial` e são refeitas após falha. A retomada exige mês, versão do schema e modo string/tipado compatíveis nos metadados de cada arquivo. Arquivos antigos sem esses metadados ficam intactos, mas exigem uma nova pasta de saída. `.partial` de execuções encerradas pode ser apagado.
 - O relatório aponta problemas, mas não bloqueia a carga ou a publicação. Por padrão, só os dígitos verificadores usam uma amostra; as outras medições leem a base toda. Você define o que é aceitável. Os testes cobrem os casos do repositório, não garantem a qualidade de toda a base da Receita.
+
+Um CSV reconhecido sem linhas interrompe a execução, sem marcar esse arquivo como processado nem publicar um novo manifesto. Isso não desfaz lotes já gravados no PostgreSQL. Use `KEEP_DOWNLOADED_FILES=true` para guardar os arquivos temporários ao investigar uma falha. Ao mudar de mês, use também uma pasta temporária nova: ZIPs guardados não têm o mês conferido.

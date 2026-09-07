@@ -89,9 +89,14 @@ class TableStats:
 class ParquetWriter:
     """Streams DataFrames to single Parquet files per table."""
 
-    def __init__(self, output_dir: str | Path):
+    def __init__(self, output_dir: str | Path, *, source_month: str | None = None, typed: bool = False):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.provenance = {
+            "cnpj.sourceMonth": source_month or "",
+            "cnpj.schemaVersion": SCHEMA_VERSION,
+            "cnpj.typed": str(typed).lower(),
+        }
         self.stats: dict[str, TableStats] = {}
         self._writers: dict[str, pq.ParquetWriter] = {}
         self._lock = threading.Lock()
@@ -105,6 +110,7 @@ class ParquetWriter:
                 schema,
                 compression=COMPRESSION,
             )
+            self._writers[table_name].add_key_value_metadata(self.provenance)
         return self._writers[table_name]
 
     def write_batch(self, df: pl.DataFrame, table_name: str) -> int:
@@ -140,6 +146,16 @@ class ParquetWriter:
         """Include a resumed table in the manifest, validating its Parquet footer."""
         path = self.output_dir / f"{table_name}.parquet"
         with pq.ParquetFile(path) as existing:
+            metadata = existing.metadata.metadata or {}
+            for key, expected in self.provenance.items():
+                actual = metadata.get(key.encode())
+                if not expected or actual != expected.encode():
+                    raise ValueError(
+                        f"Cannot resume {path.name}: {key} is {actual!r}, expected {expected!r}. "
+                        "Use a fresh output directory or regenerate this export."
+                    )
+            if existing.metadata.num_rows == 0:
+                raise ValueError(f"Cannot resume {path.name}: empty table. Regenerate this export.")
             self.stats[table_name] = TableStats(
                 rows=existing.metadata.num_rows, size_bytes=path.stat().st_size, file=path.name
             )

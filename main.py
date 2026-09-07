@@ -95,6 +95,9 @@ def load_postgres_csv(
         if progress is not None:
             progress(rows)
 
+    if rows == 0:
+        raise ValueError(f"Empty source: {csv_path.name}")
+
     db.mark_processed(directory, zip_filename)
     logger.info(f"  {csv_path.name}: {rows:,} rows")
 
@@ -109,6 +112,9 @@ def write_parquet_csv(csv_path: Path, parquet: "ParquetWriter", cfg: Config) -> 
         rows += len(batch)
         if rows % 1_000_000 == 0:
             logger.info(f"  {csv_path.name}: {rows:,} rows")
+
+    if rows == 0:
+        raise ValueError(f"Empty source: {csv_path.name}")
 
     logger.info(f"  {csv_path.name}: {rows:,} rows")
 
@@ -133,6 +139,14 @@ def wait_for_workers(futures: dict[Future[None], str], failure_message: str) -> 
 def run_parquet(
     pending_files: list[str], directory: str, downloader: Downloader, parquet: "ParquetWriter", config: Config
 ) -> None:
+    # Validate all existing tables before downloading or publishing any new ones.
+    for filename in pending_files:
+        file_type = get_zip_file_type(filename)
+        if file_type and file_type in FILE_MAPPINGS:
+            table = FILE_MAPPINGS[file_type]
+            if table not in parquet.stats and (Path(config.parquet_output_dir) / f"{table}.parquet").exists():
+                parquet.include_existing_table(table)
+
     file_groups = group_files_by_dependency(pending_files)
     workers = config.process_workers
 
@@ -140,7 +154,7 @@ def run_parquet(
         if not group_files:
             continue
 
-        # Resume existing tables; month and schema compatibility are not checked.
+        # Existing tables were validated before processing the first group.
         files_to_process: list[str] = []
         tables_in_group: set[str] = set()
         skipped_tables: set[str] = set()
@@ -152,7 +166,6 @@ def run_parquet(
             parquet_path = Path(config.parquet_output_dir) / f"{table_name}.parquet"
             if parquet_path.exists():
                 if table_name not in skipped_tables:
-                    parquet.include_existing_table(table_name)
                     logger.info(f"Skipping {table_name} (already exported)")
                     skipped_tables.add(table_name)
                 continue
@@ -271,12 +284,7 @@ def main(cfg: Config | None = None) -> None:
     db = None
     parquet = None
 
-    if is_parquet:
-        from parquet_writer import ParquetWriter
-
-        parquet = ParquetWriter(config.parquet_output_dir)
-        logger.info(f"Parquet mode: output to {config.parquet_output_dir}")
-    else:
+    if not is_parquet:
         from database import Database
 
         db = Database(config.database_url, retry_attempts=config.retry_attempts)
@@ -291,6 +299,14 @@ def main(cfg: Config | None = None) -> None:
             directory = args.month
         else:
             directory = downloader.get_latest_directory()
+
+        if is_parquet:
+            from parquet_writer import ParquetWriter
+
+            parquet = ParquetWriter(
+                config.parquet_output_dir, source_month=directory, typed=config.parquet_typed_output
+            )
+            logger.info(f"Parquet mode: output to {config.parquet_output_dir}")
 
         # Handle --force mode (database only)
         if args.force and db:

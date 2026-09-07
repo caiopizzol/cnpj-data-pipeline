@@ -10,6 +10,7 @@ import pytest
 
 from config import Config
 from main import get_file_priority, group_files_by_dependency, main, parquet_worker, parse_args, pg_worker
+from parquet_writer import ParquetWriter
 
 
 @pytest.fixture
@@ -784,6 +785,12 @@ class TestPreTruncation:
         mock_db.truncate_table.assert_not_called()
 
 
+def create_existing_export(output: Path) -> None:
+    writer = ParquetWriter(output, source_month="2024-01")
+    writer.write_batch(pl.DataFrame({"codigo": ["0111301"], "descricao": ["Arroz"]}), "cnaes")
+    writer.close()
+
+
 class TestParquetResume:
     """Test parquet resume/skip logic for already-exported tables."""
 
@@ -802,7 +809,7 @@ class TestParquetResume:
         parquet_dir = tmp_path / "parquet"
         parquet_dir.mkdir()
         # Pre-create cnaes.parquet to simulate prior export
-        pl.DataFrame({"codigo": ["0111301"], "descricao": ["Arroz"]}).write_parquet(parquet_dir / "cnaes.parquet")
+        create_existing_export(parquet_dir)
 
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         cfg.output_format = "parquet"
@@ -838,7 +845,7 @@ class TestParquetResume:
         parquet_dir = tmp_path / "parquet"
         parquet_dir.mkdir()
         # cnaes already exported, motivos not
-        pl.DataFrame({"codigo": ["0111301"], "descricao": ["Arroz"]}).write_parquet(parquet_dir / "cnaes.parquet")
+        create_existing_export(parquet_dir)
 
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         cfg.output_format = "parquet"
@@ -939,7 +946,7 @@ def test_parquet_write_failure_stops_export(workers: int, cfg: Config, tmp_path:
 
 @pytest.mark.parametrize("workers", [1, 2])
 def test_empty_parquet_input_does_not_publish_a_file(workers: int, cfg: Config, tmp_path: Path) -> None:
-    """Characterize existing behavior: empty sources succeed without a table; this is not a completeness check."""
+    """An empty source must not be published as a complete export."""
     cfg.output_format = "parquet"
     cfg.process_workers = workers
     cfg.post_file_command = "publish"
@@ -957,13 +964,15 @@ def test_empty_parquet_input_does_not_publish_a_file(workers: int, cfg: Config, 
         downloader.download_file.return_value = [source]
         downloader.download_files.return_value = [(source, "Cnaes.zip")]
 
-        main(cfg=cfg)
+        with pytest.raises(SystemExit) as error:
+            main(cfg=cfg)
+        assert error.value.code == 1
 
         publish.assert_not_called()
         downloader.cleanup.assert_called_once()
         assert not (Path(cfg.parquet_output_dir) / "cnaes.parquet").exists()
-        assert (Path(cfg.parquet_output_dir) / "manifest.json").exists()
-        assert not source.exists()
+        assert not (Path(cfg.parquet_output_dir) / "manifest.json").exists()
+        assert source.exists()
 
 
 @pytest.mark.parametrize("keep_files", [False, True])
@@ -1037,7 +1046,7 @@ def test_resumed_manifest_includes_existing_and_new_tables(cfg: Config, tmp_path
     cfg.output_format = "parquet"
     output = Path(cfg.parquet_output_dir)
     output.mkdir()
-    pl.DataFrame({"codigo": ["0111301"], "descricao": ["Arroz"]}).write_parquet(output / "cnaes.parquet")
+    create_existing_export(output)
     source = tmp_path / "MOTICSV.csv"
     source.write_text("01;Extincao\n")
     with (
@@ -1080,3 +1089,70 @@ def test_parquet_resume_rejects_unreadable_file(cfg: Config) -> None:
         assert (output / "manifest.json").read_text() == "previous manifest"
         dl.download_files.assert_not_called()
         dl.cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_empty_postgres_source_is_not_marked(workers: int, cfg: Config, tmp_path: Path) -> None:
+    cfg.process_workers = workers
+    source = tmp_path / "CNAECSV.csv"
+    source.write_text("")
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as dl_cls,
+        patch("database.Database") as db_cls,
+    ):
+        dl = dl_cls.return_value
+        dl.get_latest_directory.return_value = "2024-01"
+        dl.get_directory_files.return_value = ["Cnaes.zip"]
+        dl.download_file.return_value = [source]
+        dl.download_files.return_value = [(source, "Cnaes.zip")]
+        db = db_cls.return_value
+        db.get_processed_files.return_value = []
+        with pytest.raises(SystemExit) as error:
+            main(cfg)
+        assert error.value.code == 1
+        db.mark_processed.assert_not_called()
+        db.bulk_upsert.assert_not_called()
+        assert source.exists()
+        dl.cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize("mismatch", ["month", "typed", "schema", "legacy"])
+def test_parquet_resume_rejects_incompatible_output_before_processing(
+    mismatch: str, cfg: Config, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg.output_format = "parquet"
+    output = Path(cfg.parquet_output_dir)
+    output.mkdir()
+    existing = output / "empresas.parquet"
+    data = pl.DataFrame({"cnpj_basico": ["12345678"]})
+    if mismatch == "legacy":
+        data.write_parquet(existing)
+    else:
+        writer = ParquetWriter(
+            output, source_month="2023-12" if mismatch == "month" else "2024-01", typed=mismatch == "typed"
+        )
+        if mismatch == "schema":
+            writer.provenance["cnpj.schemaVersion"] = "old"
+        writer.write_batch(data, "empresas")
+        writer.close()
+    previous_file = existing.read_bytes()
+    manifest = output / "manifest.json"
+    manifest.write_text("previous manifest")
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as cls,
+    ):
+        dl = cls.return_value
+        dl.get_latest_directory.return_value = "2024-01"
+        dl.get_directory_files.return_value = ["Cnaes.zip", "Empresas0.zip"]
+        with pytest.raises(SystemExit) as error:
+            main(cfg)
+        assert error.value.code == 1
+        dl.download_file.assert_not_called()
+        dl.download_files.assert_not_called()
+    assert "Cannot resume empresas.parquet" in caplog.text
+    assert "fresh output directory" in caplog.text
+    assert existing.read_bytes() == previous_file
+    assert manifest.read_text() == "previous manifest"
+    assert not (output / "cnaes.parquet").exists()
