@@ -46,11 +46,9 @@ def source_server() -> Iterator[tuple[str, Event, list[str]]]:
         def do_PROPFIND(self) -> None:
             if self.path == "/":
                 paths = ["/2024-01/"]
-            elif self.path == "/2024-01/":
-                paths = list(archives)
             else:
-                self.send_error(404)
-                return
+                assert self.path == "/2024-01/"
+                paths = list(archives)
             responses = "".join(f"<d:response><d:href>{path}</d:href></d:response>" for path in paths)
             body = f'<d:multistatus xmlns:d="DAV:">{responses}</d:multistatus>'.encode()
             self.respond(207, body, "application/xml")
@@ -59,10 +57,8 @@ def source_server() -> Iterator[tuple[str, Event, list[str]]]:
             downloads.append(self.path)
             if self.path == "/2024-01/Empresas1.zip" and fail_second_shard.is_set():
                 self.send_error(503, "Second shard unavailable")
-            elif self.path in archives:
-                self.respond(200, archives[self.path], "application/zip")
             else:
-                self.send_error(404)
+                self.respond(200, archives[self.path], "application/zip")
 
         def log_message(self, format: str, *args: object) -> None:
             pass
