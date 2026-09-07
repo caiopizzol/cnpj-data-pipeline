@@ -3,12 +3,14 @@
 import argparse
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 # scripts/ isn't a package; add it to sys.path so we can import directly.
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
+import data_quality_report as report_module  # noqa: E402
 from data_quality_report import cnpj_expected_dv, format_report, sample_pct  # noqa: E402
 
 
@@ -119,3 +121,41 @@ class TestFormatReportEnrichedSection:
         )
         assert "## Enriched-domain coverage" in report
         assert "reference_domains_enriched.sql" in report
+
+
+@pytest.mark.parametrize(
+    "argv,expected_sample,expected_scope",
+    [
+        ([], 0.1, "Check digits: Bernoulli sample 0.1%; other measurements: full table scans"),
+        (["--sample-pct", "0.5"], 0.5, "Check digits: Bernoulli sample 0.5%; other measurements: full table scans"),
+        (["--full"], None, "full table scan"),
+    ],
+)
+def test_cli_report_scope_matches_measurement_sampling(monkeypatch, capsys, argv, expected_sample, expected_scope):
+    """The printed scope distinguishes check-digit sampling from full-table measurements."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused/test")
+    conn = Mock()
+    monkeypatch.setattr(report_module.psycopg2, "connect", Mock(return_value=conn))
+    measurements = _base_measurements({"available": False, "rows": []})
+    measure_digits = Mock(return_value=measurements["cnpj_check_digits"])
+    monkeypatch.setattr(report_module, "measure_cnpj_check_digits", measure_digits)
+    full_table_measurements = {}
+    for name in (
+        "orphan_fks",
+        "enriched_orphans",
+        "exterior_uf",
+        "capital_sentinel",
+        "representante_sentinel",
+        "cep_validity",
+    ):
+        measurement = Mock(return_value=measurements[name])
+        monkeypatch.setattr(report_module, f"measure_{name}", measurement)
+        full_table_measurements[name] = measurement
+
+    assert report_module.main(argv) == 0
+
+    assert f"Scope: {expected_scope}\n" in capsys.readouterr().out
+    measure_digits.assert_called_once_with(conn, sample_pct=expected_sample)
+    for measurement in full_table_measurements.values():
+        measurement.assert_called_once_with(conn)
+    conn.close.assert_called_once_with()
