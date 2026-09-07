@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## [1.38.4](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.3...v1.38.4) (2026-09-07)
+
+
+### Documentation
+
+* clarify recurring pipeline updates ([#105](https://github.com/caiopizzol/cnpj-data-pipeline/issues/105)) ([da17731](https://github.com/caiopizzol/cnpj-data-pipeline/commit/da177311ec302a33c87a784454052588a6bac19d))
+* correct comment guarantees and strengthen audit tests ([#110](https://github.com/caiopizzol/cnpj-data-pipeline/issues/110)) ([c4a1fce](https://github.com/caiopizzol/cnpj-data-pipeline/commit/c4a1fceda50ca48fab3639841686ee10f682aebf))
+* document adaptive-concurrency and progress-aware retry config ([#103](https://github.com/caiopizzol/cnpj-data-pipeline/issues/103)) ([da39787](https://github.com/caiopizzol/cnpj-data-pipeline/commit/da397872837efc8ef1ad93d94688415d568c0db5))
+* **features:** map CLI and SQL replay routes ([#112](https://github.com/caiopizzol/cnpj-data-pipeline/issues/112)) ([87780c8](https://github.com/caiopizzol/cnpj-data-pipeline/commit/87780c801f5b5f8ab0fdfbc7683d511935c52eff))
+* **product:** map pipeline scope and capabilities ([#111](https://github.com/caiopizzol/cnpj-data-pipeline/issues/111)) ([1c20bfe](https://github.com/caiopizzol/cnpj-data-pipeline/commit/1c20bfe536fb030eddd254492a6075838c9f9556))
+
 ## v1.38.3 (2026-07-09)
 
 ### Bug Fixes
