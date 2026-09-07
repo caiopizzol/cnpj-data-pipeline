@@ -16,12 +16,17 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tqdm import tqdm
 
-from config import config
+from config import Config, config
 from downloader import Downloader
 from processor import FILE_MAPPINGS, get_file_type, process_file
+
+if TYPE_CHECKING:
+    from parquet_writer import ParquetWriter
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,7 +78,7 @@ def get_file_priority(filename: str) -> int:
     return 999
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="CNPJ Data Pipeline - Download and process Brazilian company data")
     parser.add_argument("--list", "-l", action="store_true", help="List available months without processing")
@@ -101,7 +106,9 @@ def group_files_by_dependency(files: list[str]) -> list[list[str]]:
     return groups
 
 
-def _pg_worker(zip_filename, directory, downloader, cfg, pre_truncated=None):
+def pg_worker(
+    zip_filename: str, directory: str, downloader: Downloader, cfg: Config, pre_truncated: set[str] | None = None
+) -> None:
     """Worker: download, process, and load one file to PostgreSQL."""
     from database import Database
 
@@ -128,7 +135,9 @@ def _pg_worker(zip_filename, directory, downloader, cfg, pre_truncated=None):
         db.disconnect()
 
 
-def _parquet_worker(zip_filename, directory, downloader, parquet, cfg):
+def parquet_worker(
+    zip_filename: str, directory: str, downloader: Downloader, parquet: "ParquetWriter", cfg: Config
+) -> None:
     """Worker: download, process, and write one file to Parquet."""
     for csv_path in downloader.download_file(directory, zip_filename):
         try:
@@ -146,7 +155,7 @@ def _parquet_worker(zip_filename, directory, downloader, parquet, cfg):
             raise
 
 
-def main():
+def main() -> None:
     """Main pipeline entry point."""
     args = parse_args()
 
@@ -212,6 +221,7 @@ def main():
         pending_files.sort(key=get_file_priority)
 
         if is_parquet:
+            assert parquet is not None
             file_groups = group_files_by_dependency(pending_files)
             workers = config.process_workers
 
@@ -220,9 +230,9 @@ def main():
                     continue
 
                 # Skip existing paths; completion, month and schema are not checked.
-                files_to_process = []
-                tables_in_group = set()
-                skipped_tables = set()
+                files_to_process: list[str] = []
+                tables_in_group: set[str] = set()
+                skipped_tables: set[str] = set()
                 for f in group_files:
                     ft = get_zip_file_type(f)
                     if not ft or ft not in FILE_MAPPINGS:
@@ -246,7 +256,7 @@ def main():
                     failed = False
                     with ThreadPoolExecutor(max_workers=workers) as executor:
                         futures = {
-                            executor.submit(_parquet_worker, f, directory, downloader, parquet, config): f
+                            executor.submit(parquet_worker, f, directory, downloader, parquet, config): f
                             for f in files_to_process
                         }
                         with tqdm(total=len(futures), desc="Processing", unit="file") as pbar:
@@ -295,6 +305,7 @@ def main():
                             )
 
         else:
+            assert db is not None
             # Database mode: process files by dependency group
             file_groups = group_files_by_dependency(pending_files)
             workers = config.process_workers
@@ -305,7 +316,7 @@ def main():
 
                 if workers > 1:
                     # Pre-truncate for replace strategy before spawning workers
-                    pre_truncated = set()
+                    pre_truncated: set[str] = set()
                     if config.loading_strategy == "replace":
                         pre_truncated = {
                             FILE_MAPPINGS[ft]
@@ -319,7 +330,7 @@ def main():
                     failed = False
                     with ThreadPoolExecutor(max_workers=workers) as executor:
                         futures = {
-                            executor.submit(_pg_worker, f, directory, downloader, config, pre_truncated): f
+                            executor.submit(pg_worker, f, directory, downloader, config, pre_truncated): f
                             for f in group_files
                         }
                         with tqdm(total=len(futures), desc="Processing", unit="file") as pbar:
@@ -357,6 +368,7 @@ def main():
                                 raise
 
         if is_parquet:
+            assert parquet is not None
             parquet.close()
             manifest = parquet.write_manifest(source_month=directory)
             total_rows = manifest["totals"]["rows"]

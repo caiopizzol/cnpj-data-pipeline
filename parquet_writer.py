@@ -25,7 +25,10 @@ import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
+import polars as pl
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
@@ -53,6 +56,27 @@ def _read_pipeline_version() -> str:
         return "unknown"
 
 
+class ManifestTable(TypedDict):
+    rows: int
+    sizeBytes: int
+    file: str
+
+
+class ManifestTotals(TypedDict):
+    rows: int
+    sizeBytes: int
+    files: int
+
+
+class Manifest(TypedDict):
+    exportedAt: str
+    pipelineVersion: str
+    schemaVersion: str
+    sourceMonth: str | None
+    tables: dict[str, ManifestTable]
+    totals: ManifestTotals
+
+
 @dataclass
 class TableStats:
     """Track export stats per table."""
@@ -72,7 +96,7 @@ class ParquetWriter:
         self._writers: dict[str, pq.ParquetWriter] = {}
         self._lock = threading.Lock()
 
-    def _get_writer(self, table_name: str, schema) -> pq.ParquetWriter:
+    def _get_writer(self, table_name: str, schema: pa.Schema) -> pq.ParquetWriter:
         """Get or create a ParquetWriter for a table."""
         if table_name not in self._writers:
             path = self.output_dir / f"{table_name}.parquet"
@@ -83,7 +107,7 @@ class ParquetWriter:
             )
         return self._writers[table_name]
 
-    def write_batch(self, df, table_name: str, columns: list[str]) -> int:
+    def write_batch(self, df: pl.DataFrame, table_name: str, columns: list[str]) -> int:
         """Write a batch of data to Parquet. Thread-safe. Returns the number of rows written."""
         arrow_table = df.to_arrow()
         rows = len(df)
@@ -119,7 +143,7 @@ class ParquetWriter:
         for table_name in list(self._writers.keys()):
             self.flush_table(table_name)
 
-    def write_manifest(self, source_month: str | None = None) -> dict:
+    def write_manifest(self, source_month: str | None = None) -> Manifest:
         """Write manifest.json with export metadata.
 
         Args:
@@ -128,7 +152,7 @@ class ParquetWriter:
                 consumers can detect when a new month landed without
                 cross-referencing the original ZIP listing.
         """
-        manifest = {
+        manifest: Manifest = {
             "exportedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "pipelineVersion": _read_pipeline_version(),
             "schemaVersion": SCHEMA_VERSION,

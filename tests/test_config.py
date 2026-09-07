@@ -10,7 +10,7 @@ from config import Config
 class TestFromEnv:
     """Test Config.from_env() environment variable parsing."""
 
-    def test_defaults_when_no_env_vars(self):
+    def test_defaults_when_no_env_vars(self) -> None:
         """All fields should have sensible defaults when env vars are absent."""
         with patch.dict("os.environ", {}, clear=True):
             cfg = Config.from_env()
@@ -34,7 +34,7 @@ class TestFromEnv:
         assert cfg.parquet_typed_output is False
         assert cfg.post_file_command == ""
 
-    def test_env_vars_override_defaults(self):
+    def test_env_vars_override_defaults(self) -> None:
         """Environment variables should override default values."""
         env = {
             "DATABASE_URL": "postgres://custom:5432/db",
@@ -58,7 +58,7 @@ class TestFromEnv:
         assert cfg.stall_degrade_threshold == 2
         assert cfg.progress_log_interval == 45
 
-    def test_int_coercion(self):
+    def test_int_coercion(self) -> None:
         """Integer env vars should be correctly coerced."""
         env = {
             "BATCH_SIZE": "1000",
@@ -78,13 +78,13 @@ class TestFromEnv:
         assert cfg.stall_degrade_threshold == 4
         assert cfg.progress_log_interval == 0
 
-    def test_invalid_int_raises(self):
+    def test_invalid_int_raises(self) -> None:
         """Non-numeric integer env vars should raise ValueError."""
         with patch.dict("os.environ", {"BATCH_SIZE": "abc"}, clear=True):
             with pytest.raises(ValueError):
                 Config.from_env()
 
-    def test_keep_files_boolean_parsing(self):
+    def test_keep_files_boolean_parsing(self) -> None:
         """KEEP_DOWNLOADED_FILES should parse 'true' (case-insensitive) as True."""
         with patch.dict("os.environ", {"KEEP_DOWNLOADED_FILES": "true"}, clear=True):
             assert Config.from_env().keep_files is True
@@ -101,7 +101,7 @@ class TestFromEnv:
         with patch.dict("os.environ", {"KEEP_DOWNLOADED_FILES": "yes"}, clear=True):
             assert Config.from_env().keep_files is False  # only "true" is truthy
 
-    def test_string_lowering(self):
+    def test_string_lowering(self) -> None:
         """LOADING_STRATEGY and OUTPUT_FORMAT should be lowercased."""
         env = {"LOADING_STRATEGY": "REPLACE", "OUTPUT_FORMAT": "PARQUET"}
         with patch.dict("os.environ", env, clear=True):
@@ -110,7 +110,7 @@ class TestFromEnv:
         assert cfg.loading_strategy == "replace"
         assert cfg.output_format == "parquet"
 
-    def test_parquet_typed_output_boolean_parsing(self):
+    def test_parquet_typed_output_boolean_parsing(self) -> None:
         """PARQUET_TYPED_OUTPUT should parse 'true' case-insensitively."""
         with patch.dict("os.environ", {"PARQUET_TYPED_OUTPUT": "true"}, clear=True):
             assert Config.from_env().parquet_typed_output is True
@@ -124,7 +124,7 @@ class TestFromEnv:
         with patch.dict("os.environ", {"PARQUET_TYPED_OUTPUT": "yes"}, clear=True):
             assert Config.from_env().parquet_typed_output is False  # only "true" is truthy
 
-    def test_base_url_and_share_token_override(self):
+    def test_base_url_and_share_token_override(self) -> None:
         """BASE_URL and SHARE_TOKEN should be overridable via env."""
         env = {"BASE_URL": "https://custom.server/webdav", "SHARE_TOKEN": "custom_token"}
         with patch.dict("os.environ", env, clear=True):

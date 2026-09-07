@@ -90,7 +90,7 @@ just typecheck # Verificar tipos Python em modo estrito
 just check   # Rodar lint, format, typecheck e testes
 ```
 
-`just typecheck` roda o Pyright em modo estrito no código, scripts e testes. Também faz parte de `just check`, do CI e do pre-commit do Lefthook. Erros de tipagem existentes fazem essas verificações falharem. Para ativar os hooks no clone, instale o Lefthook e rode `lefthook install`.
+`just typecheck` roda o Pyright em modo estrito no código, scripts e testes. Também faz parte de `just check`, do CI e do pre-commit do Lefthook. Erros de tipagem fazem essas verificações falharem. Para ativar os hooks no clone, instale o Lefthook e rode `lefthook install`.
 
 ## Uso
 

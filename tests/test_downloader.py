@@ -2,6 +2,9 @@
 
 import logging
 import zipfile
+from collections.abc import Sequence
+from pathlib import Path
+from typing import TypedDict
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,7 +35,7 @@ def _webdav_xml(entries: list[str]) -> bytes:
 
 
 @pytest.fixture
-def config(tmp_path):
+def config(tmp_path: Path):
     """Create a test config with temp directory."""
     return Config(
         database_url="postgresql://test",
@@ -46,13 +49,31 @@ def config(tmp_path):
 
 
 @pytest.fixture
-def downloader(config):
+def downloader(config: Config):
     """Create a downloader instance."""
-    return Downloader(config)
+    return DownloadProbe(config)
+
+
+class GetCall(TypedDict):
+    url: str
+    headers: dict[str, str]
+    timeout: object
+
+
+class DownloadProbe(Downloader):
+    download_and_extract = Downloader._download_and_extract
+    download_zip = Downloader._download_zip
+    is_read_timeout = Downloader._is_read_timeout
+
+
+class ConcurrencyProbe(AdaptiveDownloadConcurrency):
+    @property
+    def active_streams(self) -> int:
+        return self._active_streams
 
 
 class _ScriptedResponse:
-    def __init__(self, chunks: list[bytes | Exception], headers: dict[str, str], status_code: int = 200):
+    def __init__(self, chunks: Sequence[bytes | Exception], headers: dict[str, str], status_code: int = 200):
         self._chunks = chunks
         self.headers = headers
         self.status_code = status_code
@@ -69,12 +90,12 @@ class _ScriptedResponse:
 
 
 class _ScriptedGet:
-    def __init__(self, responses: list[_ScriptedResponse | Exception]):
-        self._responses = responses
-        self.calls: list[dict[str, object]] = []
+    def __init__(self, responses: Sequence[_ScriptedResponse | Exception]):
+        self._responses = list(responses)
+        self.calls: list[GetCall] = []
 
-    def __call__(self, url: str, **kwargs):
-        self.calls.append({"url": url, "headers": kwargs.get("headers") or {}, "timeout": kwargs.get("timeout")})
+    def __call__(self, url: str, *, headers: dict[str, str] | None = None, timeout: object = None, **kwargs: object):
+        self.calls.append({"url": url, "headers": headers or {}, "timeout": timeout})
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -97,11 +118,11 @@ class _FakeClock:
 class TestFilePatternMatching:
     """Test file pattern matching functionality used in the project."""
 
-    def test_cnpj_file_patterns_contains_simples(self):
+    def test_cnpj_file_patterns_contains_simples(self) -> None:
         """Test that CNPJ_FILE_PATTERNS contains SIMPLES pattern."""
         assert "SIMPLES" in CNPJ_FILE_PATTERNS
 
-    def test_cnpj_file_patterns_matching_logic(self):
+    def test_cnpj_file_patterns_matching_logic(self) -> None:
         """Check the configured pattern list against representative filenames."""
         test_cases = [
             ("F.K03200$W.SIMPLES.CSV.D51213", True),
@@ -125,7 +146,7 @@ class TestFilePatternMatching:
 class TestGetAvailableDirectories:
     """Test WebDAV directory listing functionality."""
 
-    def test_parses_directory_list(self, downloader):
+    def test_parses_directory_list(self, downloader: DownloadProbe) -> None:
         """Test that directory entries are correctly parsed from WebDAV XML."""
         xml = _webdav_xml(
             [
@@ -143,7 +164,7 @@ class TestGetAvailableDirectories:
 
             assert result == ["2024-01", "2024-02", "2024-03"]
 
-    def test_propfind_uses_metadata_read_timeout(self, downloader, config):
+    def test_propfind_uses_metadata_read_timeout(self, downloader: DownloadProbe, config: Config) -> None:
         """Discovery calls should keep the longer metadata read timeout."""
         config.stall_timeout = 2
         xml = _webdav_xml(["/public.php/webdav/", "/public.php/webdav/2024-03/"])
@@ -155,7 +176,7 @@ class TestGetAvailableDirectories:
 
             assert mock_req.call_args.kwargs["timeout"] == (config.connect_timeout, config.read_timeout)
 
-    def test_raises_on_network_error(self, downloader):
+    def test_raises_on_network_error(self, downloader: DownloadProbe) -> None:
         """Test that network errors are propagated."""
         with patch("requests.request") as mock_req:
             mock_req.side_effect = requests.exceptions.ConnectionError("Network error")
@@ -163,7 +184,7 @@ class TestGetAvailableDirectories:
             with pytest.raises(requests.exceptions.ConnectionError):
                 downloader.get_available_directories()
 
-    def test_raises_on_empty_response(self, downloader):
+    def test_raises_on_empty_response(self, downloader: DownloadProbe) -> None:
         """Test that empty listing raises ValueError."""
         xml = _webdav_xml(["/public.php/webdav/"])
         with patch("requests.request") as mock_req:
@@ -173,7 +194,7 @@ class TestGetAvailableDirectories:
             with pytest.raises(ValueError, match="No data directories found"):
                 downloader.get_available_directories()
 
-    def test_raises_on_http_error(self, downloader):
+    def test_raises_on_http_error(self, downloader: DownloadProbe) -> None:
         """Test that HTTP errors (404, 500) are propagated."""
         with patch("requests.request") as mock_req:
             mock_req.return_value = MagicMock()
@@ -186,7 +207,7 @@ class TestGetAvailableDirectories:
 class TestGetLatestDirectory:
     """Test latest directory selection."""
 
-    def test_returns_last_sorted_directory(self, downloader):
+    def test_returns_last_sorted_directory(self, downloader: DownloadProbe) -> None:
         """Test that the latest (last sorted) directory is returned."""
         with patch.object(downloader, "get_available_directories") as mock_dirs:
             mock_dirs.return_value = ["2024-01", "2024-02", "2024-03"]
@@ -199,7 +220,7 @@ class TestGetLatestDirectory:
 class TestGetDirectoryFiles:
     """Test file listing from directory."""
 
-    def test_parses_zip_files(self, downloader):
+    def test_parses_zip_files(self, downloader: DownloadProbe) -> None:
         """Test that ZIP file entries are correctly parsed from WebDAV XML."""
         xml = _webdav_xml(
             [
@@ -218,7 +239,7 @@ class TestGetDirectoryFiles:
             assert "Empresas0.zip" in result
             assert "Cnaes.zip" in result
 
-    def test_raises_on_http_error(self, downloader):
+    def test_raises_on_http_error(self, downloader: DownloadProbe) -> None:
         """Test that HTTP errors are propagated."""
         with patch("requests.request") as mock_req:
             mock_req.return_value = MagicMock()
@@ -231,7 +252,7 @@ class TestGetDirectoryFiles:
 class TestDownloadAndExtract:
     """Test download and ZIP extraction functionality."""
 
-    def test_retries_on_failure_then_succeeds(self, downloader, tmp_path):
+    def test_retries_on_failure_then_succeeds(self, downloader: DownloadProbe, tmp_path: Path) -> None:
         """Test that download retries on failure and succeeds on later attempt."""
         # Create a valid ZIP with a CNPJ file
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
@@ -249,23 +270,23 @@ class TestDownloadAndExtract:
                 mock_response,
             ]
 
-            result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+            result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
             assert len(result) == 1
             assert "CNAECSV" in result[0].name
 
-    def test_raises_after_max_retries(self, downloader):
+    def test_raises_after_max_retries(self, downloader: DownloadProbe) -> None:
         """Test that exception is raised after all retries exhausted."""
         with patch("requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.Timeout("Timeout")
 
             with pytest.raises(requests.exceptions.Timeout):
-                downloader._download_and_extract("2024-03", "Cnaes.zip")
+                downloader.download_and_extract("2024-03", "Cnaes.zip")
 
             # Should have tried 3 times (retry_attempts=3)
             assert mock_get.call_count == 3
 
-    def test_handles_corrupt_zip(self, downloader, tmp_path):
+    def test_handles_corrupt_zip(self, downloader: DownloadProbe, tmp_path: Path) -> None:
         """Test that corrupt ZIP files raise appropriate error."""
         corrupt_content = b"not a zip file"
 
@@ -277,9 +298,9 @@ class TestDownloadAndExtract:
             mock_get.return_value = mock_response
 
             with pytest.raises(zipfile.BadZipFile):
-                downloader._download_and_extract("2024-03", "Cnaes.zip")
+                downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_extracts_only_cnpj_files(self, downloader, tmp_path):
+    def test_extracts_only_cnpj_files(self, downloader: DownloadProbe, tmp_path: Path) -> None:
         """Test that only CNPJ pattern files are extracted from ZIP."""
         zip_content = _create_test_zip(
             tmp_path,
@@ -297,7 +318,7 @@ class TestDownloadAndExtract:
             mock_response.raise_for_status = MagicMock()
             mock_get.return_value = mock_response
 
-            result = downloader._download_and_extract("2024-03", "Test.zip")
+            result = downloader.download_and_extract("2024-03", "Test.zip")
 
             # Should extract CNAECSV and ESTABELE, but not README.txt
             assert len(result) == 2
@@ -306,7 +327,9 @@ class TestDownloadAndExtract:
             assert "ESTABELE.D51213" in names
             assert "README.txt" not in names
 
-    def test_download_stream_uses_stall_timeout(self, downloader, config, tmp_path):
+    def test_download_stream_uses_stall_timeout(
+        self, downloader: DownloadProbe, config: Config, tmp_path: Path
+    ) -> None:
         """Streaming data requests should use stall_timeout as the read timeout."""
         config.stall_timeout = 7
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
@@ -318,11 +341,17 @@ class TestDownloadAndExtract:
             mock_response.raise_for_status = MagicMock()
             mock_get.return_value = mock_response
 
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
             assert mock_get.call_args.kwargs["timeout"] == (config.connect_timeout, config.stall_timeout)
 
-    def test_resumes_after_timeout_with_range_header(self, downloader, tmp_path, monkeypatch, caplog):
+    def test_resumes_after_timeout_with_range_header(
+        self,
+        downloader: DownloadProbe,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """A stalled stream should retry from the bytes already saved in .part."""
         downloader.config.keep_files = True
         downloader.config.stall_timeout = 7
@@ -347,14 +376,16 @@ class TestDownloadAndExtract:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+        result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
         assert scripted_get.calls[0]["headers"] == {"Accept-Encoding": "identity"}
         assert scripted_get.calls[1]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={split_at}-"}
         assert f"Cnaes.zip stalled: no bytes for 7s, resuming from offset {split_at}" in caplog.text
 
-    def test_stream_timeout_error_is_distinct_download_failure(self, downloader, tmp_path, monkeypatch):
+    def test_stream_timeout_error_is_distinct_download_failure(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A final stalled attempt should surface a distinct resumable-download error."""
         downloader.config.retry_attempts = 1
         downloader.config.stall_timeout = 7
@@ -380,18 +411,22 @@ class TestDownloadAndExtract:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadStalledError, match=f"resuming from offset {split_at}"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_data_get_read_timeout_is_distinct_download_failure(self, downloader, monkeypatch):
+    def test_data_get_read_timeout_is_distinct_download_failure(
+        self, downloader: DownloadProbe, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A data request read timeout before the body is still a resumable stall."""
         downloader.config.retry_attempts = 1
         downloader.config.stall_timeout = 7
         monkeypatch.setattr(requests, "get", MagicMock(side_effect=requests.exceptions.ReadTimeout("slow stream")))
 
         with pytest.raises(DownloadStalledError, match="resuming from offset 0"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_resume_appends_to_existing_partial_file(self, downloader, tmp_path, monkeypatch):
+    def test_resume_appends_to_existing_partial_file(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A leftover .part file is appended to instead of redownloading from byte zero."""
         downloader.config.keep_files = True
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
@@ -412,12 +447,14 @@ class TestDownloadAndExtract:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        downloader._download_and_extract("2024-03", "Cnaes.zip")
+        downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert scripted_get.calls[0]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={split_at}-"}
         assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
 
-    def test_server_ignoring_range_discards_partial_and_restarts(self, downloader, tmp_path, monkeypatch):
+    def test_server_ignoring_range_discards_partial_and_restarts(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A 200 response to a Range request is a clean restart, not an append."""
         downloader.config.keep_files = True
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
@@ -434,7 +471,7 @@ class TestDownloadAndExtract:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        downloader._download_and_extract("2024-03", "Cnaes.zip")
+        downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert scripted_get.calls[0]["headers"] == {
             "Accept-Encoding": "identity",
@@ -442,7 +479,9 @@ class TestDownloadAndExtract:
         }
         assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
 
-    def test_final_size_mismatch_raises_without_final_zip(self, downloader, tmp_path, monkeypatch):
+    def test_final_size_mismatch_raises_without_final_zip(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A short final size is retried, then left as .part without publishing a bad ZIP."""
         downloader.config.keep_files = True
         downloader.config.retry_attempts = 2
@@ -481,12 +520,14 @@ class TestDownloadAndExtract:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(RuntimeError, match="Incomplete download"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert not (tmp_path / "Cnaes.zip").exists()
         assert (tmp_path / "Cnaes.zip.2024-03.part").read_bytes() == zip_content[:second_split]
 
-    def test_corrupt_zip_is_retried_then_raises(self, downloader, tmp_path, monkeypatch):
+    def test_corrupt_zip_is_retried_then_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Downloaded bytes must be a readable ZIP before extraction starts."""
         downloader.config.keep_files = True
         downloader.config.retry_attempts = 2
@@ -506,7 +547,7 @@ class TestDownloadAndExtract:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(zipfile.BadZipFile):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(scripted_get.calls) == 2
         assert not (tmp_path / "Cnaes.zip").exists()
@@ -516,13 +557,13 @@ class TestDownloadAndExtract:
 class TestDownloadFiles:
     """Test the main download_files orchestration."""
 
-    def test_returns_empty_for_empty_list(self, downloader):
+    def test_returns_empty_for_empty_list(self, downloader: DownloadProbe) -> None:
         """Test that empty file list returns immediately."""
         result = list(downloader.download_files("2024-03", []))
 
         assert result == []
 
-    def test_reference_download_failure_propagates(self, downloader, tmp_path):
+    def test_reference_download_failure_propagates(self, downloader: DownloadProbe, tmp_path: Path) -> None:
         """A reference file download failure should propagate to the caller."""
         with patch("requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.Timeout("Timeout")
@@ -534,7 +575,7 @@ class TestDownloadFiles:
 class TestAdaptiveDownloadConcurrency:
     """Test adaptive concurrency degradation decisions."""
 
-    def test_degrades_from_four_to_two_to_one_at_threshold_crossings(self, caplog):
+    def test_degrades_from_four_to_two_to_one_at_threshold_crossings(self, caplog: pytest.LogCaptureFixture) -> None:
         caplog.set_level(logging.WARNING, logger="downloader")
         adaptive_concurrency = AdaptiveDownloadConcurrency(initial_concurrency=4, stall_degrade_threshold=2)
 
@@ -560,7 +601,7 @@ class TestAdaptiveDownloadConcurrency:
         assert "2 stalls at concurrency 4, degrading to 2 for the rest of the run" in caplog.text
         assert "4 stalls at concurrency 2, degrading to 1 for the rest of the run" in caplog.text
 
-    def test_degradation_never_scales_back_up(self):
+    def test_degradation_never_scales_back_up(self) -> None:
         adaptive_concurrency = AdaptiveDownloadConcurrency(initial_concurrency=4, stall_degrade_threshold=1)
 
         for _ in range(5):
@@ -569,7 +610,7 @@ class TestAdaptiveDownloadConcurrency:
         assert adaptive_concurrency.current_concurrency == 1
         assert adaptive_concurrency.stall_count == 5
 
-    def test_stalls_below_threshold_leave_concurrency_unchanged(self, caplog):
+    def test_stalls_below_threshold_leave_concurrency_unchanged(self, caplog: pytest.LogCaptureFixture) -> None:
         caplog.set_level(logging.WARNING, logger="downloader")
         adaptive_concurrency = AdaptiveDownloadConcurrency(initial_concurrency=4, stall_degrade_threshold=3)
 
@@ -583,7 +624,13 @@ class TestAdaptiveDownloadConcurrency:
 class TestAdaptiveDownloadIntegration:
     """Test adaptive degradation through the resumable download path."""
 
-    def test_stalled_file_resumes_and_completes_after_degrading_to_one(self, downloader, tmp_path, monkeypatch, caplog):
+    def test_stalled_file_resumes_and_completes_after_degrading_to_one(
+        self,
+        downloader: DownloadProbe,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         downloader.config.download_workers = 4
         downloader.config.stall_degrade_threshold = 1
         downloader.config.retry_attempts = 3
@@ -634,18 +681,18 @@ class TestAdaptiveDownloadIntegration:
 class TestCleanup:
     """Test cleanup functionality."""
 
-    def test_removes_temp_files(self, config, tmp_path):
+    def test_removes_temp_files(self, config: Config, tmp_path: Path) -> None:
         """Test that cleanup removes temporary files."""
         # Create some temp files
         (tmp_path / "file1.csv").write_text("data")
         (tmp_path / "file2.zip").write_bytes(b"data")
 
-        downloader = Downloader(config)
+        downloader = DownloadProbe(config)
         downloader.cleanup()
 
         assert len(list(tmp_path.glob("*"))) == 0
 
-    def test_skips_cleanup_when_keep_files(self, tmp_path):
+    def test_skips_cleanup_when_keep_files(self, tmp_path: Path) -> None:
         """Test that cleanup is skipped when keep_files is True."""
         config = Config(
             database_url="postgresql://test",
@@ -654,7 +701,7 @@ class TestCleanup:
         )
         (tmp_path / "file1.csv").write_text("data")
 
-        downloader = Downloader(config)
+        downloader = DownloadProbe(config)
         downloader.cleanup()
 
         assert (tmp_path / "file1.csv").exists()
@@ -663,7 +710,7 @@ class TestCleanup:
 class TestCachedDownload:
     """Test caching behavior when keep_files is enabled."""
 
-    def test_uses_cached_zip_when_valid(self, tmp_path):
+    def test_uses_cached_zip_when_valid(self, tmp_path: Path) -> None:
         """Test that existing valid ZIP is reused instead of downloading."""
         config = Config(
             database_url="postgresql://test",
@@ -676,10 +723,10 @@ class TestCachedDownload:
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("CNAECSV.D51213", "0111301;Test")
 
-        downloader = Downloader(config)
+        downloader = DownloadProbe(config)
 
         with patch("requests.get") as mock_get:
-            result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+            result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
             # Should not have made any HTTP requests
             mock_get.assert_not_called()
@@ -689,7 +736,13 @@ class TestCachedDownload:
 class TestProgressLogging:
     """Test periodic progress logs when tqdm output is disabled."""
 
-    def test_logs_progress_at_configured_cadence(self, downloader, tmp_path, monkeypatch, caplog):
+    def test_logs_progress_at_configured_cadence(
+        self,
+        downloader: DownloadProbe,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         downloader.config.progress_log_interval = 5
         downloader.config.stall_timeout = 60
         monkeypatch.setenv("TQDM_DISABLE", "1")
@@ -710,7 +763,7 @@ class TestProgressLogging:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        downloader._download_and_extract("2024-03", "Cnaes.zip")
+        downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         progress_logs = [record.message for record in caplog.records if "progress:" in record.message]
         first_logged_bytes = len(chunks[0]) + len(chunks[1])
@@ -727,7 +780,13 @@ class TestProgressLogging:
             f"Cnaes.zip progress: {len(zip_content)}/{len(zip_content)} bytes (100.0%), {final_rate:.1f} B/s, ETA 0.0s"
         ) in progress_logs
 
-    def test_progress_logging_is_silent_when_tqdm_is_enabled(self, downloader, tmp_path, monkeypatch, caplog):
+    def test_progress_logging_is_silent_when_tqdm_is_enabled(
+        self,
+        downloader: DownloadProbe,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         downloader.config.progress_log_interval = 1
         downloader.config.stall_timeout = 60
         monkeypatch.delenv("TQDM_DISABLE", raising=False)
@@ -743,11 +802,17 @@ class TestProgressLogging:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        downloader._download_and_extract("2024-03", "Cnaes.zip")
+        downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert not [record for record in caplog.records if "progress:" in record.message]
 
-    def test_progress_logging_is_silent_when_interval_is_zero(self, downloader, tmp_path, monkeypatch, caplog):
+    def test_progress_logging_is_silent_when_interval_is_zero(
+        self,
+        downloader: DownloadProbe,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         downloader.config.progress_log_interval = 0
         downloader.config.stall_timeout = 60
         monkeypatch.setenv("TQDM_DISABLE", "1")
@@ -763,12 +828,12 @@ class TestProgressLogging:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        downloader._download_and_extract("2024-03", "Cnaes.zip")
+        downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert not [record for record in caplog.records if "progress:" in record.message]
 
 
-def _create_test_zip(tmp_path, files: dict) -> bytes:
+def _create_test_zip(tmp_path: Path, files: dict[str, str]) -> bytes:
     """Helper to create a ZIP file with given contents."""
     zip_path = tmp_path / "temp_test.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
@@ -783,10 +848,12 @@ def _create_test_zip(tmp_path, files: dict) -> bytes:
 class TestResumeEdgeCases:
     """Branch coverage for the resume protocol's error and finalize paths."""
 
-    def _zip(self, tmp_path):
+    def _zip(self, tmp_path: Path):
         return _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
 
-    def test_416_with_matching_total_finalizes_partial(self, downloader, tmp_path, monkeypatch):
+    def test_416_with_matching_total_finalizes_partial(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.keep_files = True
         zip_content = self._zip(tmp_path)
         part_path = tmp_path / "Cnaes.zip.2024-03.part"
@@ -802,13 +869,15 @@ class TestResumeEdgeCases:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+        result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
         assert not part_path.exists()
         assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
 
-    def test_416_with_mismatched_total_discards_partial(self, downloader, tmp_path, monkeypatch):
+    def test_416_with_mismatched_total_discards_partial(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         part_path = tmp_path / "Cnaes.zip.2024-03.part"
@@ -825,10 +894,12 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="differs from remote size"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
         assert not part_path.exists()
 
-    def test_416_without_content_range_discards_partial(self, downloader, tmp_path, monkeypatch):
+    def test_416_without_content_range_discards_partial(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         part_path = tmp_path / "Cnaes.zip.2024-03.part"
@@ -837,10 +908,12 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="did not report the remote size"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
         assert not part_path.exists()
 
-    def test_206_resuming_at_wrong_offset_raises(self, downloader, tmp_path, monkeypatch):
+    def test_206_resuming_at_wrong_offset_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content) // 2
@@ -857,9 +930,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="server resumed at byte"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_206_with_remote_smaller_than_partial_raises(self, downloader, tmp_path, monkeypatch):
+    def test_206_with_remote_smaller_than_partial_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content)
@@ -876,9 +951,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="exceeds remote size"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_206_content_length_mismatching_range_raises(self, downloader, tmp_path, monkeypatch):
+    def test_206_content_length_mismatching_range_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content) // 2
@@ -898,9 +975,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="Content-Length mismatch"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_206_with_invalid_content_range_raises(self, downloader, tmp_path, monkeypatch):
+    def test_206_with_invalid_content_range_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         offset = len(zip_content) // 2
@@ -917,9 +996,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="Invalid Content-Range"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_resume_with_unexpected_status_raises(self, downloader, tmp_path, monkeypatch):
+    def test_resume_with_unexpected_status_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:10])
@@ -927,27 +1008,33 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="server returned HTTP 204"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_missing_content_length_on_fresh_download_raises(self, downloader, tmp_path, monkeypatch):
+    def test_missing_content_length_on_fresh_download_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[zip_content], headers={})])
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="Missing Content-Length"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_invalid_content_length_raises(self, downloader, tmp_path, monkeypatch):
+    def test_invalid_content_length_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         scripted_get = _ScriptedGet([_ScriptedResponse(chunks=[zip_content], headers={"content-length": "many"})])
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="Invalid Content-Length"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_overlong_body_discards_partial_and_raises(self, downloader, tmp_path, monkeypatch):
+    def test_overlong_body_discards_partial_and_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = self._zip(tmp_path)
         scripted_get = _ScriptedGet(
@@ -961,10 +1048,12 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="expected"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
         assert not (tmp_path / "Cnaes.zip").exists()
 
-    def test_stale_partial_from_other_month_is_not_resumed(self, downloader, tmp_path, monkeypatch):
+    def test_stale_partial_from_other_month_is_not_resumed(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.keep_files = True
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         other_month_part = tmp_path / "Cnaes.zip.2024-02.part"
@@ -979,13 +1068,15 @@ class TestResumeEdgeCases:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+        result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
         assert "Range" not in scripted_get.calls[0]["headers"]
         assert other_month_part.read_bytes() == b"stale bytes from another month"
 
-    def test_preexisting_final_zip_is_replaced(self, downloader, tmp_path, monkeypatch):
+    def test_preexisting_final_zip_is_replaced(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.keep_files = False
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         stale_final = tmp_path / "Cnaes.zip"
@@ -1001,11 +1092,13 @@ class TestResumeEdgeCases:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+        result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
 
-    def test_206_without_content_length_is_accepted(self, downloader, tmp_path, monkeypatch):
+    def test_206_without_content_length_is_accepted(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.keep_files = True
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         offset = len(zip_content) // 2
@@ -1021,11 +1114,13 @@ class TestResumeEdgeCases:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        downloader._download_and_extract("2024-03", "Cnaes.zip")
+        downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
 
-    def test_206_missing_content_range_raises(self, downloader, tmp_path, monkeypatch):
+    def test_206_missing_content_range_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:10])
@@ -1033,9 +1128,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="Missing Content-Range"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_206_reversed_content_range_raises(self, downloader, tmp_path, monkeypatch):
+    def test_206_reversed_content_range_raises(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         (tmp_path / "Cnaes.zip.2024-03.part").write_bytes(zip_content[:10])
@@ -1051,9 +1148,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="Invalid Content-Range"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_416_with_malformed_content_range_discards_partial(self, downloader, tmp_path, monkeypatch):
+    def test_416_with_malformed_content_range_discards_partial(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         part_path = tmp_path / "Cnaes.zip.2024-03.part"
@@ -1070,10 +1169,12 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadIncompleteError, match="did not report the remote size"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
         assert not part_path.exists()
 
-    def test_zip_with_corrupt_member_crc_is_rejected(self, downloader, tmp_path, monkeypatch):
+    def test_zip_with_corrupt_member_crc_is_rejected(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = bytearray(_create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test-payload-long-enough"}))
         # Flip a byte inside the member payload: the archive structure stays
@@ -1091,9 +1192,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(zipfile.BadZipFile, match="Corrupt ZIP member"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_corrupt_cached_zip_is_redownloaded(self, downloader, tmp_path, monkeypatch):
+    def test_corrupt_cached_zip_is_redownloaded(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.keep_files = True
         zip_content = bytearray(_create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test-payload-long-enough"}))
         good_zip = bytes(zip_content)
@@ -1110,13 +1213,13 @@ class TestResumeEdgeCases:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+        result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
         assert len(scripted_get.calls) == 1
         assert (tmp_path / "Cnaes.zip").read_bytes() == good_zip
 
-    def test_cleanup_preserves_part_files(self, downloader, tmp_path):
+    def test_cleanup_preserves_part_files(self, downloader: DownloadProbe, tmp_path: Path) -> None:
         downloader.config.keep_files = False
         (tmp_path / "Cnaes.zip").write_bytes(b"done")
         (tmp_path / "Empresas0.zip.2024-03.part").write_bytes(b"resume me")
@@ -1126,7 +1229,9 @@ class TestResumeEdgeCases:
         assert not (tmp_path / "Cnaes.zip").exists()
         assert (tmp_path / "Empresas0.zip.2024-03.part").exists()
 
-    def test_empty_keepalive_chunks_past_stall_timeout_raise(self, downloader, tmp_path, monkeypatch):
+    def test_empty_keepalive_chunks_past_stall_timeout_raise(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import downloader as downloader_module
 
         downloader.config.retry_attempts = 1
@@ -1145,9 +1250,11 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadStalledError, match="stalled: no bytes"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-    def test_connection_error_read_timeout_maps_to_stall_and_resumes(self, downloader, tmp_path, monkeypatch):
+    def test_connection_error_read_timeout_maps_to_stall_and_resumes(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.keep_files = True
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         split_at = len(zip_content) // 2
@@ -1171,12 +1278,14 @@ class TestResumeEdgeCases:
         )
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+        result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
         assert scripted_get.calls[1]["headers"]["Range"] == f"bytes={split_at}-"
 
-    def test_other_connection_errors_propagate_unmapped(self, downloader, tmp_path, monkeypatch):
+    def test_other_connection_errors_propagate_unmapped(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
         scripted_get = _ScriptedGet(
@@ -1190,33 +1299,37 @@ class TestResumeEdgeCases:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(requests.exceptions.ConnectionError, match="reset by peer"):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
 
 class TestReadTimeoutDetection:
-    def test_typed_read_timeout_in_args(self):
-        inner = urllib3.exceptions.ReadTimeoutError(None, "/url", "the socket gave up")
-        assert Downloader._is_read_timeout(requests.exceptions.ConnectionError(inner))
+    def test_typed_read_timeout_in_args(self) -> None:
+        inner = urllib3.exceptions.ReadTimeoutError(
+            urllib3.HTTPConnectionPool("example.com"), "/url", "the socket gave up"
+        )
+        assert DownloadProbe.is_read_timeout(requests.exceptions.ConnectionError(inner))
 
-    def test_typed_read_timeout_in_cause_chain(self):
+    def test_typed_read_timeout_in_cause_chain(self) -> None:
         exc = requests.exceptions.ConnectionError("proxy failure")
         exc.__cause__ = TimeoutError("no matching phrase here")
-        assert Downloader._is_read_timeout(exc)
+        assert DownloadProbe.is_read_timeout(exc)
 
-    def test_string_fallback_still_matches(self):
-        assert Downloader._is_read_timeout(requests.exceptions.ConnectionError("Read timed out."))
+    def test_string_fallback_still_matches(self) -> None:
+        assert DownloadProbe.is_read_timeout(requests.exceptions.ConnectionError("Read timed out."))
 
-    def test_unrelated_connection_error_is_not_a_timeout(self):
-        assert not Downloader._is_read_timeout(requests.exceptions.ConnectionError("Connection reset by peer"))
+    def test_unrelated_connection_error_is_not_a_timeout(self) -> None:
+        assert not DownloadProbe.is_read_timeout(requests.exceptions.ConnectionError("Connection reset by peer"))
 
-    def test_self_referencing_chain_terminates(self):
+    def test_self_referencing_chain_terminates(self) -> None:
         exc = requests.exceptions.ConnectionError("reset")
         exc.__context__ = exc
-        assert not Downloader._is_read_timeout(exc)
+        assert not DownloadProbe.is_read_timeout(exc)
 
 
 class TestStalePartialPruning:
-    def test_download_file_prunes_partials_from_other_directories(self, downloader, tmp_path, monkeypatch):
+    def test_download_file_prunes_partials_from_other_directories(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         stale = downloader.temp_path / "Empresas0.zip.2026-05.part"
         stale.write_bytes(b"stale month")
         same_month_other_file = downloader.temp_path / "Empresas0.zip.2026-06.part"
@@ -1236,7 +1349,9 @@ class TestStalePartialPruning:
         assert same_month_other_file.exists()
         assert unrelated.exists()
 
-    def test_download_files_prunes_partials_from_other_directories(self, downloader, tmp_path, monkeypatch):
+    def test_download_files_prunes_partials_from_other_directories(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         stale = downloader.temp_path / "Socios9.zip.2026-05.part"
         stale.write_bytes(b"stale month")
 
@@ -1257,16 +1372,18 @@ class TestRetryBudgetResetsOnProgress:
     Each stall resumes with progress, so a fixed total-failure budget made
     large files structurally undownloadable once stalls > retry_attempts."""
 
-    def test_more_stalls_than_retry_attempts_complete_when_each_makes_progress(self, downloader, tmp_path, monkeypatch):
+    def test_more_stalls_than_retry_attempts_complete_when_each_makes_progress(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.keep_files = True
         downloader.config.retry_attempts = 2
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test" * 200})
         total = len(zip_content)
         cuts = [0, total // 4, total // 2, (total * 3) // 4]
-        responses = []
+        responses: list[_ScriptedResponse | Exception] = []
         for i, start in enumerate(cuts):
             end = cuts[i + 1] if i + 1 < len(cuts) else total
-            chunks = [zip_content[start:end]]
+            chunks: list[bytes | Exception] = [zip_content[start:end]]
             if end < total:
                 chunks.append(requests.exceptions.Timeout("stalled"))
             headers = {"content-length": str(total - start)}
@@ -1278,12 +1395,14 @@ class TestRetryBudgetResetsOnProgress:
         scripted_get = _ScriptedGet(responses)
         monkeypatch.setattr(requests, "get", scripted_get)
 
-        result = downloader._download_and_extract("2024-03", "Cnaes.zip")
+        result = downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(result) == 1
         assert len(scripted_get.calls) == 4  # 3 stalls survived a budget of 2
 
-    def test_consecutive_no_progress_stalls_still_exhaust_the_budget(self, downloader, tmp_path, monkeypatch):
+    def test_consecutive_no_progress_stalls_still_exhaust_the_budget(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 2
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
 
@@ -1297,7 +1416,7 @@ class TestRetryBudgetResetsOnProgress:
         monkeypatch.setattr(requests, "get", scripted_get)
 
         with pytest.raises(DownloadStalledError):
-            downloader._download_and_extract("2024-03", "Cnaes.zip")
+            downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(scripted_get.calls) == 2
 
@@ -1308,7 +1427,7 @@ class TestAttemptLevelConcurrency:
     with connect timeouts until every retry budget died. Degradation must
     govern attempts, not just file submissions."""
 
-    def test_stream_permit_blocks_attempts_beyond_degraded_concurrency(self):
+    def test_stream_permit_blocks_attempts_beyond_degraded_concurrency(self) -> None:
         import threading
 
         adaptive = AdaptiveDownloadConcurrency(2, 1)
@@ -1341,7 +1460,9 @@ class TestAttemptLevelConcurrency:
         t1.join(timeout=5)
         t2.join(timeout=5)
 
-    def test_connect_timeout_counts_as_adaptive_stall_signal(self, downloader, monkeypatch):
+    def test_connect_timeout_counts_as_adaptive_stall_signal(
+        self, downloader: DownloadProbe, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         downloader.config.retry_attempts = 1
         adaptive = AdaptiveDownloadConcurrency(4, 3)
         monkeypatch.setattr(
@@ -1351,7 +1472,7 @@ class TestAttemptLevelConcurrency:
         )
 
         with pytest.raises(requests.exceptions.ConnectTimeout):
-            downloader._download_zip(
+            downloader.download_zip(
                 "https://example/x.zip",
                 "2024-03",
                 "Cnaes.zip",
@@ -1362,12 +1483,14 @@ class TestAttemptLevelConcurrency:
 
         assert adaptive.stall_count == 1
 
-    def test_no_progress_retries_back_off_exponentially_with_a_cap(self, downloader, monkeypatch):
+    def test_no_progress_retries_back_off_exponentially_with_a_cap(
+        self, downloader: DownloadProbe, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import downloader as downloader_module
 
         downloader.config.retry_attempts = 4
         downloader.config.retry_delay = 40
-        sleeps = []
+        sleeps: list[float] = []
         monkeypatch.setattr(downloader_module.time, "sleep", sleeps.append)
         monkeypatch.setattr(
             requests,
@@ -1376,7 +1499,7 @@ class TestAttemptLevelConcurrency:
         )
 
         with pytest.raises(requests.exceptions.ConnectTimeout):
-            downloader._download_zip(
+            downloader.download_zip(
                 "https://example/x.zip",
                 "2024-03",
                 "Cnaes.zip",
@@ -1387,16 +1510,18 @@ class TestAttemptLevelConcurrency:
 
         assert sleeps == [40, 80, 120]  # 40*2^2=160 capped at MAX_RETRY_BACKOFF_SECONDS
 
-    def test_stall_is_recorded_while_the_permit_is_still_held(self, downloader, monkeypatch):
+    def test_stall_is_recorded_while_the_permit_is_still_held(
+        self, downloader: DownloadProbe, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Waiters must wake to the degraded limit; recording after release
         races one more attempt through at the old concurrency."""
         downloader.config.retry_attempts = 1
-        adaptive = AdaptiveDownloadConcurrency(4, 1)
-        active_at_record = []
+        adaptive = ConcurrencyProbe(4, 1)
+        active_at_record: list[int] = []
         original = adaptive.record_stall
 
         def spy():
-            active_at_record.append(adaptive._active_streams)
+            active_at_record.append(adaptive.active_streams)
             return original()
 
         monkeypatch.setattr(adaptive, "record_stall", spy)
@@ -1407,7 +1532,7 @@ class TestAttemptLevelConcurrency:
         )
 
         with pytest.raises(requests.exceptions.ConnectTimeout):
-            downloader._download_zip(
+            downloader.download_zip(
                 "https://example/x.zip",
                 "2024-03",
                 "Cnaes.zip",
@@ -1417,3 +1542,16 @@ class TestAttemptLevelConcurrency:
             )
 
         assert active_at_record == [1]
+
+
+@pytest.mark.parametrize("href", ["", "<d:href/>"])
+@pytest.mark.parametrize("list_files", [False, True])
+def test_webdav_response_requires_href(downloader: DownloadProbe, href: str, list_files: bool) -> None:
+    response = MagicMock()
+    response.content = f'<d:multistatus xmlns:d="DAV:"><d:response>{href}</d:response></d:multistatus>'.encode()
+    with patch("requests.request", return_value=response):
+        with pytest.raises(ValueError, match="WebDAV response is missing href text"):
+            if list_files:
+                downloader.get_directory_files("2024-11")
+            else:
+                downloader.get_available_directories()

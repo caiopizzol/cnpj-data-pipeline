@@ -1,6 +1,7 @@
 """Tests for Parquet writer."""
 
 import json
+from pathlib import Path
 
 import polars as pl
 import pyarrow.parquet as pq
@@ -10,12 +11,12 @@ from parquet_writer import ParquetWriter
 
 
 @pytest.fixture
-def output_dir(tmp_path):
+def output_dir(tmp_path: Path):
     return tmp_path / "parquet_output"
 
 
 @pytest.fixture
-def writer(output_dir):
+def writer(output_dir: Path):
     return ParquetWriter(output_dir)
 
 
@@ -43,29 +44,33 @@ def sample_estabelecimentos():
 
 
 class TestWriteBatch:
-    def test_writes_single_file(self, writer, sample_empresas, output_dir):
+    def test_writes_single_file(self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
 
         path = output_dir / "empresas.parquet"
         assert path.exists()
-        assert pq.read_table(str(path)).num_rows == 3
+        assert pl.read_parquet(str(path)).height == 3
 
-    def test_returns_row_count(self, writer, sample_empresas):
+    def test_returns_row_count(self, writer: ParquetWriter, sample_empresas: pl.DataFrame) -> None:
         rows = writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         assert rows == 3
 
-    def test_accumulates_rows_in_same_file(self, writer, sample_empresas, output_dir):
+    def test_accumulates_rows_in_same_file(
+        self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path
+    ) -> None:
         """Multiple batches go to the same file."""
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
 
-        table = pq.read_table(str(output_dir / "empresas.parquet"))
-        assert table.num_rows == 6
+        table = pl.read_parquet(str(output_dir / "empresas.parquet"))
+        assert table.height == 6
         assert writer.stats["empresas"].rows == 6
 
-    def test_estabelecimentos_writes_single_file(self, writer, sample_estabelecimentos, output_dir):
+    def test_estabelecimentos_writes_single_file(
+        self, writer: ParquetWriter, sample_estabelecimentos: pl.DataFrame, output_dir: Path
+    ) -> None:
         """Estabelecimentos goes to a single file (no UF partitioning)."""
         writer.write_batch(
             sample_estabelecimentos,
@@ -75,29 +80,31 @@ class TestWriteBatch:
         writer.close()
 
         assert (output_dir / "estabelecimentos.parquet").exists()
-        table = pq.read_table(str(output_dir / "estabelecimentos.parquet"))
-        assert table.num_rows == 4
+        table = pl.read_parquet(str(output_dir / "estabelecimentos.parquet"))
+        assert table.height == 4
 
 
 class TestFlushTable:
-    def test_returns_flushed_file_path(self, writer, sample_empresas, output_dir):
+    def test_returns_flushed_file_path(
+        self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path
+    ) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         path = writer.flush_table("empresas")
 
         assert path == output_dir / "empresas.parquet"
+        assert path is not None
         assert path.exists()
 
-    def test_returns_none_for_unknown_table(self, writer):
+    def test_returns_none_for_unknown_table(self, writer: ParquetWriter) -> None:
         assert writer.flush_table("nonexistent") is None
 
-    def test_clears_writer_after_flush(self, writer, sample_empresas):
+    def test_clears_writer_after_flush(self, writer: ParquetWriter, sample_empresas: pl.DataFrame) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
-        assert "empresas" in writer._writers
 
         writer.flush_table("empresas")
-        assert "empresas" not in writer._writers
+        assert writer.flush_table("empresas") is None
 
-    def test_tracks_file_size(self, writer, sample_empresas):
+    def test_tracks_file_size(self, writer: ParquetWriter, sample_empresas: pl.DataFrame) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.flush_table("empresas")
 
@@ -106,17 +113,19 @@ class TestFlushTable:
 
 
 class TestClose:
-    def test_closes_all_writers(self, writer, sample_empresas, sample_estabelecimentos):
+    def test_closes_all_writers(
+        self, writer: ParquetWriter, sample_empresas: pl.DataFrame, sample_estabelecimentos: pl.DataFrame
+    ) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.write_batch(
             sample_estabelecimentos, "estabelecimentos", ["cnpj_basico", "cnpj_ordem", "uf", "municipio"]
         )
-        assert len(writer._writers) == 2
 
         writer.close()
-        assert len(writer._writers) == 0
+        assert writer.flush_table("empresas") is None
+        assert writer.flush_table("estabelecimentos") is None
 
-    def test_computes_file_sizes(self, writer, sample_empresas):
+    def test_computes_file_sizes(self, writer: ParquetWriter, sample_empresas: pl.DataFrame) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
 
@@ -124,7 +133,13 @@ class TestClose:
 
 
 class TestWriteManifest:
-    def test_writes_manifest_json(self, writer, sample_empresas, sample_estabelecimentos, output_dir):
+    def test_writes_manifest_json(
+        self,
+        writer: ParquetWriter,
+        sample_empresas: pl.DataFrame,
+        sample_estabelecimentos: pl.DataFrame,
+        output_dir: Path,
+    ) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.write_batch(
             sample_estabelecimentos,
@@ -144,7 +159,9 @@ class TestWriteManifest:
         assert "empresas" in saved["tables"]
         assert "estabelecimentos" in saved["tables"]
 
-    def test_manifest_has_exported_at(self, writer, sample_empresas, output_dir):
+    def test_manifest_has_exported_at(
+        self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path
+    ) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
         manifest = writer.write_manifest()
@@ -152,7 +169,9 @@ class TestWriteManifest:
         assert "exportedAt" in manifest
         assert manifest["exportedAt"].endswith("Z")
 
-    def test_manifest_has_pipeline_and_schema_versions(self, writer, sample_empresas, output_dir):
+    def test_manifest_has_pipeline_and_schema_versions(
+        self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path
+    ) -> None:
         """Manifest metadata includes pipeline and layout versions, not a physical schema fingerprint."""
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
@@ -163,14 +182,18 @@ class TestWriteManifest:
         assert "schemaVersion" in manifest
         assert manifest["schemaVersion"] == "2"
 
-    def test_manifest_records_source_month_when_provided(self, writer, sample_empresas, output_dir):
+    def test_manifest_records_source_month_when_provided(
+        self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path
+    ) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
         manifest = writer.write_manifest(source_month="2024-11")
 
         assert manifest["sourceMonth"] == "2024-11"
 
-    def test_manifest_source_month_optional(self, writer, sample_empresas, output_dir):
+    def test_manifest_source_month_optional(
+        self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path
+    ) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
         manifest = writer.write_manifest()
@@ -180,13 +203,13 @@ class TestWriteManifest:
 
 
 class TestThreadSafety:
-    def test_concurrent_writes_produce_correct_row_count(self, writer, output_dir):
+    def test_concurrent_writes_produce_correct_row_count(self, writer: ParquetWriter, output_dir: Path) -> None:
         """Multiple threads writing simultaneously should not lose data."""
         import threading
 
-        errors = []
+        errors: list[Exception] = []
 
-        def write_batch(thread_id):
+        def write_batch(thread_id: int):
             try:
                 df = pl.DataFrame(
                     {
@@ -208,16 +231,16 @@ class TestThreadSafety:
 
         assert not errors, f"Errors during concurrent writes: {errors}"
 
-        table = pq.read_table(str(output_dir / "cnaes.parquet"))
-        assert table.num_rows == 1000  # 10 threads x 100 rows
+        table = pl.read_parquet(str(output_dir / "cnaes.parquet"))
+        assert table.height == 1000  # 10 threads x 100 rows
         assert writer.stats["cnaes"].rows == 1000
 
 
 class TestZstdCompression:
-    def test_output_uses_zstd(self, writer, sample_empresas, output_dir):
+    def test_output_uses_zstd(self, writer: ParquetWriter, sample_empresas: pl.DataFrame, output_dir: Path) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
 
-        meta = pq.read_metadata(str(output_dir / "empresas.parquet"))
+        meta = pq.ParquetFile(str(output_dir / "empresas.parquet")).metadata
         compression = meta.row_group(0).column(0).compression
         assert compression == "ZSTD"

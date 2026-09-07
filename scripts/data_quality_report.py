@@ -39,9 +39,59 @@ import os
 import sys
 from contextlib import closing
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, TypedDict
 
 import psycopg2
+from psycopg2.extensions import connection, cursor
+
+
+class CheckDigitExample(TypedDict):
+    basico: str
+    ordem: str
+    stored: str
+    expected: str
+
+
+class CheckDigitMeasurement(TypedDict):
+    total: int
+    valid: int
+    invalid: int
+    examples: list[CheckDigitExample]
+    scan_mode: str
+
+
+class OrphanMeasurement(TypedDict):
+    label: str
+    orphans: int
+
+
+class EnrichedRow(TypedDict):
+    label: str
+    monthly_orphans: int
+    enriched_orphans: int
+
+
+class EnrichedMeasurement(TypedDict):
+    available: bool
+    rows: list[EnrichedRow]
+
+
+class Measurements(TypedDict):
+    cnpj_check_digits: CheckDigitMeasurement
+    orphan_fks: list[OrphanMeasurement]
+    enriched_orphans: EnrichedMeasurement
+    exterior_uf: dict[str, int]
+    capital_sentinel: dict[str, int]
+    representante_sentinel: dict[str, int]
+    cep_validity: dict[str, int]
+
+
+def _count(cur: cursor) -> int:
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("Count query returned no row")
+    return int(row[0])
+
 
 # CNPJ check-digit algorithm (Brazilian RFB modulus-11 weighted sum).
 # Given the 12-character stem, compute DV1 with weights _W1, then DV2 with
@@ -79,7 +129,7 @@ def cnpj_expected_dv(first_12: str) -> str:
     return f"{dv1}{dv2}"
 
 
-def measure_cnpj_check_digits(conn, sample_pct: Optional[float] = None) -> dict:
+def measure_cnpj_check_digits(conn: connection, sample_pct: Optional[float] = None) -> CheckDigitMeasurement:
     """Walk estabelecimentos and count valid vs invalid stored check digits.
 
     Args:
@@ -92,7 +142,7 @@ def measure_cnpj_check_digits(conn, sample_pct: Optional[float] = None) -> dict:
     total = 0
     valid = 0
     invalid = 0
-    examples = []
+    examples: list[CheckDigitExample] = []
 
     sample_clause = f"TABLESAMPLE BERNOULLI ({sample_pct})" if sample_pct is not None else ""
     query = f"""
@@ -202,7 +252,9 @@ _ORPHAN_FK_CHECKS = [
 ]
 
 
-def _count_orphans(cur, table: str, column: str, ref_table: str, ref_column: str, extra_predicate: str = "") -> int:
+def _count_orphans(
+    cur: cursor, table: str, column: str, ref_table: str, ref_column: str, extra_predicate: str = ""
+) -> int:
     """Count rows whose FK value is non-NULL but absent from ref_table."""
     extra = f"AND {extra_predicate}" if extra_predicate else ""
     cur.execute(
@@ -217,14 +269,14 @@ def _count_orphans(cur, table: str, column: str, ref_table: str, ref_column: str
           )
         """
     )
-    return cur.fetchone()[0]
+    return _count(cur)
 
 
-def measure_orphan_fks(conn) -> list[dict]:
+def measure_orphan_fks(conn: connection) -> list[OrphanMeasurement]:
     """For each lookup relationship, count rows whose FK value has no
     match in the reference table. NULLs are excluded - they're absence,
     not orphans."""
-    results = []
+    results: list[OrphanMeasurement] = []
     with conn.cursor() as cur:
         for check in _ORPHAN_FK_CHECKS:
             count = _count_orphans(
@@ -290,7 +342,7 @@ _ENRICHED_FK_CHECKS = [
 ]
 
 
-def measure_enriched_orphans(conn) -> dict:
+def measure_enriched_orphans(conn: connection) -> EnrichedMeasurement:
     """Compare orphan counts against the monthly lookup vs the enriched lookup.
 
     Returns {'available': bool, 'rows': [{label, monthly_orphans, enriched_orphans}]}.
@@ -299,10 +351,13 @@ def measure_enriched_orphans(conn) -> dict:
     """
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass('public.motivos_enriched')")
-        if cur.fetchone()[0] is None:
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError("Reference lookup query returned no row")
+        if row[0] is None:
             return {"available": False, "rows": []}
 
-        rows = []
+        rows: list[EnrichedRow] = []
         for check in _ENRICHED_FK_CHECKS:
             extra = check.get("extra_predicate", "")
             monthly = _count_orphans(cur, check["table"], check["column"], check["monthly_ref"], "codigo", extra)
@@ -317,40 +372,40 @@ def measure_enriched_orphans(conn) -> dict:
     return {"available": True, "rows": rows}
 
 
-def measure_exterior_uf(conn) -> dict:
+def measure_exterior_uf(conn: connection) -> dict[str, int]:
     """Count uf='EX', the observed convention for exterior addresses.
 
     The interpretation is empirical; see docs/data-audit.md.
     """
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM estabelecimentos WHERE uf = 'EX'")
-        ex = cur.fetchone()[0]
+        ex = _count(cur)
         cur.execute("SELECT COUNT(*) FROM estabelecimentos")
-        total = cur.fetchone()[0]
+        total = _count(cur)
     return {"total": total, "exterior": ex}
 
 
-def measure_capital_sentinel(conn) -> dict:
+def measure_capital_sentinel(conn: connection) -> dict[str, int]:
     """Count rows with the suspicious high-water capital_social value
     999999999999. Downstream consumers often want to inspect, mask, or
     exclude this value before ranking companies by capital."""
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM empresas")
-        total = cur.fetchone()[0]
+        total = _count(cur)
         cur.execute("SELECT COUNT(*) FROM empresas WHERE capital_social = 999999999999")
-        sentinel = cur.fetchone()[0]
+        sentinel = _count(cur)
         cur.execute("SELECT COUNT(*) FROM empresas WHERE capital_social IS NULL")
-        nulls = cur.fetchone()[0]
+        nulls = _count(cur)
     return {"total": total, "sentinel": sentinel, "nulls": nulls}
 
 
-def measure_representante_sentinel(conn) -> dict:
+def measure_representante_sentinel(conn: connection) -> dict[str, int]:
     """Count rows with representante_legal='***000000**' and
     qualificacao_do_representante_legal='00'. This pattern commonly
     behaves like "no representative" in the source data."""
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM socios")
-        total = cur.fetchone()[0]
+        total = _count(cur)
         cur.execute(
             """
             SELECT COUNT(*) FROM socios
@@ -358,22 +413,22 @@ def measure_representante_sentinel(conn) -> dict:
               AND qualificacao_do_representante_legal = '00'
             """
         )
-        sentinel = cur.fetchone()[0]
+        sentinel = _count(cur)
     return {"total": total, "sentinel": sentinel}
 
 
-def measure_cep_validity(conn) -> dict:
+def measure_cep_validity(conn: connection) -> dict[str, int]:
     """CEP should be 8 digits. RFB sometimes carries NULL or the
     '00000000' sentinel. Count malformed shapes without inferring their cause."""
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM estabelecimentos")
-        total = cur.fetchone()[0]
+        total = _count(cur)
         cur.execute("SELECT COUNT(*) FROM estabelecimentos WHERE cep IS NULL")
-        nulls = cur.fetchone()[0]
+        nulls = _count(cur)
         cur.execute("SELECT COUNT(*) FROM estabelecimentos WHERE cep = '00000000'")
-        zero_sentinel = cur.fetchone()[0]
+        zero_sentinel = _count(cur)
         cur.execute(r"SELECT COUNT(*) FROM estabelecimentos WHERE cep IS NOT NULL AND cep !~ '^\d{8}$'")
-        malformed = cur.fetchone()[0]
+        malformed = _count(cur)
     return {
         "total": total,
         "nulls": nulls,
@@ -388,9 +443,9 @@ def _pct(numerator: int, denominator: int) -> str:
     return f"{numerator / denominator * 100:.4f}%"
 
 
-def format_report(measurements: dict, scope: dict) -> str:
+def format_report(measurements: Measurements, scope: dict[str, str]) -> str:
     """Render the markdown report from a dict of measurement results."""
-    lines = []
+    lines: list[str] = []
     lines.append("# Data quality report")
     lines.append("")
     lines.append(f"Generated: `{datetime.now(timezone.utc).isoformat(timespec='seconds')}`  ")
@@ -518,7 +573,7 @@ def sample_pct(value: str) -> float:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument(
         "--full",
         action="store_true",
