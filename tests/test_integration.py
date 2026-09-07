@@ -1,7 +1,8 @@
 """Integration tests using real data fixtures against PostgreSQL.
 
 Requires a running PostgreSQL instance (docker compose up -d postgres).
-Skipped when PostgreSQL is unreachable at localhost:5435; DATABASE_URL is not read.
+Skipped when PostgreSQL is unreachable at localhost:5435; the skip decision
+is independent of DATABASE_URL.
 """
 
 from pathlib import Path
