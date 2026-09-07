@@ -894,3 +894,94 @@ class TestParquetResume:
 
         with pytest.raises(SystemExit):
             main(cfg=cfg)
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_parquet_write_failure_stops_export(workers: int, cfg: Config, tmp_path: Path) -> None:
+    cfg.output_format = "parquet"
+    cfg.process_workers = workers
+    cfg.post_file_command = "publish"
+    source = tmp_path / "CNAECSV.csv"
+    source.write_text("0111301;Cultivo de arroz\n", encoding="ISO-8859-1")
+
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as downloader_cls,
+        patch("parquet_writer.ParquetWriter") as writer_cls,
+        patch("main.subprocess.run") as publish,
+    ):
+        downloader = downloader_cls.return_value
+        downloader.get_latest_directory.return_value = "2024-01"
+        downloader.get_directory_files.return_value = ["Cnaes.zip", "Empresas0.zip"]
+        downloader.download_file.return_value = [source]
+        downloader.download_files.return_value = [(source, "Cnaes.zip")]
+        writer = writer_cls.return_value
+        writer.write_batch.side_effect = OSError("disk full")
+
+        with pytest.raises(SystemExit) as error:
+            main(cfg=cfg)
+
+        assert error.value.code == 1
+        writer.write_batch.assert_called_once()
+        writer.flush_table.assert_not_called()
+        writer.write_manifest.assert_not_called()
+        publish.assert_not_called()
+        downloader.cleanup.assert_called_once()
+        # Global cleanup is mocked; the failed CSV must not be explicitly unlinked.
+        assert source.exists()
+        if workers == 1:
+            downloader.download_files.assert_called_once_with("2024-01", ["Cnaes.zip"])
+        else:
+            downloader.download_file.assert_called_once_with("2024-01", "Cnaes.zip")
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_empty_parquet_input_does_not_publish_a_file(workers: int, cfg: Config, tmp_path: Path) -> None:
+    cfg.output_format = "parquet"
+    cfg.process_workers = workers
+    cfg.post_file_command = "publish"
+    source = tmp_path / "CNAECSV.csv"
+    source.write_text("", encoding="ISO-8859-1")
+
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as downloader_cls,
+        patch("main.subprocess.run") as publish,
+    ):
+        downloader = downloader_cls.return_value
+        downloader.get_latest_directory.return_value = "2024-01"
+        downloader.get_directory_files.return_value = ["Cnaes.zip"]
+        downloader.download_file.return_value = [source]
+        downloader.download_files.return_value = [(source, "Cnaes.zip")]
+
+        main(cfg=cfg)
+
+        publish.assert_not_called()
+        downloader.cleanup.assert_called_once()
+        assert not (Path(cfg.parquet_output_dir) / "cnaes.parquet").exists()
+        assert (Path(cfg.parquet_output_dir) / "manifest.json").exists()
+        assert not source.exists()
+
+
+@pytest.mark.parametrize("keep_files", [False, True])
+def test_postgres_marks_success_before_optional_cleanup(keep_files: bool, cfg: Config, tmp_path: Path) -> None:
+    cfg.keep_files = keep_files
+    source = tmp_path / "CNAECSV.csv"
+    source.write_text("0111301;Cultivo de arroz\n", encoding="ISO-8859-1")
+    downloader = MagicMock()
+    downloader.download_file.return_value = [source]
+
+    with patch("database.Database") as db_cls:
+        db = db_cls.return_value
+
+        def mark_processed(directory: str, filename: str) -> None:
+            assert source.exists()
+            assert (directory, filename) == ("2024-01", "Cnaes.zip")
+            db.bulk_upsert.assert_called_once()
+
+        db.mark_processed.side_effect = mark_processed
+        pg_worker("Cnaes.zip", "2024-01", downloader, cfg)
+
+        db.mark_processed.assert_called_once()
+        db.disconnect.assert_called_once()
+        assert source.exists() is keep_files
