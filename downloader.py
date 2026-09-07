@@ -273,7 +273,7 @@ class Downloader:
     ) -> list[Path]:
         """Download a single ZIP file and extract CSV files."""
         url = f"{self.config.base_url}/{directory}/{filename}"
-        zip_path = self.temp_path / filename
+        zip_path = self.temp_path / f"{self._directory_slug(directory)}.{filename}"
 
         # Skip download if keeping files and valid ZIP already exists
         # Use info logging when tqdm is disabled (e.g., Docker, CI)
@@ -288,7 +288,10 @@ class Downloader:
         extracted_files: list[Path] = []
         try:
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                for member in zip_ref.namelist():
+                for info in zip_ref.infolist():
+                    if info.is_dir():
+                        continue
+                    member = info.filename
                     member_upper = member.upper()
                     is_cnpj_file = any(pattern in member_upper for pattern in CNPJ_FILE_PATTERNS)
 
@@ -297,6 +300,9 @@ class Downloader:
                         zip_ref.extract(member, self.temp_path)
                         extracted_files.append(extract_path)
                         logger.debug(f"Extracted: {member}")
+
+            if not extracted_files:
+                raise ValueError(f"No recognized source files in {directory}/{filename}")
 
         finally:
             # Cleanup ZIP file unless keeping files
@@ -336,7 +342,7 @@ class Downloader:
         # The .part name carries the source directory (month): CNPJ file names
         # repeat across monthly directories, and resuming (or 416-finalizing)
         # a partial that belongs to another month would corrupt the dataset.
-        part_path = zip_path.with_name(f"{zip_path.name}.{self._directory_slug(directory)}.part")
+        part_path = zip_path.with_name(f"{filename}.{self._directory_slug(directory)}.part")
 
         if zip_path.exists():
             zip_path.unlink()

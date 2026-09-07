@@ -450,7 +450,7 @@ class TestDownloadAndExtract:
         downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert scripted_get.calls[0]["headers"] == {"Accept-Encoding": "identity", "Range": f"bytes={split_at}-"}
-        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+        assert (tmp_path / "2024-03.Cnaes.zip").read_bytes() == zip_content
 
     def test_server_ignoring_range_discards_partial_and_restarts(
         self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -477,7 +477,7 @@ class TestDownloadAndExtract:
             "Accept-Encoding": "identity",
             "Range": f"bytes={len(b'stale-part')}-",
         }
-        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+        assert (tmp_path / "2024-03.Cnaes.zip").read_bytes() == zip_content
 
     def test_final_size_mismatch_raises_without_final_zip(
         self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -522,7 +522,7 @@ class TestDownloadAndExtract:
         with pytest.raises(RuntimeError, match="Incomplete download"):
             downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-        assert not (tmp_path / "Cnaes.zip").exists()
+        assert not (tmp_path / "2024-03.Cnaes.zip").exists()
         assert (tmp_path / "Cnaes.zip.2024-03.part").read_bytes() == zip_content[:second_split]
 
     def test_corrupt_zip_is_retried_then_raises(
@@ -550,7 +550,7 @@ class TestDownloadAndExtract:
             downloader.download_and_extract("2024-03", "Cnaes.zip")
 
         assert len(scripted_get.calls) == 2
-        assert not (tmp_path / "Cnaes.zip").exists()
+        assert not (tmp_path / "2024-03.Cnaes.zip").exists()
         assert not (tmp_path / "Cnaes.zip.2024-03.part").exists()
 
 
@@ -719,7 +719,7 @@ class TestCachedDownload:
         )
 
         # Pre-create a valid ZIP file
-        zip_path = tmp_path / "Cnaes.zip"
+        zip_path = tmp_path / "2024-03.Cnaes.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("CNAECSV.D51213", "0111301;Test")
 
@@ -873,7 +873,7 @@ class TestResumeEdgeCases:
 
         assert len(result) == 1
         assert not part_path.exists()
-        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+        assert (tmp_path / "2024-03.Cnaes.zip").read_bytes() == zip_content
 
     def test_416_with_mismatched_total_discards_partial(
         self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1049,7 +1049,7 @@ class TestResumeEdgeCases:
 
         with pytest.raises(DownloadIncompleteError, match="expected"):
             downloader.download_and_extract("2024-03", "Cnaes.zip")
-        assert not (tmp_path / "Cnaes.zip").exists()
+        assert not (tmp_path / "2024-03.Cnaes.zip").exists()
 
     def test_stale_partial_from_other_month_is_not_resumed(
         self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1079,7 +1079,7 @@ class TestResumeEdgeCases:
     ) -> None:
         downloader.config.keep_files = False
         zip_content = _create_test_zip(tmp_path, {"CNAECSV.D51213": "0111301;Test"})
-        stale_final = tmp_path / "Cnaes.zip"
+        stale_final = tmp_path / "2024-03.Cnaes.zip"
         stale_final.write_bytes(b"not the zip we want")
         scripted_get = _ScriptedGet(
             [
@@ -1116,7 +1116,7 @@ class TestResumeEdgeCases:
 
         downloader.download_and_extract("2024-03", "Cnaes.zip")
 
-        assert (tmp_path / "Cnaes.zip").read_bytes() == zip_content
+        assert (tmp_path / "2024-03.Cnaes.zip").read_bytes() == zip_content
 
     def test_206_missing_content_range_raises(
         self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1202,7 +1202,7 @@ class TestResumeEdgeCases:
         good_zip = bytes(zip_content)
         marker = zip_content.find(b"0111301")
         zip_content[marker] ^= 0xFF
-        (tmp_path / "Cnaes.zip").write_bytes(bytes(zip_content))
+        (tmp_path / "2024-03.Cnaes.zip").write_bytes(bytes(zip_content))
         scripted_get = _ScriptedGet(
             [
                 _ScriptedResponse(
@@ -1217,16 +1217,16 @@ class TestResumeEdgeCases:
 
         assert len(result) == 1
         assert len(scripted_get.calls) == 1
-        assert (tmp_path / "Cnaes.zip").read_bytes() == good_zip
+        assert (tmp_path / "2024-03.Cnaes.zip").read_bytes() == good_zip
 
     def test_cleanup_preserves_part_files(self, downloader: DownloadProbe, tmp_path: Path) -> None:
         downloader.config.keep_files = False
-        (tmp_path / "Cnaes.zip").write_bytes(b"done")
+        (tmp_path / "2024-03.Cnaes.zip").write_bytes(b"done")
         (tmp_path / "Empresas0.zip.2024-03.part").write_bytes(b"resume me")
 
         downloader.cleanup()
 
-        assert not (tmp_path / "Cnaes.zip").exists()
+        assert not (tmp_path / "2024-03.Cnaes.zip").exists()
         assert (tmp_path / "Empresas0.zip.2024-03.part").exists()
 
     def test_empty_keepalive_chunks_past_stall_timeout_raise(
@@ -1555,3 +1555,64 @@ def test_webdav_response_requires_href(downloader: DownloadProbe, href: str, lis
                 downloader.get_directory_files("2024-11")
             else:
                 downloader.get_available_directories()
+
+
+class TestDownloadSourceIntegrity:
+    def test_kept_zips_are_reused_only_for_the_same_month(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        downloader.config.keep_files = True
+        march = _create_test_zip(tmp_path, {"CNAECSV.csv": "01;March\n"})
+        april = _create_test_zip(tmp_path, {"CNAECSV.csv": "01;April\n"})
+        http = _ScriptedGet([_ScriptedResponse([body], {"Content-Length": str(len(body))}) for body in [march, april]])
+        monkeypatch.setattr(requests, "get", http)
+
+        for month, expected in [("2024-03", "March"), ("2024-04", "April"), ("2024-03", "March")]:
+            result = downloader.download_file(month, "Cnaes.zip")
+            assert result[0].read_text() == f"01;{expected}\n"
+
+        assert [call["url"] for call in http.calls] == [
+            f"{downloader.config.base_url}/2024-03/Cnaes.zip",
+            f"{downloader.config.base_url}/2024-04/Cnaes.zip",
+        ]
+
+    def test_legacy_cache_without_month_is_not_reused(
+        self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        downloader.config.keep_files = True
+        legacy = _create_test_zip(tmp_path, {"CNAECSV.csv": "01;Unknown month\n"})
+        (tmp_path / "Cnaes.zip").write_bytes(legacy)
+        current = _create_test_zip(tmp_path, {"CNAECSV.csv": "01;Current month\n"})
+        http = _ScriptedGet([_ScriptedResponse([current], {"Content-Length": str(len(current))})])
+        monkeypatch.setattr(requests, "get", http)
+
+        result = downloader.download_file("2024-03", "Cnaes.zip")
+
+        assert result[0].read_text() == "01;Current month\n"
+        assert len(http.calls) == 1
+        assert (tmp_path / "Cnaes.zip").read_bytes() == legacy
+
+    @pytest.mark.parametrize("keep_files", [False, True])
+    @pytest.mark.parametrize("entry", ["single", "reference_batch", "parallel_batch"])
+    @pytest.mark.parametrize("members", [{}, {"README.txt": "no source"}, {"CNAECSV/": ""}])
+    def test_zip_without_source_files_fails(
+        self,
+        downloader: DownloadProbe,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        keep_files: bool,
+        entry: str,
+        members: dict[str, str],
+    ) -> None:
+        downloader.config.keep_files = keep_files
+        body = _create_test_zip(tmp_path, members)
+        http = _ScriptedGet([_ScriptedResponse([body], {"Content-Length": str(len(body))})])
+        monkeypatch.setattr(requests, "get", http)
+        filename = "Empresas0.zip" if entry == "parallel_batch" else "Cnaes.zip"
+        with pytest.raises(ValueError, match=f"No recognized source files in 2024-03/{filename}"):
+            if entry == "single":
+                downloader.download_file("2024-03", filename)
+            else:
+                list(downloader.download_files("2024-03", [filename]))
+        assert len(http.calls) == 1
+        assert (tmp_path / f"2024-03.{filename}").exists() is keep_files
