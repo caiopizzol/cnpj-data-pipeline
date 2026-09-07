@@ -39,7 +39,7 @@ import os
 import sys
 from contextlib import closing
 from datetime import datetime, timezone
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 import psycopg2
 from psycopg2.extensions import connection, cursor
@@ -129,7 +129,7 @@ def cnpj_expected_dv(first_12: str) -> str:
     return f"{dv1}{dv2}"
 
 
-def measure_cnpj_check_digits(conn: connection, sample_pct: Optional[float] = None) -> CheckDigitMeasurement:
+def measure_cnpj_check_digits(conn: connection, sample_pct: float | None = None) -> CheckDigitMeasurement:
     """Walk estabelecimentos and count valid vs invalid stored check digits.
 
     Args:
@@ -572,7 +572,7 @@ def sample_pct(value: str) -> float:
     return parsed
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument(
         "--full",

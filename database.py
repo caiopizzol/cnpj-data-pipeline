@@ -5,7 +5,6 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import List, Set
 
 import polars as pl
 import psycopg2
@@ -17,12 +16,9 @@ logger = logging.getLogger(__name__)
 class Database:
     """PostgreSQL database handler with temp table upsert."""
 
-    def __init__(
-        self, database_url: str, pre_truncated: set[str] | None = None, retry_attempts: int = 3, retry_delay: int = 5
-    ):
+    def __init__(self, database_url: str, pre_truncated: set[str] | None = None, retry_attempts: int = 3):
         self.database_url = database_url
         self.retry_attempts = retry_attempts
-        self.retry_delay = retry_delay
         self._pk_cache: dict[str, list[str]] = {}
         self._truncated_tables: set[str] = set(pre_truncated) if pre_truncated else set()
         self.conn: connection | None = None
@@ -79,7 +75,7 @@ class Database:
             conn.rollback()
             raise
 
-    def get_processed_files(self, directory: str) -> Set[str]:
+    def get_processed_files(self, directory: str) -> set[str]:
         """Get all processed filenames for a directory."""
         conn = self.connect()
         try:
@@ -123,7 +119,7 @@ class Database:
             conn.commit()
         self._truncated_tables.add(table_name)
 
-    def bulk_upsert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
+    def bulk_upsert(self, df: pl.DataFrame, table_name: str, columns: list[str]):
         """Bulk upsert using temp table + COPY."""
         if df.is_empty():
             return
@@ -140,7 +136,7 @@ class Database:
                 )
 
                 # 2. COPY to temp
-                self._copy_to_temp(cur, df, temp_table, columns)
+                self._copy_dataframe(cur, df, temp_table, columns)
 
                 # 3. Upsert from temp to main
                 primary_keys = self._get_primary_keys(cur, table_name)
@@ -153,7 +149,7 @@ class Database:
             logger.error(f"Error: {table_name}: {e}")
             raise
 
-    def bulk_insert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
+    def bulk_insert(self, df: pl.DataFrame, table_name: str, columns: list[str]):
         """Bulk insert under LOADING_STRATEGY=replace.
 
         First batch per table, unless pre-truncated: TRUNCATE then COPY
@@ -179,7 +175,7 @@ class Database:
                     self._truncated_tables.add(table_name)
                     logger.info(f"Truncated {table_name}")
                     # No existing rows can conflict; this batch must have unique keys.
-                    self._copy_to_temp(cur, df, table_name, columns)
+                    self._copy_dataframe(cur, df, table_name, columns)
                 else:
                     # Cross-batch PK overlap path. Same temp-then-upsert
                     # pattern as bulk_upsert.
@@ -189,7 +185,7 @@ class Database:
                         f"(LIKE {table_name} INCLUDING DEFAULTS INCLUDING STORAGE) ON COMMIT DROP"
                     )
                     cur.execute(f"TRUNCATE {temp_table}")
-                    self._copy_to_temp(cur, df, temp_table, columns)
+                    self._copy_dataframe(cur, df, temp_table, columns)
                     primary_keys = self._get_primary_keys(cur, table_name)
                     self._upsert_from_temp(cur, temp_table, table_name, columns, primary_keys)
 
@@ -200,18 +196,18 @@ class Database:
             logger.error(f"Error: {table_name}: {e}")
             raise
 
-    def _copy_to_temp(self, cur: cursor, df: pl.DataFrame, temp_table: str, columns: List[str]):
+    def _copy_dataframe(self, cur: cursor, df: pl.DataFrame, table_name: str, columns: list[str]):
         """COPY a DataFrame to the supplied destination table using Polars CSV."""
         columns_str = ", ".join([f'"{col}"' for col in columns])
         csv_bytes = df.write_csv(include_header=False).encode("utf-8", errors="replace")
         csv_bytes = csv_bytes.replace(b"\x00", b"")
 
         cur.copy_expert(
-            f"COPY {temp_table} ({columns_str}) FROM STDIN WITH CSV ENCODING 'UTF8'",
+            f"COPY {table_name} ({columns_str}) FROM STDIN WITH CSV ENCODING 'UTF8'",
             io.BytesIO(csv_bytes),
         )
 
-    def _get_primary_keys(self, cur: cursor, table_name: str) -> List[str]:
+    def _get_primary_keys(self, cur: cursor, table_name: str) -> list[str]:
         """Get primary key columns for a table with caching."""
         if table_name in self._pk_cache:
             return self._pk_cache[table_name]
@@ -232,7 +228,7 @@ class Database:
         return primary_keys
 
     def _upsert_from_temp(
-        self, cur: cursor, temp_table: str, target_table: str, columns: List[str], primary_keys: List[str]
+        self, cur: cursor, temp_table: str, target_table: str, columns: list[str], primary_keys: list[str]
     ):
         """Upsert from temp to target table."""
         columns_str = ", ".join([f'"{col}"' for col in columns])

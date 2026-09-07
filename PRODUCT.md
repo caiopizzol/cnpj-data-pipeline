@@ -22,10 +22,10 @@ Execute com `cnpj-pipeline`, `python main.py`, `just run` ou Docker.
 | --- | --- | --- | --- |
 | Escolhe o mês e baixa arquivos, com retomada e novas tentativas após falhas | `--list`, `--month` | [main.py](main.py), [downloader.py](downloader.py), [config.py](config.py) | [Downloads](tests/test_downloader.py): listagem e retomada; [execução](tests/test_main.py) |
 | Ajusta os registros, gera IDs de sócios e detecta mudanças no número de colunas | Automático nas duas saídas | [processor.py](processor.py) | [Processamento](tests/test_processor.py): ajustes, IDs e layout |
-| Carrega PostgreSQL e registra arquivos concluídos por mês | `OUTPUT_FORMAT=postgres`, `LOADING_STRATEGY=upsert` ou `replace`; `--force` para reprocessar | [database.py](database.py), [initial.sql](initial.sql), [main.py](main.py) | [Integração](tests/test_integration.py): `TestFullPipeline`, recarga e chaves repetidas entre lotes; [controle de arquivos](tests/test_database.py) |
+| Carrega PostgreSQL e registra arquivos concluídos por mês | `OUTPUT_FORMAT=postgres`, `LOADING_STRATEGY=upsert` ou `replace`; `--force` para reprocessar | [database.py](database.py), [initial.sql](initial.sql), [main.py](main.py) | [Integração](tests/integration): `TestFullPipeline`, recarga e chaves repetidas entre lotes; [controle de arquivos](tests/test_database.py) |
 | Exporta um Parquet por tabela, com ZSTD e manifesto de origem e versões | `OUTPUT_FORMAT=parquet`; tipos opcionais com `PARQUET_TYPED_OUTPUT` | [parquet_writer.py](parquet_writer.py), [processor.py](processor.py), [main.py](main.py) | [Exportação](tests/test_parquet_writer.py): arquivos e metadados; [tipos](tests/test_processor.py) |
-| Mede problemas de qualidade no PostgreSQL | `just data-quality-report` | [data_quality_report.py](scripts/data_quality_report.py) | [Relatório](tests/test_data_quality_report.py): dígitos verificadores e amostragem; [medições no banco](tests/test_integration.py): `TestDataQualityReportMeasurements` |
-| Cria tabelas derivadas que você escolher | Rode as receitas SQL manualmente | [recipes/postgres](recipes/postgres) | [Integração](tests/test_integration.py): `TestRecipe*`, contagens, valores, preservação de campos e reexecução |
+| Mede problemas de qualidade no PostgreSQL | `just data-quality-report` | [data_quality_report.py](scripts/data_quality_report.py) | [Relatório](tests/test_data_quality_report.py): dígitos verificadores e amostragem; [medições no banco](tests/integration): `TestDataQualityReportMeasurements` |
+| Cria tabelas derivadas que você escolher | Rode as receitas SQL manualmente | [recipes/postgres](recipes/postgres) | [Integração](tests/integration): `TestRecipe*`, contagens, valores, preservação de campos e reexecução |
 
 ## Antes de usar
 

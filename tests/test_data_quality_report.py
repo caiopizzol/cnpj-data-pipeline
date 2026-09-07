@@ -1,17 +1,12 @@
 """Tests for scripts/data_quality_report.py."""
 
 import argparse
-import sys
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
-# scripts/ isn't a package; add it to sys.path so we can import directly.
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-
-import data_quality_report as report_module  # noqa: E402
-from data_quality_report import cnpj_expected_dv, format_report, sample_pct  # noqa: E402
+from scripts import data_quality_report as report_module
+from scripts.data_quality_report import cnpj_expected_dv, format_report, sample_pct
 
 
 def _base_measurements(enriched_orphans: report_module.EnrichedMeasurement) -> report_module.Measurements:

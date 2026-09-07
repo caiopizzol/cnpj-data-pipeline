@@ -107,7 +107,7 @@ class ParquetWriter:
             )
         return self._writers[table_name]
 
-    def write_batch(self, df: pl.DataFrame, table_name: str, columns: list[str]) -> int:
+    def write_batch(self, df: pl.DataFrame, table_name: str) -> int:
         """Write a batch of data to Parquet. Thread-safe. Returns the number of rows written."""
         arrow_table = df.to_arrow()
         rows = len(df)

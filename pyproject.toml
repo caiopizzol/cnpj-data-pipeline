@@ -15,7 +15,7 @@ dependencies = [
 cnpj-pipeline = "main:main"
 
 [tool.setuptools]
-py-modules = ["config", "database", "downloader", "processor", "parquet_writer", "main"]
+py-modules = ["file_types", "config", "database", "downloader", "processor", "parquet_writer", "main"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
@@ -55,4 +55,3 @@ select = ["E", "F", "I"]
 [tool.pyright]
 typeCheckingMode = "strict"
 pythonVersion = "3.11"
-extraPaths = ["scripts"]

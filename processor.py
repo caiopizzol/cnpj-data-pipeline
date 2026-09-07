@@ -6,129 +6,20 @@ import logging
 import os
 import tempfile
 import uuid
+from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
-from typing import Generator, List, Optional, Tuple
 
 import polars as pl
 
+from file_types import COLUMNS, FILE_MAPPINGS, OUTPUT_COLUMNS
+from file_types import get_file_type as get_file_type
+
 logger = logging.getLogger(__name__)
 
-# File pattern → table name mapping
-FILE_MAPPINGS = {
-    "CNAECSV": "cnaes",
-    "MOTICSV": "motivos",
-    "MUNICCSV": "municipios",
-    "NATJUCSV": "naturezas_juridicas",
-    "PAISCSV": "paises",
-    "QUALSCSV": "qualificacoes_socios",
-    "EMPRECSV": "empresas",
-    "ESTABELE": "estabelecimentos",
-    "SOCIOCSV": "socios",
-    "SIMPLESCSV": "dados_simples",
-}
 
-# Column names by file type
-COLUMNS = {
-    "CNAECSV": ["codigo", "descricao"],
-    "MOTICSV": ["codigo", "descricao"],
-    "MUNICCSV": ["codigo", "descricao"],
-    "NATJUCSV": ["codigo", "descricao"],
-    "PAISCSV": ["codigo", "descricao"],
-    "QUALSCSV": ["codigo", "descricao"],
-    "EMPRECSV": [
-        "cnpj_basico",
-        "razao_social",
-        "natureza_juridica",
-        "qualificacao_responsavel",
-        "capital_social",
-        "porte",
-        "ente_federativo_responsavel",
-    ],
-    "ESTABELE": [
-        "cnpj_basico",
-        "cnpj_ordem",
-        "cnpj_dv",
-        "identificador_matriz_filial",
-        "nome_fantasia",
-        "situacao_cadastral",
-        "data_situacao_cadastral",
-        "motivo_situacao_cadastral",
-        "nome_cidade_exterior",
-        "pais",
-        "data_inicio_atividade",
-        "cnae_fiscal_principal",
-        "cnae_fiscal_secundaria",
-        "tipo_logradouro",
-        "logradouro",
-        "numero",
-        "complemento",
-        "bairro",
-        "cep",
-        "uf",
-        "municipio",
-        "ddd_1",
-        "telefone_1",
-        "ddd_2",
-        "telefone_2",
-        "ddd_fax",
-        "fax",
-        "correio_eletronico",
-        "situacao_especial",
-        "data_situacao_especial",
-    ],
-    "SOCIOCSV": [
-        "cnpj_basico",
-        "identificador_de_socio",
-        "nome_socio",
-        "cnpj_cpf_do_socio",
-        "qualificacao_do_socio",
-        "data_entrada_sociedade",
-        "pais",
-        "representante_legal",
-        "nome_do_representante",
-        "qualificacao_do_representante_legal",
-        "faixa_etaria",
-    ],
-    "SIMPLESCSV": [
-        "cnpj_basico",
-        "opcao_pelo_simples",
-        "data_opcao_pelo_simples",
-        "data_exclusao_do_simples",
-        "opcao_pelo_mei",
-        "data_opcao_pelo_mei",
-        "data_exclusao_do_mei",
-    ],
-}
-
-# Output column lists for tables whose target schema includes columns that
-# don't appear in the source CSV. Synthetic columns are emitted by transform.
-# Other file types insert exactly COLUMNS[file_type].
-#
-# SOCIOCSV: socio_id is a deterministic UUID derived in transform from the
-# canonical identity tuple. It is the primary key of socios; the masked CPF
-# alone is not unique (issue #78).
-OUTPUT_COLUMNS = {
-    "SOCIOCSV": ["socio_id"] + COLUMNS["SOCIOCSV"],
-}
-
-
-def _output_columns(file_type: str) -> List[str]:
+def _output_columns(file_type: str) -> list[str]:
     return OUTPUT_COLUMNS.get(file_type, COLUMNS[file_type])
-
-
-def get_file_type(filename: str) -> Optional[str]:
-    """Determine file type from filename."""
-    filename_upper = filename.upper()
-
-    # Special case for Simples files that have different naming pattern
-    if "SIMPLES" in filename_upper:
-        return "SIMPLESCSV"
-
-    for pattern in FILE_MAPPINGS:
-        if pattern in filename_upper:
-            return pattern
-    return None
 
 
 class LayoutDriftError(ValueError):
@@ -162,7 +53,7 @@ def check_layout(utf8_file: Path, file_type: str) -> None:
             f"Layout drift in {utf8_file.name} ({file_type}): "
             f"expected {expected} columns, got {actual}. "
             f"Receita Federal may have changed the file layout - update "
-            f"COLUMNS[{file_type!r}] in processor.py before re-running."
+            f"COLUMNS[{file_type!r}] in file_types.py before re-running."
         )
 
 
@@ -184,7 +75,7 @@ def convert_encoding(file_path: Path) -> Path:
 
 def process_file(
     file_path: Path, batch_size: int = 50000, typed: bool = False
-) -> Generator[Tuple[pl.DataFrame, str, List[str]], None, None]:
+) -> Generator[tuple[pl.DataFrame, str, list[str]], None, None]:
     """Process a CSV file and yield batches as Polars DataFrames.
 
     Args:
