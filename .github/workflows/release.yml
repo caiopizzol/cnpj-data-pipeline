@@ -16,21 +16,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Create release token
-        id: token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-issues: write
-
       - name: Release Please
         id: release
         uses: googleapis/release-please-action@v4
         with:
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
       - uses: actions/checkout@v6
         if: ${{ steps.release.outputs.release_created == 'true' }}
@@ -51,4 +41,4 @@ jobs:
           model: claude-haiku-4-5
           style: concise
           update-release: 'true'
-          github-token: ${{ steps.token.outputs.token }}
+          github-token: ${{ secrets.RELEASE_PLEASE_TOKEN }}

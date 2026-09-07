@@ -261,4 +261,4 @@ Estes dados **não** são vazados, obtidos ilegalmente, ou protegidos por sigilo
 <a href="https://github.com/dversoza"><img src="https://github.com/dversoza.png" width="50" height="50" alt="dversoza" title="dversoza" /></a>
 <a href="https://github.com/renerlemes"><img src="https://github.com/renerlemes.png" width="50" height="50" alt="renerlemes" title="Rener Lemes" /></a>
 
-See [release automation](docs/releases.md) for release PRs, GitHub App setup, and publishing.
+See [release automation](docs/releases.md) for release PRs, token setup, and publishing.

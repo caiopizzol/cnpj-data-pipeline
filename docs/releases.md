@@ -8,18 +8,13 @@ The lockfile selector uses `name.value` because Release Please’s TOML parser w
 
 The migration starts from the last published version, `v1.38.3`. Unreleased commits stay in the first release PR.
 
-## One-time GitHub App setup
+## GitHub token
 
-Before merging this migration:
+Store a personal access token as repository secret `RELEASE_PLEASE_TOKEN`. A fine-grained token needs access to this repository with **Contents: read/write**, **Pull requests: read/write**, and **Issues: read/write**. Renew the secret when the token expires or is rotated.
 
-1. Create a GitHub App with repository permissions **Contents: read/write**, **Pull requests: read/write**, and **Issues: read/write**. No webhook is needed.
-2. Install it on this repository only. It does not need permission to bypass branch protection.
-3. Set repository variable `RELEASE_APP_ID` to the App ID.
-4. Generate a private key and store it as repository secret `RELEASE_APP_PRIVATE_KEY`.
+The personal token lets generated PRs trigger CI and published releases trigger Docker publishing. The default `GITHUB_TOKEN` suppresses those follow-up workflows. Keep the existing branch protection and required checks.
 
-The workflow requests a short-lived installation token for this repository. The default `GITHUB_TOKEN` would suppress CI runs on generated PRs and the Docker workflow on published releases.
-
-After merging, check that the first release PR runs CI, Codecov, and Cubic. Keep the existing required checks. If checks do not run, check the App installation and any bot filters in the review service.
+After merging, check that the first release PR runs CI, Codecov, and Cubic. If checks do not run, check token permissions and any bot filters in the review service.
 
 ## Recovery
 
