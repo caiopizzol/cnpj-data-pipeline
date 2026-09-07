@@ -5,8 +5,6 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 
 @dataclass
 class Config:
@@ -42,6 +40,7 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         """Create config from environment variables."""
+        load_dotenv()
         return cls(
             database_url=os.getenv("DATABASE_URL", ""),
             batch_size=int(os.getenv("BATCH_SIZE", "500000")),
@@ -64,6 +63,3 @@ class Config:
             base_url=os.getenv("BASE_URL", "https://arquivos.receitafederal.gov.br/public.php/webdav"),
             share_token=os.getenv("SHARE_TOKEN", "YggdBLfdninEJX9"),
         )
-
-
-config = Config.from_env()

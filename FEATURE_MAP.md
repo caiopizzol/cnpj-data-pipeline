@@ -52,14 +52,14 @@ Ao terminar: `docker rm -f cnpj-feature-map-db`.
 
 Os comandos `verified` foram repetidos em outra cópia limpa, com banco novo. Nas receitas, isso confirma execução e leitura dos dados de teste, sem medir desempenho na base completa.
 
-Os testes automatizados são uma checagem separada. Os testes SQL dependem uns dos outros; rode o arquivo inteiro:
+Os testes automatizados são uma checagem separada. Os testes SQL preparam suas próprias dependências. Rode todos ou escolha um arquivo:
 
 ```bash
-uv run --frozen pytest tests/test_integration.py -q
+uv run --frozen pytest tests/integration -q
 ```
 
-Use o PostgreSQL acima: os testes criam e removem `cnpj_test`.
-Nas receitas, a classe indicada fica em [test_integration.py](tests/test_integration.py); o método `test_recipe_executes` confirma a criação das tabelas.
+Use o PostgreSQL acima: os testes criam e removem `cnpj_test`, `cnpj_test_empty` e `cnpj_test_source`.
+Nas receitas, a classe indicada fica em [tests/integration](tests/integration); o método `test_recipe_executes` confirma a criação das tabelas.
 Todas as receitas partem do banco de teste carregado. Cada bloco já inclui suas dependências.
 
 ## Listar meses
@@ -98,7 +98,7 @@ OUTPUT_FORMAT=postgres LOADING_STRATEGY=upsert uv run --frozen python main.py --
 Referências: `--month` (`-m`), `OUTPUT_FORMAT`, `LOADING_STRATEGY`, `processed_files`. Sem `--month`, usa o mês mais recente.
 Código: [main.py](main.py) `main/pg_worker`, [database.py](database.py), [initial.sql](initial.sql).
 Executado apenas com dados de teste, pelo preparo do banco. Download mensal não testado.
-Testes: [test_integration.py](tests/test_integration.py) `TestFullPipeline` verifica carga e recarga; [test_main.py](tests/test_main.py) `TestParseArgs` verifica as opções. Isso não garante atualizar a base inteira de uma só vez.
+Testes: [testes de integração](tests/integration) `TestFullPipeline` verifica carga e recarga; [test_main.py](tests/test_main.py) `TestParseArgs` verifica as opções. Isso não garante atualizar a base inteira de uma só vez.
 
 ## Retomar ou reprocessar a carga
 
@@ -121,7 +121,7 @@ OUTPUT_FORMAT=postgres LOADING_STRATEGY=replace uv run --frozen python main.py -
 ```
 
 Referências: `LOADING_STRATEGY=replace`, `--force`. Código: [main.py](main.py), [database.py](database.py) `bulk_insert/truncate_table`.
-Mês completo não testado. Teste: [test_integration.py](tests/test_integration.py) `TestFullPipeline.test_replace_handles_cross_batch_pk_overlap` verifica chaves repetidas entre lotes; `test_replace_strategy` verifica a substituição com fixtures.
+Mês completo não testado. Teste: [testes de integração](tests/integration) `TestFullPipeline.test_replace_handles_cross_batch_pk_overlap` verifica chaves repetidas entre lotes; `test_replace_strategy` verifica a substituição com fixtures.
 
 ## Baixar e processar em paralelo
 
@@ -144,7 +144,7 @@ OUTPUT_FORMAT=parquet PARQUET_OUTPUT_DIR=./parquet-string PARQUET_TYPED_OUTPUT=f
 
 Referências: `OUTPUT_FORMAT`, `PARQUET_OUTPUT_DIR`, `manifest.json`, `schemaVersion`, `sourceMonth`. Código: [main.py](main.py), [parquet_writer.py](parquet_writer.py).
 Mês completo não testado. Testes: [test_main.py](tests/test_main.py) `TestParquetOutput.test_writes_parquet_and_manifest` usa download simulado; [test_parquet_writer.py](tests/test_parquet_writer.py) verifica arquivos, metadados e ZSTD reais.
-Arquivo existente faz a tabela ser pulada, mesmo se incompleto ou de outro mês. `TestParquetResume` cobre essa regra.
+Tabelas em gravação usam `.partial`; após falha, a próxima execução refaz a tabela. A retomada verifica mês, versão do schema e modo string/tipado nos metadados de cada `.parquet`. Metadados ausentes ou incompatíveis interrompem a execução antes de novos downloads; use uma pasta nova para exports antigos. CSVs reconhecidos sem linhas também interrompem a execução. `TestParquetResume` e os testes de retomada em `test_main.py` cobrem essas regras.
 
 ## Exportar Parquet com tipos
 
@@ -179,7 +179,7 @@ uv run --frozen python scripts/data_quality_report.py --sample-pct 0.5
 ```
 
 Referências: `DATABASE_URL`, `--full`, `--sample-pct`. Código: [scripts/data_quality_report.py](scripts/data_quality_report.py) `main`.
-Executado: os três modos geraram relatório. Testes: [test_data_quality_report.py](tests/test_data_quality_report.py) verifica DV e amostragem; [test_integration.py](tests/test_integration.py) `TestDataQualityReportMeasurements` verifica referências ausentes e enriquecidas.
+Executado: os três modos geraram relatório. Testes: [test_data_quality_report.py](tests/test_data_quality_report.py) verifica DV e amostragem; [testes de integração](tests/integration) `TestDataQualityReportMeasurements` verifica referências ausentes e enriquecidas.
 Só o dígito verificador (DV) usa amostra por padrão; o restante lê tudo. Problemas encontrados não fazem o comando terminar com erro.
 
 ## Referências enriquecidas

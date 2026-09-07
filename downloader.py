@@ -5,13 +5,13 @@ import os
 import re
 import time
 import zipfile
+from collections.abc import Callable, Generator, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Condition, Lock
 from time import monotonic
-from typing import Callable, Generator, Iterator, List, Mapping, Tuple
 from xml.etree import ElementTree
 
 import requests
@@ -19,32 +19,10 @@ import urllib3.exceptions
 from tqdm import tqdm
 
 from config import Config
+from file_types import CNPJ_FILE_PATTERNS as CNPJ_FILE_PATTERNS
+from file_types import REFERENCE_FILES
 
 logger = logging.getLogger(__name__)
-
-# Known CNPJ file patterns for extraction
-CNPJ_FILE_PATTERNS = [
-    "CNAECSV",
-    "MOTICSV",
-    "MUNICCSV",
-    "NATJUCSV",
-    "PAISCSV",
-    "QUALSCSV",
-    "EMPRECSV",
-    "ESTABELE",
-    "SOCIOCSV",
-    "SIMPLES",
-]
-
-# Reference tables (must be processed first)
-REFERENCE_FILES = {
-    "Cnaes.zip",
-    "Motivos.zip",
-    "Municipios.zip",
-    "Naturezas.zip",
-    "Paises.zip",
-    "Qualificacoes.zip",
-}
 
 # WebDAV XML namespace
 DAV_NS = {"d": "DAV:"}
@@ -169,7 +147,7 @@ class Downloader:
         response.raise_for_status()
         return ElementTree.fromstring(response.content)
 
-    def get_available_directories(self) -> List[str]:
+    def get_available_directories(self) -> list[str]:
         """Get all available data directories from Receita Federal."""
         root = self._propfind()
 
@@ -193,7 +171,7 @@ class Downloader:
         """Get the latest data directory from Receita Federal."""
         return self.get_available_directories()[-1]
 
-    def get_directory_files(self, directory: str) -> List[str]:
+    def get_directory_files(self, directory: str) -> list[str]:
         """Get list of ZIP files in a directory."""
         root = self._propfind(directory)
 
@@ -210,12 +188,12 @@ class Downloader:
 
         return files
 
-    def download_file(self, directory: str, filename: str) -> List[Path]:
+    def download_file(self, directory: str, filename: str) -> list[Path]:
         """Download and extract a single ZIP file. Returns list of extracted CSV paths."""
         self._prune_stale_partials(directory)
         return self._download_and_extract(directory, filename)
 
-    def download_files(self, directory: str, files: List[str]) -> Iterator[Tuple[Path, str]]:
+    def download_files(self, directory: str, files: list[str]) -> Iterator[tuple[Path, str]]:
         """
         Download files with parallel support.
 
@@ -250,13 +228,13 @@ class Downloader:
     def _download_parallel(
         self,
         directory: str,
-        files: List[str],
+        files: list[str],
         adaptive_concurrency: AdaptiveDownloadConcurrency,
-    ) -> Iterator[Tuple[Path, str]]:
+    ) -> Iterator[tuple[Path, str]]:
         """Download data files in parallel using ThreadPoolExecutor."""
         with ThreadPoolExecutor(max_workers=self.config.download_workers) as executor:
             next_file_index = 0
-            future_to_filename: dict[Future[List[Path]], str] = {}
+            future_to_filename: dict[Future[list[Path]], str] = {}
 
             def submit_until_limit() -> None:
                 nonlocal next_file_index
@@ -276,7 +254,7 @@ class Downloader:
             submit_until_limit()
             while future_to_filename:
                 completed_futures, _ = wait(future_to_filename, return_when=FIRST_COMPLETED)
-                completed_downloads: list[tuple[str, List[Path]]] = []
+                completed_downloads: list[tuple[str, list[Path]]] = []
                 for future in completed_futures:
                     filename = future_to_filename.pop(future)
                     extracted_files = future.result()
@@ -292,7 +270,7 @@ class Downloader:
         directory: str,
         filename: str,
         adaptive: AdaptiveDownloadConcurrency | None = None,
-    ) -> List[Path]:
+    ) -> list[Path]:
         """Download a single ZIP file and extract CSV files."""
         url = f"{self.config.base_url}/{directory}/{filename}"
         zip_path = self.temp_path / filename

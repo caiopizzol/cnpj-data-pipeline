@@ -12,7 +12,7 @@ from database import Database
 
 class DatabaseProbe(Database):
     get_primary_keys = Database._get_primary_keys
-    copy_to_temp = Database._copy_to_temp
+    copy_dataframe = Database._copy_dataframe
     upsert_from_temp = Database._upsert_from_temp
 
     @property
@@ -365,7 +365,7 @@ class TestCopyToTemp:
         df = pl.DataFrame({"col": ["hello\x00world"]})
         mock_cur = MagicMock()
 
-        connected_db.copy_to_temp(mock_cur, df, "temp_table", ["col"])
+        connected_db.copy_dataframe(mock_cur, df, "temp_table", ["col"])
 
         copy_call = mock_cur.copy_expert.call_args
         csv_buffer = copy_call[0][1]

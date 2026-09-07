@@ -89,9 +89,14 @@ class TableStats:
 class ParquetWriter:
     """Streams DataFrames to single Parquet files per table."""
 
-    def __init__(self, output_dir: str | Path):
+    def __init__(self, output_dir: str | Path, *, source_month: str | None = None, typed: bool = False):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.provenance = {
+            "cnpj.sourceMonth": source_month or "",
+            "cnpj.schemaVersion": SCHEMA_VERSION,
+            "cnpj.typed": str(typed).lower(),
+        }
         self.stats: dict[str, TableStats] = {}
         self._writers: dict[str, pq.ParquetWriter] = {}
         self._lock = threading.Lock()
@@ -99,15 +104,16 @@ class ParquetWriter:
     def _get_writer(self, table_name: str, schema: pa.Schema) -> pq.ParquetWriter:
         """Get or create a ParquetWriter for a table."""
         if table_name not in self._writers:
-            path = self.output_dir / f"{table_name}.parquet"
+            path = self.output_dir / f"{table_name}.parquet.partial"
             self._writers[table_name] = pq.ParquetWriter(
                 str(path),
                 schema,
                 compression=COMPRESSION,
             )
+            self._writers[table_name].add_key_value_metadata(self.provenance)
         return self._writers[table_name]
 
-    def write_batch(self, df: pl.DataFrame, table_name: str, columns: list[str]) -> int:
+    def write_batch(self, df: pl.DataFrame, table_name: str) -> int:
         """Write a batch of data to Parquet. Thread-safe. Returns the number of rows written."""
         arrow_table = df.to_arrow()
         rows = len(df)
@@ -131,12 +137,37 @@ class ParquetWriter:
         del self._writers[table_name]
 
         path = self.output_dir / f"{table_name}.parquet"
-        if path.exists():
-            size = path.stat().st_size
-            self.stats[table_name].size_bytes = size
-            self.stats[table_name].file = str(path.relative_to(self.output_dir))
-            return path
-        return None
+        (self.output_dir / f"{table_name}.parquet.partial").replace(path)
+        self.stats[table_name].size_bytes = path.stat().st_size
+        self.stats[table_name].file = path.name
+        return path
+
+    def include_existing_table(self, table_name: str) -> None:
+        """Include a resumed table in the manifest, validating its Parquet footer."""
+        path = self.output_dir / f"{table_name}.parquet"
+        with pq.ParquetFile(path) as existing:
+            metadata = existing.metadata.metadata or {}
+            for key, expected in self.provenance.items():
+                actual = metadata.get(key.encode())
+                if not expected or actual != expected.encode():
+                    raise ValueError(
+                        f"Cannot resume {path.name}: {key} is {actual!r}, expected {expected!r}. "
+                        "Use a fresh output directory or regenerate this export."
+                    )
+            if existing.metadata.num_rows == 0:
+                raise ValueError(f"Cannot resume {path.name}: empty table. Regenerate this export.")
+            self.stats[table_name] = TableStats(
+                rows=existing.metadata.num_rows, size_bytes=path.stat().st_size, file=path.name
+            )
+
+    def abort(self) -> None:
+        """Release writers without publishing incomplete tables."""
+        for table_name, writer in self._writers.items():
+            try:
+                writer.close()
+            except Exception:
+                logger.exception("Failed to close partial output for %s", table_name)
+        self._writers.clear()
 
     def close(self):
         """Close all open writers."""

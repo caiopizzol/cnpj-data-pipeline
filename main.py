@@ -14,68 +14,26 @@ import argparse
 import logging
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from tqdm import tqdm
 
-from config import Config, config
+from config import Config
 from downloader import Downloader
-from processor import FILE_MAPPINGS, get_file_type, process_file
+from file_types import FILE_MAPPINGS, get_zip_file_type
+from file_types import get_file_priority as get_file_priority
+from file_types import group_files_by_dependency as group_files_by_dependency
+from processor import process_file
 
 if TYPE_CHECKING:
+    from database import Database
     from parquet_writer import ParquetWriter
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 logger = logging.getLogger(__name__)
-
-# Dependency groups — files within the same group have no inter-dependencies
-# and can be processed in parallel. Groups must be processed in order.
-DEPENDENCY_GROUPS = [
-    ["CNAECSV", "MOTICSV", "MUNICCSV", "NATJUCSV", "PAISCSV", "QUALSCSV"],  # references
-    ["EMPRECSV"],  # empresas
-    ["ESTABELE", "SOCIOCSV", "SIMPLESCSV"],  # depends on empresas
-]
-
-# Flat processing order derived from dependency groups (for sorting)
-PROCESSING_ORDER = [ft for group in DEPENDENCY_GROUPS for ft in group]
-
-# ZIP filename prefix → file type (zip names differ from CSV names inside)
-ZIP_PREFIX_MAP = [
-    ("SIMPLES", "SIMPLESCSV"),
-    ("CNAE", "CNAECSV"),
-    ("MOTI", "MOTICSV"),
-    ("MUNIC", "MUNICCSV"),
-    ("NATUR", "NATJUCSV"),
-    ("PAIS", "PAISCSV"),
-    ("QUALIFICAC", "QUALSCSV"),
-    ("EMPRES", "EMPRECSV"),
-    ("ESTABELE", "ESTABELE"),
-    ("SOCIO", "SOCIOCSV"),
-]
-
-
-def get_zip_file_type(zip_filename: str) -> str | None:
-    """Determine file type from ZIP filename."""
-    name = zip_filename.upper()
-    for prefix, file_type in ZIP_PREFIX_MAP:
-        if name.startswith(prefix):
-            return file_type
-    return None
-
-
-def get_file_priority(filename: str) -> int:
-    """Get processing priority for a file (lower = first)."""
-    file_type = get_zip_file_type(filename) or get_file_type(filename)
-    if file_type in PROCESSING_ORDER:
-        return PROCESSING_ORDER.index(file_type)
-    return 999
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,42 +50,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def group_files_by_dependency(files: list[str]) -> list[list[str]]:
-    """Group pending files by dependency level. Returns ordered list of groups."""
-    groups: list[list[str]] = [[] for _ in DEPENDENCY_GROUPS]
-    for f in files:
-        file_type = get_zip_file_type(f)
-        if not file_type:
-            continue
-        for i, dep_types in enumerate(DEPENDENCY_GROUPS):
-            if file_type in dep_types:
-                groups[i].append(f)
-                break
-    return groups
-
-
 def pg_worker(
     zip_filename: str, directory: str, downloader: Downloader, cfg: Config, pre_truncated: set[str] | None = None
 ) -> None:
     """Worker: download, process, and load one file to PostgreSQL."""
     from database import Database
 
-    db = Database(
-        cfg.database_url, pre_truncated=pre_truncated, retry_attempts=cfg.retry_attempts, retry_delay=cfg.retry_delay
-    )
+    db = Database(cfg.database_url, pre_truncated=pre_truncated, retry_attempts=cfg.retry_attempts)
     try:
         for csv_path in downloader.download_file(directory, zip_filename):
-            rows = 0
-            load = db.bulk_insert if cfg.loading_strategy == "replace" else db.bulk_upsert
-            for batch, table_name, columns in process_file(csv_path, cfg.batch_size):
-                load(batch, table_name, columns)
-                rows += len(batch)
-
-            db.mark_processed(directory, zip_filename)
-            logger.info(f"  {csv_path.name}: {rows:,} rows")
-
-            if csv_path.exists() and not cfg.keep_files:
-                csv_path.unlink()
+            load_postgres_csv(csv_path, zip_filename, directory, db, cfg)
     except Exception as e:
         logger.error(f"Error processing {zip_filename}: {e}")
         raise
@@ -141,23 +73,197 @@ def parquet_worker(
     """Worker: download, process, and write one file to Parquet."""
     for csv_path in downloader.download_file(directory, zip_filename):
         try:
-            rows = 0
-            for batch, table_name, columns in process_file(csv_path, cfg.batch_size, typed=cfg.parquet_typed_output):
-                parquet.write_batch(batch, table_name, columns)
-                rows += len(batch)
-
-            logger.info(f"  {csv_path.name}: {rows:,} rows")
-
-            if csv_path.exists() and not cfg.keep_files:
-                csv_path.unlink()
+            write_parquet_csv(csv_path, parquet, cfg)
         except Exception as e:
             logger.error(f"Error: {csv_path.name}: {e}")
             raise
 
 
-def main() -> None:
+def load_postgres_csv(
+    csv_path: Path,
+    zip_filename: str,
+    directory: str,
+    db: "Database",
+    cfg: Config,
+    progress: Callable[[int], None] | None = None,
+) -> None:
+    rows = 0
+    load = db.bulk_insert if cfg.loading_strategy == "replace" else db.bulk_upsert
+    for batch, table_name, columns in process_file(csv_path, cfg.batch_size):
+        load(batch, table_name, columns)
+        rows += len(batch)
+        if progress is not None:
+            progress(rows)
+
+    if rows == 0:
+        raise ValueError(f"Empty source: {csv_path.name}")
+
+    db.mark_processed(directory, zip_filename)
+    logger.info(f"  {csv_path.name}: {rows:,} rows")
+
+    if csv_path.exists() and not cfg.keep_files:
+        csv_path.unlink()
+
+
+def write_parquet_csv(csv_path: Path, parquet: "ParquetWriter", cfg: Config) -> None:
+    rows = 0
+    for batch, table_name, _columns in process_file(csv_path, cfg.batch_size, typed=cfg.parquet_typed_output):
+        parquet.write_batch(batch, table_name)
+        rows += len(batch)
+        if rows % 1_000_000 == 0:
+            logger.info(f"  {csv_path.name}: {rows:,} rows")
+
+    if rows == 0:
+        raise ValueError(f"Empty source: {csv_path.name}")
+
+    logger.info(f"  {csv_path.name}: {rows:,} rows")
+
+    if csv_path.exists() and not cfg.keep_files:
+        csv_path.unlink()
+
+
+def wait_for_workers(futures: dict[Future[None], str], failure_message: str) -> None:
+    failed = False
+    with tqdm(total=len(futures), desc="Processing", unit="file") as pbar:
+        for future in as_completed(futures):
+            pbar.set_postfix_str(futures[future][:30])
+            try:
+                future.result()
+            except Exception:
+                failed = True
+            pbar.update(1)
+    if failed:
+        raise RuntimeError(failure_message)
+
+
+def run_parquet(
+    pending_files: list[str], directory: str, downloader: Downloader, parquet: "ParquetWriter", config: Config
+) -> None:
+    # Validate all existing tables before downloading or publishing any new ones.
+    for filename in pending_files:
+        file_type = get_zip_file_type(filename)
+        if file_type and file_type in FILE_MAPPINGS:
+            table = FILE_MAPPINGS[file_type]
+            if table not in parquet.stats and (Path(config.parquet_output_dir) / f"{table}.parquet").exists():
+                parquet.include_existing_table(table)
+
+    file_groups = group_files_by_dependency(pending_files)
+    workers = config.process_workers
+
+    for group_files in file_groups:
+        if not group_files:
+            continue
+
+        # Existing tables were validated before processing the first group.
+        files_to_process: list[str] = []
+        tables_in_group: set[str] = set()
+        skipped_tables: set[str] = set()
+        for f in group_files:
+            ft = get_zip_file_type(f)
+            if not ft or ft not in FILE_MAPPINGS:
+                continue
+            table_name = FILE_MAPPINGS[ft]
+            parquet_path = Path(config.parquet_output_dir) / f"{table_name}.parquet"
+            if parquet_path.exists():
+                if table_name not in skipped_tables:
+                    logger.info(f"Skipping {table_name} (already exported)")
+                    skipped_tables.add(table_name)
+                continue
+            files_to_process.append(f)
+            tables_in_group.add(table_name)
+
+        if not files_to_process:
+            continue
+
+        logger.info(f"Processing {len(files_to_process)} files ({', '.join(sorted(tables_in_group))})...")
+
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(parquet_worker, f, directory, downloader, parquet, config): f
+                    for f in files_to_process
+                }
+                wait_for_workers(futures, "One or more workers failed, aborting to prevent incomplete export")
+        else:
+            for zip_filename in files_to_process:
+                for csv_path, _ in downloader.download_files(directory, [zip_filename]):
+                    try:
+                        write_parquet_csv(csv_path, parquet, config)
+
+                    except Exception as e:
+                        logger.error(f"Error: {csv_path.name}: {e}")
+                        raise
+
+        # Flush tables in this group and run post-file commands
+        for table_name in tables_in_group:
+            parquet_path = parquet.flush_table(table_name)
+            if parquet_path:
+                logger.info(f"  {table_name}: flushed → {parquet_path.name}")
+                if config.post_file_command:
+                    logger.info(f"  Running post-file command for {parquet_path.name}")
+                    subprocess.run(
+                        [*config.post_file_command.split(), str(parquet_path)],
+                        check=True,
+                    )
+
+
+def run_postgres(
+    pending_files: list[str], directory: str, downloader: Downloader, db: "Database", config: Config
+) -> None:
+    # Database mode: process files by dependency group
+    file_groups = group_files_by_dependency(pending_files)
+    workers = config.process_workers
+
+    for group_files in file_groups:
+        if not group_files:
+            continue
+
+        if workers > 1:
+            # Pre-truncate for replace strategy before spawning workers
+            pre_truncated: set[str] = set()
+            if config.loading_strategy == "replace":
+                pre_truncated = {
+                    FILE_MAPPINGS[ft] for f in group_files if (ft := get_zip_file_type(f)) and ft in FILE_MAPPINGS
+                }
+                for table in pre_truncated:
+                    db.truncate_table(table)
+
+            logger.info(f"Processing {len(group_files)} files with {workers} workers...")
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(pg_worker, f, directory, downloader, config, pre_truncated): f for f in group_files
+                }
+                wait_for_workers(futures, "One or more workers failed, aborting to prevent data corruption")
+        else:
+            # Sequential: download in parallel, process one at a time
+            file_iterator = downloader.download_files(directory, group_files)
+            with tqdm(file_iterator, total=len(group_files), desc="Processing", unit="file") as pbar:
+                for csv_path, zip_filename in pbar:
+                    pbar.set_postfix_str(csv_path.name[:30])
+                    try:
+                        load_postgres_csv(
+                            csv_path,
+                            zip_filename,
+                            directory,
+                            db,
+                            config,
+                            lambda rows: pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows"),
+                        )
+
+                    except Exception as e:
+                        logger.error(f"Error: {csv_path.name}: {e}")
+                        raise
+
+
+def main(cfg: Config | None = None) -> None:
     """Main pipeline entry point."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     args = parse_args()
+    config = cfg if cfg is not None else Config.from_env()
 
     downloader = Downloader(config)
 
@@ -178,15 +284,10 @@ def main() -> None:
     db = None
     parquet = None
 
-    if is_parquet:
-        from parquet_writer import ParquetWriter
-
-        parquet = ParquetWriter(config.parquet_output_dir)
-        logger.info(f"Parquet mode: output to {config.parquet_output_dir}")
-    else:
+    if not is_parquet:
         from database import Database
 
-        db = Database(config.database_url, retry_attempts=config.retry_attempts, retry_delay=config.retry_delay)
+        db = Database(config.database_url, retry_attempts=config.retry_attempts)
         db.ensure_schema()
 
     try:
@@ -198,6 +299,14 @@ def main() -> None:
             directory = args.month
         else:
             directory = downloader.get_latest_directory()
+
+        if is_parquet:
+            from parquet_writer import ParquetWriter
+
+            parquet = ParquetWriter(
+                config.parquet_output_dir, source_month=directory, typed=config.parquet_typed_output
+            )
+            logger.info(f"Parquet mode: output to {config.parquet_output_dir}")
 
         # Handle --force mode (database only)
         if args.force and db:
@@ -220,152 +329,11 @@ def main() -> None:
 
         pending_files.sort(key=get_file_priority)
 
-        if is_parquet:
-            assert parquet is not None
-            file_groups = group_files_by_dependency(pending_files)
-            workers = config.process_workers
-
-            for group_files in file_groups:
-                if not group_files:
-                    continue
-
-                # Skip existing paths; completion, month and schema are not checked.
-                files_to_process: list[str] = []
-                tables_in_group: set[str] = set()
-                skipped_tables: set[str] = set()
-                for f in group_files:
-                    ft = get_zip_file_type(f)
-                    if not ft or ft not in FILE_MAPPINGS:
-                        continue
-                    table_name = FILE_MAPPINGS[ft]
-                    parquet_path = Path(config.parquet_output_dir) / f"{table_name}.parquet"
-                    if parquet_path.exists():
-                        if table_name not in skipped_tables:
-                            logger.info(f"Skipping {table_name} (already exported)")
-                            skipped_tables.add(table_name)
-                        continue
-                    files_to_process.append(f)
-                    tables_in_group.add(table_name)
-
-                if not files_to_process:
-                    continue
-
-                logger.info(f"Processing {len(files_to_process)} files ({', '.join(sorted(tables_in_group))})...")
-
-                if workers > 1:
-                    failed = False
-                    with ThreadPoolExecutor(max_workers=workers) as executor:
-                        futures = {
-                            executor.submit(parquet_worker, f, directory, downloader, parquet, config): f
-                            for f in files_to_process
-                        }
-                        with tqdm(total=len(futures), desc="Processing", unit="file") as pbar:
-                            for future in as_completed(futures):
-                                filename = futures[future]
-                                pbar.set_postfix_str(filename[:30])
-                                try:
-                                    future.result()
-                                except Exception:
-                                    failed = True
-                                pbar.update(1)
-                    if failed:
-                        raise RuntimeError("One or more workers failed, aborting to prevent incomplete export")
-                else:
-                    for zip_filename in files_to_process:
-                        for csv_path, _ in downloader.download_files(directory, [zip_filename]):
-                            try:
-                                rows = 0
-                                for batch, tname, columns in process_file(
-                                    csv_path, config.batch_size, typed=config.parquet_typed_output
-                                ):
-                                    parquet.write_batch(batch, tname, columns)
-                                    rows += len(batch)
-                                    if rows % 1_000_000 == 0:
-                                        logger.info(f"  {csv_path.name}: {rows:,} rows")
-
-                                logger.info(f"  {csv_path.name}: {rows:,} rows total")
-
-                                if csv_path.exists() and not config.keep_files:
-                                    csv_path.unlink()
-
-                            except Exception as e:
-                                logger.error(f"Error: {csv_path.name}: {e}")
-                                raise
-
-                # Flush tables in this group and run post-file commands
-                for table_name in tables_in_group:
-                    parquet_path = parquet.flush_table(table_name)
-                    if parquet_path:
-                        logger.info(f"  {table_name}: flushed → {parquet_path.name}")
-                        if config.post_file_command:
-                            logger.info(f"  Running post-file command for {parquet_path.name}")
-                            subprocess.run(
-                                [*config.post_file_command.split(), str(parquet_path)],
-                                check=True,
-                            )
-
+        if parquet is not None:
+            run_parquet(pending_files, directory, downloader, parquet, config)
         else:
             assert db is not None
-            # Database mode: process files by dependency group
-            file_groups = group_files_by_dependency(pending_files)
-            workers = config.process_workers
-
-            for group_files in file_groups:
-                if not group_files:
-                    continue
-
-                if workers > 1:
-                    # Pre-truncate for replace strategy before spawning workers
-                    pre_truncated: set[str] = set()
-                    if config.loading_strategy == "replace":
-                        pre_truncated = {
-                            FILE_MAPPINGS[ft]
-                            for f in group_files
-                            if (ft := get_zip_file_type(f)) and ft in FILE_MAPPINGS
-                        }
-                        for table in pre_truncated:
-                            db.truncate_table(table)
-
-                    logger.info(f"Processing {len(group_files)} files with {workers} workers...")
-                    failed = False
-                    with ThreadPoolExecutor(max_workers=workers) as executor:
-                        futures = {
-                            executor.submit(pg_worker, f, directory, downloader, config, pre_truncated): f
-                            for f in group_files
-                        }
-                        with tqdm(total=len(futures), desc="Processing", unit="file") as pbar:
-                            for future in as_completed(futures):
-                                filename = futures[future]
-                                pbar.set_postfix_str(filename[:30])
-                                try:
-                                    future.result()
-                                except Exception:
-                                    failed = True
-                                pbar.update(1)
-                    if failed:
-                        raise RuntimeError("One or more workers failed, aborting to prevent data corruption")
-                else:
-                    # Sequential: download in parallel, process one at a time
-                    file_iterator = downloader.download_files(directory, group_files)
-                    with tqdm(file_iterator, total=len(group_files), desc="Processing", unit="file") as pbar:
-                        for csv_path, zip_filename in pbar:
-                            pbar.set_postfix_str(csv_path.name[:30])
-                            try:
-                                rows = 0
-                                load = db.bulk_insert if config.loading_strategy == "replace" else db.bulk_upsert
-                                for batch, table_name, columns in process_file(csv_path, config.batch_size):
-                                    load(batch, table_name, columns)
-                                    rows += len(batch)
-                                    pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows")
-
-                                db.mark_processed(directory, zip_filename)
-
-                                if csv_path.exists() and not config.keep_files:
-                                    csv_path.unlink()
-
-                            except Exception as e:
-                                logger.error(f"Error: {csv_path.name}: {e}")
-                                raise
+            run_postgres(pending_files, directory, downloader, db, config)
 
         if is_parquet:
             assert parquet is not None
@@ -382,6 +350,8 @@ def main() -> None:
         sys.exit(1)
 
     finally:
+        if parquet is not None:
+            parquet.abort()
         if db:
             db.disconnect()
         downloader.cleanup()
