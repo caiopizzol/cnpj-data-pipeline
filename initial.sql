@@ -1,5 +1,5 @@
 -- CNPJ Data Pipeline - Database Schema
--- Run automatically on first docker compose up
+-- Applied by the PostgreSQL pipeline when processed_files is absent.
 
 -- ============================================================================
 -- Reference Tables

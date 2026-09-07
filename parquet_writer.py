@@ -9,7 +9,7 @@ Output structure:
         empresas.parquet
         estabelecimentos.parquet
         socios.parquet
-        simples.parquet
+        dados_simples.parquet
         cnaes.parquet
         ...
         manifest.json
@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 ROW_GROUP_SIZE = 100_000
 COMPRESSION = "zstd"
 
-# Bumped when the output schema changes shape (column added/removed/retyped,
-# table renamed). Consumers can compare against this in manifest.json to
-# detect when they need to re-run their own post-processing/derivations.
+# Version of the exported table/column layout. Both typed and string output
+# currently use this version; consumers must inspect Parquet field types
+# to distinguish them. This is not a fingerprint of the physical schema.
 # v2: socios gains socio_id (UUID), deterministic primary key (issue #78).
 SCHEMA_VERSION = "2"
 

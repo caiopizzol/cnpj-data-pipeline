@@ -65,8 +65,9 @@ LEFT JOIN municipios m ON m.codigo = est.municipio
 WHERE est.situacao_cadastral = '02'
   AND est.identificador_matriz_filial = 1;
 
--- Primary key on the component CNPJ tuple. Covers point-lookup access
--- and gives every secondary index a small unique-suffix tiebreaker.
+-- Primary key on the full component CNPJ tuple for point lookups.
+-- Sort indexes below include basico and ordem, but omit dv; their suffix
+-- is not guaranteed unique. Use the full key when unique ordering matters.
 ALTER TABLE empresas_busca_nome
     ADD CONSTRAINT pk_empresas_busca_nome
     PRIMARY KEY (cnpj_basico, cnpj_ordem, cnpj_dv);
@@ -76,7 +77,7 @@ ALTER TABLE empresas_busca_nome
 CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_cnpj
     ON empresas_busca_nome (cnpj);
 
--- Prefix LIKE on razao_social plus the PK suffix as a tiebreaker.
+-- Prefix LIKE on razao_social followed by basico and ordem.
 -- Supports the LIKE 'PREFIX%' predicate; whether Postgres can use it to
 -- avoid a sort under a specific ORDER BY depends on collation and the
 -- rest of the query (see the EXPLAIN note in the header).
@@ -93,9 +94,9 @@ CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_razao
 -- uf_razao above supports sort-by-razao under uf= equality but cannot
 -- range-scan LIKE 'PREFIX%' under non-C collations. This composite
 -- uses text_pattern_ops on razao_social so PG can enter at
--- (uf=$1, razao_social>='PREFIX') and walk only matching rows in
--- order — Index Only Scan, no heap fetch, sub-30ms even for broad
--- common prefixes (e.g. 'COMERC%' over 27M rows).
+-- (uf=$1, razao_social>='PREFIX') for a prefix range scan. Index-only
+-- execution depends on the projected columns and heap visibility;
+-- verify ordering and heap fetches with EXPLAIN for the actual query.
 --
 -- Pairs with idx_..._razao_prefix above: that one serves uf-less
 -- prefix lookups (e.g. chat name resolution); this one serves

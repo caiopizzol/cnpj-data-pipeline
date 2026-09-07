@@ -37,8 +37,7 @@
 --     columns are cnpj_basico-keyed - they repeat across every
 --     estabelecimento of the same company by design.
 --   - cnae_fiscal_secundaria stays as the source comma-separated string.
---     A future recipes/postgres/cnae_secundaria_exploded.sql will provide
---     the side table.
+--     recipes/postgres/cnae_secundaria_exploded.sql provides a side table.
 --   - cnpj column is materialized as basico||ordem||dv. Trivial in SQL
 --     but avoids repeating the concatenation in every consumer query.
 

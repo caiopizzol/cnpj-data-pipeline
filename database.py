@@ -53,7 +53,7 @@ class Database:
             self.conn = None
 
     def ensure_schema(self):
-        """Apply initial.sql if the schema tables don't exist yet.
+        """Apply initial.sql if the processed_files sentinel table is absent.
 
         Lets the published Docker image target a fresh managed Postgres
         (Railway, RDS, etc.) without a separate init step.
@@ -150,12 +150,12 @@ class Database:
     def bulk_insert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
         """Bulk insert under LOADING_STRATEGY=replace.
 
-        First batch per table: TRUNCATE then COPY directly into the target
-        (fast path; target is guaranteed empty).
+        First batch per table, unless pre-truncated: TRUNCATE then COPY
+        directly into the target. This requires unique keys within that batch.
 
-        Subsequent batches: COPY into a temp table and merge via the
-        existing upsert helper. RFB occasionally ships the same
-        (cnpj_basico, cnpj_ordem, cnpj_dv) across two sharded ZIPs of the
+        Subsequent batches and pre-truncated workers: COPY into a temp
+        table and merge via the existing upsert helper. RFB occasionally ships
+        the same (cnpj_basico, cnpj_ordem, cnpj_dv) across two sharded ZIPs of the
         same source table (e.g. Estabelecimentos0.zip and Estabelecimentos5.zip);
         without the temp-table path the second batch's direct COPY crashes
         on the PK constraint.
@@ -172,7 +172,7 @@ class Database:
                     cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
                     self._truncated_tables.add(table_name)
                     logger.info(f"Truncated {table_name}")
-                    # Target is empty - direct COPY is safe and fastest.
+                    # No existing rows can conflict; this batch must have unique keys.
                     self._copy_to_temp(cur, df, table_name, columns)
                 else:
                     # Cross-batch PK overlap path. Same temp-then-upsert
@@ -195,7 +195,7 @@ class Database:
             raise
 
     def _copy_to_temp(self, cur, df: pl.DataFrame, temp_table: str, columns: List[str]):
-        """COPY DataFrame to temp table using Polars CSV."""
+        """COPY a DataFrame to the supplied destination table using Polars CSV."""
         columns_str = ", ".join([f'"{col}"' for col in columns])
         csv_bytes = df.write_csv(include_header=False).encode("utf-8", errors="replace")
         csv_bytes = csv_bytes.replace(b"\x00", b"")

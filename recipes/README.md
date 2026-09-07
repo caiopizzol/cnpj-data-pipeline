@@ -19,7 +19,7 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 | `socios_clean` | [`postgres/socios_clean.sql`](postgres/socios_clean.sql) | Usa `socios_quality_flags` para emitir pares cru/limpo do trio do representante e de `faixa_etaria`. |
 | `socios_detalhe` | [`postgres/socios_detalhe.sql`](postgres/socios_detalhe.sql) | Tabela por sócio que junta `socios` com as descrições de qualificação e país (tabelas enriquecidas) e de `identificador_de_socio` e `faixa_etaria` (tabelas de rótulos). Preserva todos os códigos da fonte, sem mutação de valor. Equivale a `empresa_detalhe` no grão de sócio. Pré-requisitos: `reference_domains_enriched` e `reference_domain_labels`. |
 | `empresas_busca_nome` | [`postgres/empresas_busca_nome.sql`](postgres/empresas_busca_nome.sql) | Tabela de serviço para busca por `razao_social` em matrizes ativas. Inclui descrições de município e CNAE e índices compostos para LIKE prefixo combinado com filtros de UF, município ou CNAE. |
-| `empresas_busca_nome_counts` | [`postgres/empresas_busca_nome_counts.sql`](postgres/empresas_busca_nome_counts.sql) | Rollups de contagem para `empresas_busca_nome` por UF, UF + município (descrição e código) e UF + CNAE. Cada lookup é O(1) via índice único parcial; serve totais exatos sem varrer milhões de linhas a cada request. |
+| `empresas_busca_nome_counts` | [`postgres/empresas_busca_nome_counts.sql`](postgres/empresas_busca_nome_counts.sql) | Rollups de contagem para `empresas_busca_nome` por UF, UF + município (descrição e código) e UF + CNAE. Usa índices únicos parciais para consultar os totais; serve totais exatos sem varrer milhões de linhas a cada request. |
 
 ## Como aplicar
 

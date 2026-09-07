@@ -86,13 +86,10 @@ class TestTransform:
 
         result = _transform(df, "ESTABELE")
 
-        # Check that '0' became None
         assert result["data_situacao_cadastral"][0] is None
 
-        # Check that '00000000' became None
         assert result["data_inicio_atividade"][0] is None
 
-        # Check that valid date remained unchanged
         assert result["data_situacao_especial"][0] == "20230101"
 
     def test_transform_zero_dates_to_none_simples(self):
@@ -109,14 +106,11 @@ class TestTransform:
 
         result = _transform(df, "SIMPLESCSV")
 
-        # Check that '0' dates became None
         assert result["data_opcao_pelo_simples"][0] is None
         assert result["data_exclusao_do_mei"][0] is None
 
-        # Check that '00000000' became None
         assert result["data_exclusao_do_simples"][0] is None
 
-        # Check that valid date remained unchanged
         assert result["data_opcao_pelo_mei"][0] == "20230101"
 
     def test_transform_zero_dates_to_none_socios(self):
@@ -125,7 +119,6 @@ class TestTransform:
 
         result = _transform(df, "SOCIOCSV")
 
-        # Check that '0' became None
         assert result["data_entrada_sociedade"][0] is None
 
     def test_transform_null_dates_remain_none(self):
@@ -136,7 +129,6 @@ class TestTransform:
 
         result = _transform(df, "ESTABELE")
 
-        # Check that None values remain None
         assert result["data_situacao_cadastral"][0] is None
         assert result["data_inicio_atividade"][0] is None
 
@@ -155,7 +147,6 @@ class TestTransform:
 
         result = _transform(df, "ESTABELE")
 
-        # Check that all valid dates remained unchanged
         for i, expected_date in enumerate(valid_dates):
             assert result["data_situacao_cadastral"][i] == expected_date
             assert result["data_inicio_atividade"][i] == expected_date
@@ -245,7 +236,6 @@ class TestTransform:
 
     def test_transform_cep_pads_seven_digit_numeric(self):
         """7-digit all-numeric CEPs get the missing leading zero restored.
-        RFB drops it on ~0.1% of rows; the fix is deterministic and lossless.
         Junk values must be left untouched so the report keeps surfacing them."""
         df = pl.DataFrame(
             {
@@ -415,39 +405,43 @@ class TestValidate:
 
         assert "cnpj_dv: 1 invalid" in caplog.text
 
-    def test_validate_situacao_cadastral(self):
-        """Test that situacao_cadastral must be 01, 02, 03, 04, or 08."""
+    def test_validate_situacao_cadastral(self, caplog):
+        """Report unknown situacao_cadastral codes without replacing them."""
         df = pl.DataFrame({"situacao_cadastral": ["02", "08", "99", None]})
 
         result = _validate(df, "ESTABELE")
 
         # Logs the invalid "99" but keeps it
         assert result["situacao_cadastral"][2] == "99"
+        assert "situacao_cadastral: 1 invalid" in caplog.text
 
-    def test_validate_uf(self):
-        """Test that UF must be a valid Brazilian state code."""
+    def test_validate_uf(self, caplog):
+        """Report unknown UF codes without replacing them."""
         df = pl.DataFrame({"uf": ["SP", "RJ", "XX", None]})
 
         result = _validate(df, "ESTABELE")
 
         # Logs invalid "XX" but keeps it
         assert result["uf"][2] == "XX"
+        assert "uf: 1 invalid" in caplog.text
 
-    def test_validate_opcao_simples(self):
-        """Test that opcao_pelo_simples must be S or N."""
+    def test_validate_opcao_simples(self, caplog):
+        """Report unknown Simples option codes without replacing them."""
         df = pl.DataFrame({"opcao_pelo_simples": ["S", "N", "X", None]})
 
         result = _validate(df, "SIMPLESCSV")
 
         assert result["opcao_pelo_simples"][2] == "X"
+        assert "opcao_pelo_simples: 1 invalid" in caplog.text
 
-    def test_validate_identificador_socio(self):
-        """Test that identificador_de_socio must be 1, 2, or 3."""
+    def test_validate_identificador_socio(self, caplog):
+        """Report unknown socio identifiers without replacing them."""
         df = pl.DataFrame({"identificador_de_socio": ["1", "2", "3", "9"]})
 
         result = _validate(df, "SOCIOCSV")
 
         assert result["identificador_de_socio"][3] == "9"
+        assert "identificador_de_socio: 1 invalid" in caplog.text
 
     def test_validate_invalid_date_format_nullified(self):
         """Test that dates with invalid format (not YYYYMMDD) are nullified."""
@@ -539,10 +533,8 @@ class TestConvertEncoding:
         finally:
             utf8_file.unlink(missing_ok=True)
 
-    def test_handles_large_file_in_chunks(self, tmp_path):
-        """Test that large files are processed correctly (chunked reading)."""
-        # Create a file larger than the 50MB chunk size would normally handle
-        # We'll use a smaller test but verify the chunking logic works
+    def test_preserves_all_lines_during_encoding_conversion(self, tmp_path):
+        """Encoding conversion preserves every line of a multi-line file."""
         iso_file = tmp_path / "large.csv"
         content = "data;value\n" * 10000
         iso_file.write_text(content, encoding="ISO-8859-1")
@@ -637,8 +629,8 @@ class TestProcessFile:
         utf8_files_after = len(list(temp_dir.glob("*.utf8.csv")))
         assert utf8_files_after == utf8_files_before
 
-    def test_multiple_batches(self, tmp_path):
-        """Test that all rows are processed across batches."""
+    def test_preserves_rows_with_small_requested_batch_size(self, tmp_path):
+        """All rows survive regardless of how Polars groups the requested batches."""
         cnae_file = tmp_path / "CNAECSV.csv"
         rows = [f"{i:07d};Descrição {i}" for i in range(150)]
         cnae_file.write_text("\n".join(rows), encoding="ISO-8859-1")
@@ -653,8 +645,8 @@ class TestProcessFile:
 class TestTypedCasts:
     """_apply_typed_casts brings Parquet output to type-parity with Postgres.
 
-    Inputs are post-_validate dataframes: dates are YYYYMMDD or null,
-    capital_social has dot-decimals, identificador_matriz_filial is "1"/"2".
+    Date cleanup and decimal normalization precede these casts in the
+    pipeline. Numeric casts do not enforce domain membership.
     """
 
     def test_dates_cast_to_polars_date_for_estabele(self):
@@ -710,10 +702,7 @@ class TestTypedCasts:
         assert out["descricao"].dtype == pl.Utf8
 
     def test_handles_all_null_date_column(self):
-        """A batch where every date value is null arrives as pl.Null dtype
-        (not Utf8). The cast must handle this without crashing - otherwise
-        a real-world batch with all-null data_situacao_especial would blow
-        up in production."""
+        """All-null columns supplied as pl.Null must cast without string operations."""
         df = pl.DataFrame(
             {
                 "data_situacao_cadastral": ["20240101"],
@@ -752,8 +741,7 @@ class TestProcessFileTypedFlag:
 
 
 class TestLayoutDriftDetection:
-    """_check_layout catches RFB schema changes loudly instead of letting
-    Polars silently mis-map fields by position."""
+    """_check_layout rejects an unexpected field count in the first CSV record."""
 
     def test_matching_layout_passes(self, tmp_path):
         """A CSV with the expected column count must validate cleanly."""

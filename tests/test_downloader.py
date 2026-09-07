@@ -102,7 +102,7 @@ class TestFilePatternMatching:
         assert "SIMPLES" in CNPJ_FILE_PATTERNS
 
     def test_cnpj_file_patterns_matching_logic(self):
-        """Test the actual pattern matching logic used in _download_and_extract method."""
+        """Check the configured pattern list against representative filenames."""
         test_cases = [
             ("F.K03200$W.SIMPLES.CSV.D51213", True),
             ("F.K03200$W.EMPRECSV.D51213", True),
@@ -657,7 +657,6 @@ class TestCleanup:
         downloader = Downloader(config)
         downloader.cleanup()
 
-        # File should still exist
         assert (tmp_path / "file1.csv").exists()
 
 

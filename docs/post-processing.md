@@ -57,7 +57,7 @@ Esses casos pertencem a receitas, não à carga padrão.
 Toda saída Parquet inclui um `manifest.json` com:
 
 - `pipelineVersion` — versão do pacote que produziu o arquivo
-- `schemaVersion` — versão da forma da saída, incrementada quando colunas mudam ou tabelas são renomeadas
+- `schemaVersion` — versão do layout de tabelas e colunas. Atualmente é a mesma nos modos string e tipado; consulte os tipos no Parquet para distinguir esses modos
 - `sourceMonth` — diretório de origem na Receita (ex: `2024-11`)
 
-Consumidores que mantêm suas próprias derivações usam esses campos para decidir quando re-executá-las.
+Consumidores podem usar esses campos e os tipos físicos do Parquet para decidir quando reexecutar suas derivações. `schemaVersion` sozinho não identifica mudanças causadas por `PARQUET_TYPED_OUTPUT`.

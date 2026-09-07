@@ -9,15 +9,15 @@ from main import _parquet_worker, _pg_worker, get_file_priority, group_files_by_
 
 
 class TestGetFilePriority:
-    """Test file processing priority (controls FK dependency order)."""
+    """Test sorting priority within the configured logical loading order."""
 
     def test_reference_tables_first(self):
         """Reference tables should have lowest priority values (processed first)."""
         assert get_file_priority("CNAECSV.D51213") < get_file_priority("EMPRECSV.D51213")
         assert get_file_priority("PAISCSV.D51213") < get_file_priority("ESTABELE.D51213")
 
-    def test_fk_dependency_order(self):
-        """Tables must load in FK dependency order: references → empresas → estabelecimentos → socios."""
+    def test_sort_priority_within_loading_order(self):
+        """Sorting ranks empresas before estabelecimentos before socios; the latter two share a worker group."""
         empresas = get_file_priority("EMPRECSV.D51213")
         estabelecimentos = get_file_priority("ESTABELE.D51213")
         socios = get_file_priority("SOCIOCSV.D51213")
@@ -43,7 +43,7 @@ class TestGroupFilesByDependency:
         assert len(groups[2]) == 0
 
     def test_groups_by_dependency_level(self):
-        """Files should be grouped by their FK dependency level."""
+        """Files should be grouped by their logical loading level."""
         files = ["Cnaes.zip", "Empresas0.zip", "Estabele0.zip", "Socios0.zip"]
         groups = group_files_by_dependency(files)
         assert groups[0] == ["Cnaes.zip"]
@@ -179,10 +179,10 @@ class TestMain:
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_file_only_deleted_after_mark_processed(
+    def test_mark_processed_failure_skips_explicit_csv_unlink(
         self, mock_args, mock_downloader_cls, mock_db_cls, mock_config, mock_process_file, tmp_path
     ):
-        """CSV file should only be deleted after mark_processed succeeds."""
+        """A failed mark_processed skips the explicit unlink; cleanup is mocked here."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
         mock_config.database_url = "postgresql://test"
@@ -214,7 +214,7 @@ class TestMain:
         with pytest.raises(SystemExit):
             main()
 
-        # File should NOT be deleted because mark_processed failed
+        # The explicit unlink was skipped; real downloader cleanup still removes the file.
         assert csv_file.exists()
 
     @patch("main.config")
@@ -626,7 +626,7 @@ class TestParallelProcessing:
     def test_parallel_worker_failure_aborts_pipeline(
         self, mock_args, mock_downloader_cls, mock_db_cls, mock_config, mock_pg_worker
     ):
-        """A failing worker should abort the pipeline (fail-fast)."""
+        """A failing worker aborts the pipeline after the current group finishes."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
         mock_config.database_url = "postgresql://test"

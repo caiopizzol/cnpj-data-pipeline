@@ -153,8 +153,7 @@ class TestWriteManifest:
         assert manifest["exportedAt"].endswith("Z")
 
     def test_manifest_has_pipeline_and_schema_versions(self, writer, sample_empresas, output_dir):
-        """pipelineVersion + schemaVersion let downstream consumers detect
-        when they need to re-run their own derivations."""
+        """Manifest metadata includes pipeline and layout versions, not a physical schema fingerprint."""
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
         writer.close()
         manifest = writer.write_manifest()

@@ -1,7 +1,8 @@
 """Integration tests using real data fixtures against PostgreSQL.
 
 Requires a running PostgreSQL instance (docker compose up -d postgres).
-Skipped automatically in CI if DATABASE_URL is not set.
+Skipped when PostgreSQL is unreachable at localhost:5435; the skip decision
+is independent of DATABASE_URL.
 """
 
 from pathlib import Path
@@ -15,7 +16,7 @@ from processor import process_file
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5435/cnpj_test"
 
-# Processing order (same as main.py — respects FK dependencies)
+# Fixture loading order follows main.py; the schema has no foreign-key constraints.
 PROCESSING_ORDER = [
     "CNAECSV.csv",
     "MOTICSV.csv",
@@ -1832,26 +1833,28 @@ class TestRecipeEmpresasBuscaNome:
             assert count > 0, "no rows have both cnae_descricao and municipio_nome joined"
 
     def test_expected_indexes_exist(self, test_db):
-        """The composite indexes that justify the recipe must all be present.
-        If one is dropped or renamed, the recipe no longer provides the
-        documented access path."""
+        """The expected search indexes must exist; verify the UF-prefix definition too."""
         with test_db.conn.cursor() as cur:
             cur.execute("""
-                SELECT indexname FROM pg_indexes
+                SELECT indexname, indexdef FROM pg_indexes
                 WHERE tablename = 'empresas_busca_nome'
             """)
-            indexes = {row[0] for row in cur.fetchall()}
+            definitions = dict(cur.fetchall())
+            indexes = set(definitions)
 
         expected = {
             "pk_empresas_busca_nome",
             "idx_empresas_busca_nome_cnpj",
             "idx_empresas_busca_nome_razao_prefix",
             "idx_empresas_busca_nome_uf_razao",
+            "idx_empresas_busca_nome_uf_razao_prefix",
             "idx_empresas_busca_nome_uf_municipio_razao",
             "idx_empresas_busca_nome_uf_cnae_razao",
         }
         missing = expected - indexes
         assert not missing, f"missing expected indexes: {missing}"
+        definition = definitions["idx_empresas_busca_nome_uf_razao_prefix"]
+        assert "USING btree (uf, razao_social text_pattern_ops, cnpj_basico, cnpj_ordem)" in definition
 
     def test_no_derived_columns_leaked(self, test_db):
         """The recipe filters rows but does not synthesize labels or
@@ -1982,8 +1985,8 @@ class TestRecipeEmpresasBuscaNomeCounts:
 
     def test_partial_unique_indexes_present(self, test_db):
         """Every documented lookup pattern needs its partial unique index.
-        Missing any of these means the lookup falls back to a sequential
-        scan, defeating the rollup's purpose."""
+        These provide the intended lookup paths; planner choices depend
+        on the query, statistics and table size."""
         with test_db.conn.cursor() as cur:
             cur.execute(
                 """

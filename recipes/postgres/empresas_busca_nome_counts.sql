@@ -7,13 +7,11 @@
 -- search surfaces typically expose alongside an exact "X results found"
 -- total: by UF, by UF + município, by UF + CNAE.
 --
--- Why this exists. COUNT(*) over the main search table is O(matching
--- rows) even with a covering index, so a broad filter like uf='SP'
--- walks ~8 M index entries and returns in seconds. That's fine for
--- batch reports but kills request latency budgets. This rollup is
--- O(1) per lookup and refreshes alongside the main table.
+-- COUNT(*) over a broad filter still visits matching entries even with
+-- a covering index. This rollup provides indexed lookups of stored totals.
+-- Rebuild it after refreshing the main search table.
 --
--- One table with a `kind` discriminator and three partial unique
+-- One table with a `kind` discriminator and four partial unique
 -- indexes. Lookups query a single kind at a time, so the partial
 -- indexes give point-lookup latency without splitting the data into
 -- three physical tables.
@@ -27,7 +25,7 @@
 -- Design choices:
 --   - Single table + kind column keeps the operational surface small:
 --     one DROP + CREATE, one ANALYZE, one swap for blue/green refresh.
---   - Partial unique indexes (one per kind) give point-lookup latency
+--   - Partial unique indexes give point lookups for each filter shape
 --     without splitting the data into three physical tables.
 --   - municipio_nome, municipio_codigo, and cnae_fiscal_principal are
 --     all nullable so the `kind='uf'` and `kind='uf_cnae'` rows can
@@ -35,10 +33,10 @@
 --     always filter on kind first.
 --   - kind='uf_municipio' rows carry BOTH the descricao (municipio_nome)
 --     and the RFB código (municipio_codigo). Consumers using the
---     numeric code get a stable, escape-free lookup key; consumers
---     using the text name still work. Each (uf, municipio_nome) maps
---     to exactly one código in the source data, so the dual column
---     does not change the row count.
+--     code or text name can use bound parameters. Grouping assumes each
+--     (uf, municipio_nome) has one source code. This is not validated:
+--     MIN(code) would hide multiple codes, including missing-name groups.
+--     Verify that source invariant before relying on code-based totals.
 --   - Includes a NULL bucket for cnae_fiscal_principal because some
 --     estabelecimento rows in the source have no CNAE; consumers can
 --     decide whether to surface it or filter it out.
@@ -59,8 +57,7 @@ SELECT 'uf', uf, NULL, NULL, NULL, COUNT(*)
 FROM empresas_busca_nome
 GROUP BY uf
 UNION ALL
--- (uf, municipio_nome) maps 1:1 to municipio_codigo in the source, so
--- MIN(municipio_codigo) collapses to the single value per group.
+-- Select one code per name bucket under the source invariant above.
 SELECT 'uf_municipio', uf, MIN(municipio_codigo), municipio_nome, NULL, COUNT(*)
 FROM empresas_busca_nome
 GROUP BY uf, municipio_nome
@@ -69,7 +66,7 @@ SELECT 'uf_cnae', uf, NULL, NULL, cnae_fiscal_principal, COUNT(*)
 FROM empresas_busca_nome
 GROUP BY uf, cnae_fiscal_principal;
 
--- Partial unique indexes per kind. Each lookup hits exactly one.
+-- Partial unique indexes for the supported lookup shapes.
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_empresas_busca_nome_counts_uf
     ON empresas_busca_nome_counts (uf)
@@ -79,8 +76,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_empresas_busca_nome_counts_uf_municipio
     ON empresas_busca_nome_counts (uf, municipio_nome)
     WHERE kind = 'uf_municipio';
 
--- Same kind, indexed by code so consumers can join by RFB código
--- without a name-literal trip through SQL escaping.
+-- Alternate lookup of municipality buckets by RFB code.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_empresas_busca_nome_counts_uf_municipio_codigo
     ON empresas_busca_nome_counts (uf, municipio_codigo)
     WHERE kind = 'uf_municipio';
@@ -96,20 +92,20 @@ ANALYZE empresas_busca_nome_counts;
 --   SELECT total FROM empresas_busca_nome_counts
 --    WHERE kind = 'uf' AND uf = $1;
 --
---   -- by município name (must escape single quotes in the value)
+--   -- by município name (bind the raw name as $2)
 --   SELECT total FROM empresas_busca_nome_counts
 --    WHERE kind = 'uf_municipio' AND uf = $1 AND municipio_nome = $2;
 --
---   -- by RFB código (stable, no text escaping)
+--   -- by RFB código (bind the code as $2)
 --   SELECT total FROM empresas_busca_nome_counts
 --    WHERE kind = 'uf_municipio' AND uf = $1 AND municipio_codigo = $2;
 --
 --   SELECT total FROM empresas_busca_nome_counts
 --    WHERE kind = 'uf_cnae' AND uf = $1 AND cnae_fiscal_principal = $2;
 --
--- All four return one row (or zero if the bucket is empty) via the
--- partial unique index for that kind. Measured ~0.05 ms cold cache
--- against a 27 M-row main table.
+-- These equality lookups return at most one row for non-null keys.
+-- Query the NULL CNAE bucket with IS NULL rather than equality to NULL.
+-- Check EXPLAIN for the actual plan; latency depends on the workload.
 
 -- Storage check (run separately):
 --   SELECT

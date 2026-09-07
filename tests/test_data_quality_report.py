@@ -3,12 +3,14 @@
 import argparse
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 # scripts/ isn't a package; add it to sys.path so we can import directly.
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
+import data_quality_report as report_module  # noqa: E402
 from data_quality_report import cnpj_expected_dv, format_report, sample_pct  # noqa: E402
 
 
@@ -65,18 +67,17 @@ class TestCnpjExpectedDV:
         with pytest.raises(ValueError):
             cnpj_expected_dv("00000000000012")  # 14 not 12
 
-    def test_dv_zero_when_mod11_lt_2(self):
-        """When (11 - sum % 11) >= 10, the rule pins the digit to 0.
-        Need a 12-digit string where the weighted sum mod 11 is 0 or 10.
-        Use Banco do Brasil's known case to spot-check the path exists.
-        Other CNPJs naturally exercise it; this test just guards against
-        a regression in the >= 10 branch."""
-        # Constructed: '999999990001' computes to something specific.
-        # Trust the deterministic output - if the algorithm regresses,
-        # the known-CNPJ tests above will catch it. This is a smoke test.
-        result = cnpj_expected_dv("999999990001")
-        assert len(result) == 2
-        assert result.isdigit()
+    @pytest.mark.parametrize(
+        "stem,expected",
+        [
+            ("000000000000", "00"),  # Both weighted sums have remainder 0.
+            ("000000000006", "04"),  # First weighted sum has remainder 1.
+            ("000000000018", "30"),  # Second weighted sum has remainder 1.
+        ],
+    )
+    def test_zero_digits_for_remainders_zero_and_one(self, stem, expected):
+        """Synthetic stems exercise both zero-DV boundaries for each digit."""
+        assert cnpj_expected_dv(stem) == expected
 
 
 class TestSamplePct:
@@ -120,3 +121,41 @@ class TestFormatReportEnrichedSection:
         )
         assert "## Enriched-domain coverage" in report
         assert "reference_domains_enriched.sql" in report
+
+
+@pytest.mark.parametrize(
+    "argv,expected_sample,expected_scope",
+    [
+        ([], 0.1, "Check digits: Bernoulli sample 0.1%; other measurements: full table scans"),
+        (["--sample-pct", "0.5"], 0.5, "Check digits: Bernoulli sample 0.5%; other measurements: full table scans"),
+        (["--full"], None, "full table scan"),
+    ],
+)
+def test_cli_report_scope_matches_measurement_sampling(monkeypatch, capsys, argv, expected_sample, expected_scope):
+    """The printed scope distinguishes check-digit sampling from full-table measurements."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused/test")
+    conn = Mock()
+    monkeypatch.setattr(report_module.psycopg2, "connect", Mock(return_value=conn))
+    measurements = _base_measurements({"available": False, "rows": []})
+    measure_digits = Mock(return_value=measurements["cnpj_check_digits"])
+    monkeypatch.setattr(report_module, "measure_cnpj_check_digits", measure_digits)
+    full_table_measurements = {}
+    for name in (
+        "orphan_fks",
+        "enriched_orphans",
+        "exterior_uf",
+        "capital_sentinel",
+        "representante_sentinel",
+        "cep_validity",
+    ):
+        measurement = Mock(return_value=measurements[name])
+        monkeypatch.setattr(report_module, f"measure_{name}", measurement)
+        full_table_measurements[name] = measurement
+
+    assert report_module.main(argv) == 0
+
+    assert f"Scope: {expected_scope}\n" in capsys.readouterr().out
+    measure_digits.assert_called_once_with(conn, sample_pct=expected_sample)
+    for measurement in full_table_measurements.values():
+        measurement.assert_called_once_with(conn)
+    conn.close.assert_called_once_with()
