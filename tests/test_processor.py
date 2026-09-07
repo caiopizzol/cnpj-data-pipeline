@@ -565,6 +565,21 @@ class TestConvertEncoding:
 class TestProcessFile:
     """Test process_file function for batch processing."""
 
+    @pytest.mark.parametrize("typed", [False, True])
+    def test_preserves_company_name_accents(self, tmp_path: Path, typed: bool) -> None:
+        source = tmp_path / "EMPRECSV.csv"
+        source.write_text(
+            '"12345678";"AÇÚCAR COMÉRCIO LTDA";"2062";"49";"100,00";"01";""\n',
+            encoding="ISO-8859-1",
+        )
+
+        results = list(process_file(source, typed=typed))
+
+        assert len(results) == 1
+        df, table_name, _columns = results[0]
+        assert table_name == "empresas"
+        assert df["razao_social"].to_list() == ["AÇÚCAR COMÉRCIO LTDA"]
+
     def test_skips_unknown_file_type(self, tmp_path: Path) -> None:
         """Test that unknown file types are skipped with no output."""
         unknown_file = tmp_path / "UNKNOWN_FILE.csv"
