@@ -101,7 +101,7 @@ class TestFlushTable:
     def test_clears_writer_after_flush(self, writer: ParquetWriter, sample_empresas: pl.DataFrame) -> None:
         writer.write_batch(sample_empresas, "empresas", ["cnpj_basico", "razao_social", "capital_social"])
 
-        writer.flush_table("empresas")
+        assert writer.flush_table("empresas") is not None
         assert writer.flush_table("empresas") is None
 
     def test_tracks_file_size(self, writer: ParquetWriter, sample_empresas: pl.DataFrame) -> None:
@@ -122,6 +122,8 @@ class TestClose:
         )
 
         writer.close()
+        assert writer.stats["empresas"].size_bytes > 0
+        assert writer.stats["estabelecimentos"].size_bytes > 0
         assert writer.flush_table("empresas") is None
         assert writer.flush_table("estabelecimentos") is None
 
