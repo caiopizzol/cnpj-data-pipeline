@@ -1558,6 +1558,31 @@ def test_webdav_response_requires_href(downloader: DownloadProbe, href: str, lis
 
 
 class TestDownloadSourceIntegrity:
+    @pytest.mark.parametrize("members", [{}, {"README.txt": "no source"}, {"CNAECSV/": ""}])
+    def test_rejected_zip_is_redownloaded_after_source_is_repaired(
+        self,
+        downloader: DownloadProbe,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        members: dict[str, str],
+    ) -> None:
+        downloader.config.keep_files = True
+        rejected = _create_test_zip(tmp_path, members)
+        repaired = _create_test_zip(tmp_path, {"CNAECSV.csv": "01;Repaired source\n"})
+        http = _ScriptedGet(
+            [_ScriptedResponse([body], {"Content-Length": str(len(body))}) for body in [rejected, repaired]]
+        )
+        monkeypatch.setattr(requests, "get", http)
+
+        with pytest.raises(ValueError, match="No recognized source files"):
+            downloader.download_file("2024-03", "Cnaes.zip")
+
+        result = downloader.download_file("2024-03", "Cnaes.zip")
+
+        assert result[0].read_text() == "01;Repaired source\n"
+        assert len(http.calls) == 2
+        assert (tmp_path / "2024-03.Cnaes.zip").read_bytes() == repaired
+
     def test_kept_zips_are_reused_only_for_the_same_month(
         self, downloader: DownloadProbe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1615,4 +1640,4 @@ class TestDownloadSourceIntegrity:
             else:
                 list(downloader.download_files("2024-03", [filename]))
         assert len(http.calls) == 1
-        assert (tmp_path / f"2024-03.{filename}").exists() is keep_files
+        assert not (tmp_path / f"2024-03.{filename}").exists()
