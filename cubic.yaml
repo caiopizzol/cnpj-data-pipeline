@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
-
-version: 1
-
-reviews:
-  custom_instructions: >-
-    Focus review on semantic regressions that could publish incomplete monthly output or make the same Receita Federal record differ across CSV transformation, PostgreSQL, and Parquet. Flag completion state or input cleanup that can occur before every selected output is durable, and contract changes that leave column order, keys, types, recipes, documentation, or Parquet schema metadata inconsistent.
