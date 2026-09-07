@@ -1,22 +1,23 @@
 """Tests for main module."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
 
-from main import _parquet_worker, _pg_worker, get_file_priority, group_files_by_dependency, main, parse_args
+from main import get_file_priority, group_files_by_dependency, main, parquet_worker, parse_args, pg_worker
 
 
 class TestGetFilePriority:
     """Test sorting priority within the configured logical loading order."""
 
-    def test_reference_tables_first(self):
+    def test_reference_tables_first(self) -> None:
         """Reference tables should have lowest priority values (processed first)."""
         assert get_file_priority("CNAECSV.D51213") < get_file_priority("EMPRECSV.D51213")
         assert get_file_priority("PAISCSV.D51213") < get_file_priority("ESTABELE.D51213")
 
-    def test_sort_priority_within_loading_order(self):
+    def test_sort_priority_within_loading_order(self) -> None:
         """Sorting ranks empresas before estabelecimentos before socios; the latter two share a worker group."""
         empresas = get_file_priority("EMPRECSV.D51213")
         estabelecimentos = get_file_priority("ESTABELE.D51213")
@@ -25,7 +26,7 @@ class TestGetFilePriority:
         assert empresas < estabelecimentos
         assert estabelecimentos < socios
 
-    def test_unknown_file_sorts_last(self):
+    def test_unknown_file_sorts_last(self) -> None:
         """Unknown file types should sort after all known types."""
         assert get_file_priority("UNKNOWN.csv") == 999
         assert get_file_priority("UNKNOWN.csv") > get_file_priority("SIMPLESCSV.D51213")
@@ -34,7 +35,7 @@ class TestGetFilePriority:
 class TestGroupFilesByDependency:
     """Test dependency grouping for parallel processing."""
 
-    def test_groups_reference_files(self):
+    def test_groups_reference_files(self) -> None:
         """Reference files should all be in group 0."""
         files = ["Cnaes.zip", "Motivos.zip", "Paises.zip"]
         groups = group_files_by_dependency(files)
@@ -42,7 +43,7 @@ class TestGroupFilesByDependency:
         assert len(groups[1]) == 0
         assert len(groups[2]) == 0
 
-    def test_groups_by_dependency_level(self):
+    def test_groups_by_dependency_level(self) -> None:
         """Files should be grouped by their logical loading level."""
         files = ["Cnaes.zip", "Empresas0.zip", "Estabele0.zip", "Socios0.zip"]
         groups = group_files_by_dependency(files)
@@ -50,13 +51,13 @@ class TestGroupFilesByDependency:
         assert groups[1] == ["Empresas0.zip"]
         assert sorted(groups[2]) == sorted(["Estabele0.zip", "Socios0.zip"])
 
-    def test_multiple_files_same_type(self):
+    def test_multiple_files_same_type(self) -> None:
         """Multiple files of the same type should be in the same group."""
         files = ["Empresas0.zip", "Empresas1.zip", "Empresas2.zip"]
         groups = group_files_by_dependency(files)
         assert len(groups[1]) == 3
 
-    def test_unknown_files_excluded(self):
+    def test_unknown_files_excluded(self) -> None:
         """Unknown file types should not appear in any group."""
         files = ["Unknown.zip", "Cnaes.zip"]
         groups = group_files_by_dependency(files)
@@ -68,7 +69,7 @@ class TestParseArgs:
     """Test the public command-line arguments."""
 
     @patch("sys.argv", ["main.py", "--month", "2024-11", "--force"])
-    def test_parses_month_and_force(self):
+    def test_parses_month_and_force(self) -> None:
         args = parse_args()
 
         assert args.list is False
@@ -81,7 +82,7 @@ class TestMain:
 
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_list_mode_never_touches_database(self, mock_args, mock_downloader_cls):
+    def test_list_mode_never_touches_database(self, mock_args: MagicMock, mock_downloader_cls: MagicMock) -> None:
         """--list should print months and never create a Database."""
         mock_args.return_value = MagicMock(list=True, month=None, force=False)
         mock_downloader = MagicMock()
@@ -96,7 +97,9 @@ class TestMain:
     @patch("main.config")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_missing_database_url_exits(self, mock_args, mock_downloader_cls, mock_config):
+    def test_missing_database_url_exits(
+        self, mock_args: MagicMock, mock_downloader_cls: MagicMock, mock_config: MagicMock
+    ) -> None:
         """Missing DATABASE_URL should exit with code 1."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
@@ -111,7 +114,9 @@ class TestMain:
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_invalid_month_exits(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):
+    def test_invalid_month_exits(
+        self, mock_args: MagicMock, mock_downloader_cls: MagicMock, mock_db_cls: MagicMock, mock_config: MagicMock
+    ) -> None:
         """Invalid --month should exit with code 1."""
         mock_args.return_value = MagicMock(list=False, month="2099-01", force=False)
         mock_config.output_format = "postgres"
@@ -129,7 +134,9 @@ class TestMain:
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_force_clears_processed_files(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):
+    def test_force_clears_processed_files(
+        self, mock_args: MagicMock, mock_downloader_cls: MagicMock, mock_db_cls: MagicMock, mock_config: MagicMock
+    ) -> None:
         """--force should call clear_processed_files before processing."""
         mock_args.return_value = MagicMock(list=False, month=None, force=True)
         mock_config.output_format = "postgres"
@@ -155,7 +162,9 @@ class TestMain:
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_no_pending_files_returns_early(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):
+    def test_no_pending_files_returns_early(
+        self, mock_args: MagicMock, mock_downloader_cls: MagicMock, mock_db_cls: MagicMock, mock_config: MagicMock
+    ) -> None:
         """When all files are processed, should return without downloading."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
@@ -180,8 +189,14 @@ class TestMain:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_mark_processed_failure_skips_explicit_csv_unlink(
-        self, mock_args, mock_downloader_cls, mock_db_cls, mock_config, mock_process_file, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_db_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """A failed mark_processed skips the explicit unlink; cleanup is mocked here."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
@@ -221,7 +236,9 @@ class TestMain:
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_always_disconnects_and_cleans_up(self, mock_args, mock_downloader_cls, mock_db_cls, mock_config):
+    def test_always_disconnects_and_cleans_up(
+        self, mock_args: MagicMock, mock_downloader_cls: MagicMock, mock_db_cls: MagicMock, mock_config: MagicMock
+    ) -> None:
         """disconnect and cleanup should always be called, even on error."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
@@ -249,8 +266,13 @@ class TestParquetOutput:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_writes_parquet_and_manifest(
-        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """Parquet mode should write parquet files and manifest without touching database."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
@@ -285,8 +307,13 @@ class TestParquetOutput:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_does_not_require_database_url(
-        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """Parquet mode should work without DATABASE_URL."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
@@ -312,8 +339,13 @@ class TestParquetOutput:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_estabelecimentos_single_file(
-        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """Estabelecimentos should be written to a single file."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
@@ -346,7 +378,9 @@ class TestParquetOutput:
     @patch("main.config")
     @patch("main.Downloader")
     @patch("main.parse_args")
-    def test_cleans_up_on_error(self, mock_args, mock_downloader_cls, mock_config, tmp_path):
+    def test_cleans_up_on_error(
+        self, mock_args: MagicMock, mock_downloader_cls: MagicMock, mock_config: MagicMock, tmp_path: Path
+    ) -> None:
         """Parquet mode should always call downloader.cleanup on error."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
@@ -368,8 +402,14 @@ class TestParquetOutput:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_post_file_command_runs_per_table(
-        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, mock_subprocess, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        mock_subprocess: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """POST_FILE_COMMAND should run once per table after all its files are processed."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
@@ -401,12 +441,14 @@ class TestParquetOutput:
 
 
 class TestPgWorker:
-    """Test _pg_worker function."""
+    """Test pg_worker function."""
 
     @patch("database.Database")
     @patch("main.process_file")
-    def test_downloads_processes_and_marks_file(self, mock_process_file, mock_db_cls, tmp_path):
-        """_pg_worker should download, process, mark processed, and delete CSV."""
+    def test_downloads_processes_and_marks_file(
+        self, mock_process_file: MagicMock, mock_db_cls: MagicMock, tmp_path: Path
+    ) -> None:
+        """pg_worker should download, process, mark processed, and delete CSV."""
         csv_file = tmp_path / "CNAECSV.D51213"
         csv_file.write_text("data")
 
@@ -424,7 +466,7 @@ class TestPgWorker:
 
         mock_process_file.return_value = iter([(pl.DataFrame({"codigo": ["001"]}), "cnaes", ["codigo"])])
 
-        _pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg)
+        pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg)
 
         mock_db.bulk_upsert.assert_called_once()
         mock_db.mark_processed.assert_called_once_with("2024-01", "Cnaes.zip")
@@ -433,8 +475,10 @@ class TestPgWorker:
 
     @patch("database.Database")
     @patch("main.process_file")
-    def test_uses_bulk_insert_for_replace(self, mock_process_file, mock_db_cls, tmp_path):
-        """_pg_worker should use bulk_insert when loading_strategy is replace."""
+    def test_uses_bulk_insert_for_replace(
+        self, mock_process_file: MagicMock, mock_db_cls: MagicMock, tmp_path: Path
+    ) -> None:
+        """pg_worker should use bulk_insert when loading_strategy is replace."""
         csv_file = tmp_path / "CNAECSV.D51213"
         csv_file.write_text("data")
 
@@ -452,15 +496,17 @@ class TestPgWorker:
 
         mock_process_file.return_value = iter([(pl.DataFrame({"codigo": ["001"]}), "cnaes", ["codigo"])])
 
-        _pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg)
+        pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg)
 
         mock_db.bulk_insert.assert_called_once()
         mock_db.bulk_upsert.assert_not_called()
 
     @patch("database.Database")
     @patch("main.process_file")
-    def test_passes_pre_truncated_to_database(self, mock_process_file, mock_db_cls, tmp_path):
-        """_pg_worker should pass pre_truncated to Database constructor."""
+    def test_passes_pre_truncated_to_database(
+        self, mock_process_file: MagicMock, mock_db_cls: MagicMock, tmp_path: Path
+    ) -> None:
+        """pg_worker should pass pre_truncated to Database constructor."""
         csv_file = tmp_path / "CNAECSV.D51213"
         csv_file.write_text("data")
 
@@ -480,15 +526,15 @@ class TestPgWorker:
 
         mock_process_file.return_value = iter([(pl.DataFrame({"codigo": ["001"]}), "cnaes", ["codigo"])])
 
-        _pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg, pre_truncated={"cnaes"})
+        pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg, pre_truncated={"cnaes"})
 
         mock_db_cls.assert_called_once_with(
             "postgresql://test", pre_truncated={"cnaes"}, retry_attempts=3, retry_delay=5
         )
 
     @patch("database.Database")
-    def test_disconnects_on_error(self, mock_db_cls):
-        """_pg_worker should always call db.disconnect(), even on error."""
+    def test_disconnects_on_error(self, mock_db_cls: MagicMock) -> None:
+        """pg_worker should always call db.disconnect(), even on error."""
         mock_downloader = MagicMock()
         mock_downloader.download_file.side_effect = Exception("download failed")
 
@@ -499,17 +545,17 @@ class TestPgWorker:
         mock_cfg.database_url = "postgresql://test"
 
         with pytest.raises(Exception, match="download failed"):
-            _pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg)
+            pg_worker("Cnaes.zip", "2024-01", mock_downloader, mock_cfg)
 
         mock_db.disconnect.assert_called_once()
 
 
 class TestParquetWorker:
-    """Test _parquet_worker function."""
+    """Test parquet_worker function."""
 
     @patch("main.process_file")
-    def test_downloads_and_writes_batches(self, mock_process_file, tmp_path):
-        """_parquet_worker should download, process, and write to parquet."""
+    def test_downloads_and_writes_batches(self, mock_process_file: MagicMock, tmp_path: Path) -> None:
+        """parquet_worker should download, process, and write to parquet."""
         csv_file = tmp_path / "CNAECSV.D51213"
         csv_file.write_text("data")
 
@@ -523,14 +569,14 @@ class TestParquetWorker:
 
         mock_process_file.return_value = iter([(pl.DataFrame({"codigo": ["001"]}), "cnaes", ["codigo"])])
 
-        _parquet_worker("Cnaes.zip", "2024-01", mock_downloader, mock_parquet, mock_cfg)
+        parquet_worker("Cnaes.zip", "2024-01", mock_downloader, mock_parquet, mock_cfg)
 
         mock_parquet.write_batch.assert_called_once()
         assert not csv_file.exists()
 
     @patch("main.process_file")
-    def test_keeps_file_when_configured(self, mock_process_file, tmp_path):
-        """_parquet_worker should not delete CSV when keep_files is True."""
+    def test_keeps_file_when_configured(self, mock_process_file: MagicMock, tmp_path: Path) -> None:
+        """parquet_worker should not delete CSV when keep_files is True."""
         csv_file = tmp_path / "CNAECSV.D51213"
         csv_file.write_text("data")
 
@@ -544,7 +590,7 @@ class TestParquetWorker:
 
         mock_process_file.return_value = iter([(pl.DataFrame({"codigo": ["001"]}), "cnaes", ["codigo"])])
 
-        _parquet_worker("Cnaes.zip", "2024-01", mock_downloader, mock_parquet, mock_cfg)
+        parquet_worker("Cnaes.zip", "2024-01", mock_downloader, mock_parquet, mock_cfg)
 
         assert csv_file.exists()
 
@@ -557,8 +603,13 @@ class TestParallelProcessing:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_parquet_parallel_produces_output(
-        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """With workers > 1 in parquet mode, files should still be processed correctly."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"
@@ -586,15 +637,20 @@ class TestParallelProcessing:
         assert (tmp_path / "parquet" / "cnaes.parquet").exists()
         mock_downloader.download_file.assert_called()
 
-    @patch("main._pg_worker")
+    @patch("main.pg_worker")
     @patch("main.config")
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_postgres_parallel_submits_workers(
-        self, mock_args, mock_downloader_cls, mock_db_cls, mock_config, mock_pg_worker
-    ):
-        """With workers > 1 in postgres mode, _pg_worker should be submitted to executor."""
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_db_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_pg_worker: MagicMock,
+    ) -> None:
+        """With workers > 1 in postgres mode, pg_worker should be submitted to executor."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
         mock_config.database_url = "postgresql://test"
@@ -618,14 +674,19 @@ class TestParallelProcessing:
 
         assert mock_pg_worker.call_count == 2
 
-    @patch("main._pg_worker")
+    @patch("main.pg_worker")
     @patch("main.config")
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_parallel_worker_failure_aborts_pipeline(
-        self, mock_args, mock_downloader_cls, mock_db_cls, mock_config, mock_pg_worker
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_db_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_pg_worker: MagicMock,
+    ) -> None:
         """A failing worker aborts the pipeline after the current group finishes."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
@@ -653,14 +714,19 @@ class TestParallelProcessing:
 class TestPreTruncation:
     """Test pre-truncation logic for parallel replace strategy."""
 
-    @patch("main._pg_worker")
+    @patch("main.pg_worker")
     @patch("main.config")
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_replace_strategy_pre_truncates(
-        self, mock_args, mock_downloader_cls, mock_db_cls, mock_config, mock_pg_worker
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_db_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_pg_worker: MagicMock,
+    ) -> None:
         """With workers > 1 and replace strategy, tables should be truncated before workers."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
@@ -689,14 +755,19 @@ class TestPreTruncation:
             pre_truncated_arg = call[0][4]
             assert "empresas" in pre_truncated_arg
 
-    @patch("main._pg_worker")
+    @patch("main.pg_worker")
     @patch("main.config")
     @patch("database.Database")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_upsert_strategy_does_not_truncate(
-        self, mock_args, mock_downloader_cls, mock_db_cls, mock_config, mock_pg_worker
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_db_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_pg_worker: MagicMock,
+    ) -> None:
         """With workers > 1 and upsert strategy, tables should NOT be truncated."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "postgres"
@@ -729,8 +800,13 @@ class TestParquetResume:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_skips_already_exported_table(
-        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """Tables with existing parquet files should be skipped entirely."""
         parquet_dir = tmp_path / "parquet"
         parquet_dir.mkdir()
@@ -761,8 +837,13 @@ class TestParquetResume:
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_processes_only_missing_tables(
-        self, mock_args, mock_downloader_cls, mock_config, mock_process_file, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_process_file: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """Only tables without existing parquet files should be processed."""
         parquet_dir = tmp_path / "parquet"
         parquet_dir.mkdir()
@@ -796,13 +877,18 @@ class TestParquetResume:
         mock_process_file.assert_called_once()
         assert (parquet_dir / "motivos.parquet").exists()
 
-    @patch("main._parquet_worker")
+    @patch("main.parquet_worker")
     @patch("main.config")
     @patch("main.Downloader")
     @patch("main.parse_args")
     def test_parallel_parquet_worker_failure_aborts(
-        self, mock_args, mock_downloader_cls, mock_config, mock_parquet_worker, tmp_path
-    ):
+        self,
+        mock_args: MagicMock,
+        mock_downloader_cls: MagicMock,
+        mock_config: MagicMock,
+        mock_parquet_worker: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         """Parallel parquet worker failure should abort the pipeline."""
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         mock_config.output_format = "parquet"

@@ -84,7 +84,7 @@ CREATE TABLE situacoes_cadastrais (
 );
 -- AIDEV-NOTE: SERPRO's full situacao_cadastral domain, verbatim (01/02/03/04/05/08).
 -- The ingest validator (processor.py _FORMAT_RULES: ^(01|02|03|04|08)$) only LOGS
--- a warning on out-of-set codes; _validate nullifies dates/UF/capital but never an
+-- a warning on out-of-set codes; validate nullifies dates/UF/capital but never an
 -- enum value, so a raw '05' (Ativa Não Regular) survives ingest. It is an official
 -- SERPRO code and must resolve to its label, not silently become NULL via the LEFT
 -- JOIN. Keep every SERPRO domain code here, same rationale as porte '00' above.

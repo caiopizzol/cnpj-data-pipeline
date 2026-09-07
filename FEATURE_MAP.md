@@ -96,7 +96,7 @@ OUTPUT_FORMAT=postgres LOADING_STRATEGY=upsert uv run --frozen python main.py --
 ```
 
 Referências: `--month` (`-m`), `OUTPUT_FORMAT`, `LOADING_STRATEGY`, `processed_files`. Sem `--month`, usa o mês mais recente.
-Código: [main.py](main.py) `main/_pg_worker`, [database.py](database.py), [initial.sql](initial.sql).
+Código: [main.py](main.py) `main/pg_worker`, [database.py](database.py), [initial.sql](initial.sql).
 Executado apenas com dados de teste, pelo preparo do banco. Download mensal não testado.
 Testes: [test_integration.py](tests/test_integration.py) `TestFullPipeline` verifica carga e recarga; [test_main.py](tests/test_main.py) `TestParseArgs` verifica as opções. Isso não garante atualizar a base inteira de uma só vez.
 
@@ -154,7 +154,7 @@ Arquivo existente faz a tabela ser pulada, mesmo se incompleto ou de outro mês.
 OUTPUT_FORMAT=parquet PARQUET_OUTPUT_DIR=./parquet-typed PARQUET_TYPED_OUTPUT=true uv run --frozen python main.py --month 2024-11
 ```
 
-Referência: `PARQUET_TYPED_OUTPUT`. Código: [processor.py](processor.py) `_apply_typed_casts`, [main.py](main.py).
+Referência: `PARQUET_TYPED_OUTPUT`. Código: [processor.py](processor.py) `apply_typed_casts`, [main.py](main.py).
 Mês completo não testado. Teste: [test_processor.py](tests/test_processor.py) `TestTypedCasts` verifica tipos de datas e números. `schemaVersion` é igual nos modos string e tipado; confira os tipos no arquivo.
 
 ## Rodar um comando após exportar cada tabela

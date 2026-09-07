@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Condition, Lock
 from time import monotonic
-from typing import Callable, Iterator, List, Mapping, Tuple
+from typing import Callable, Generator, Iterator, List, Mapping, Tuple
 from xml.etree import ElementTree
 
 import requests
@@ -91,7 +91,7 @@ class AdaptiveDownloadConcurrency:
             return self._current_concurrency
 
     @contextmanager
-    def stream_permit(self) -> Iterator[None]:
+    def stream_permit(self) -> Generator[None, None, None]:
         """Gate one HTTP attempt (connect + stream) on the CURRENT concurrency.
         _download_parallel only limits how many file downloads are submitted;
         files already in flight when concurrency degrades would otherwise keep
@@ -173,9 +173,12 @@ class Downloader:
         """Get all available data directories from Receita Federal."""
         root = self._propfind()
 
-        directories = []
+        directories: list[str] = []
         for response in root.findall("d:response", DAV_NS):
-            href = response.find("d:href", DAV_NS).text
+            href_element = response.find("d:href", DAV_NS)
+            if href_element is None or href_element.text is None:
+                raise ValueError("WebDAV response is missing href text")
+            href = href_element.text
             # Match YYYY-MM directory pattern from href path
             match = re.search(r"(\d{4}-\d{2})/?$", href)
             if match:
@@ -194,9 +197,12 @@ class Downloader:
         """Get list of ZIP files in a directory."""
         root = self._propfind(directory)
 
-        files = []
+        files: list[str] = []
         for response in root.findall("d:response", DAV_NS):
-            href = response.find("d:href", DAV_NS).text
+            href_element = response.find("d:href", DAV_NS)
+            if href_element is None or href_element.text is None:
+                raise ValueError("WebDAV response is missing href text")
+            href = href_element.text
             # Extract .zip filenames from href
             match = re.search(r"/([^/]+\.zip)$", href, re.IGNORECASE)
             if match:
@@ -301,7 +307,7 @@ class Downloader:
             self._download_zip(url, directory, filename, zip_path, log, adaptive)
 
         # Extract CSV files
-        extracted_files = []
+        extracted_files: list[Path] = []
         try:
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 for member in zip_ref.namelist():

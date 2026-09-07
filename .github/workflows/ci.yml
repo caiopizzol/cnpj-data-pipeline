@@ -31,16 +31,19 @@ jobs:
       - uses: astral-sh/setup-uv@v7
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Lint
-        run: uv run ruff check .
+        run: uv run --frozen ruff check .
 
       - name: Format check
-        run: uv run ruff format --check .
+        run: uv run --frozen ruff format --check .
+
+      - name: Typecheck
+        run: uv run --frozen pyright
 
       - name: Test with coverage
-        run: uv run pytest --cov --cov-branch --cov-report=xml
+        run: uv run --frozen pytest --cov --cov-branch --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

@@ -9,6 +9,7 @@ from typing import List, Set
 
 import polars as pl
 import psycopg2
+from psycopg2.extensions import connection, cursor
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +18,16 @@ class Database:
     """PostgreSQL database handler with temp table upsert."""
 
     def __init__(
-        self, database_url: str, pre_truncated: set | None = None, retry_attempts: int = 3, retry_delay: int = 5
+        self, database_url: str, pre_truncated: set[str] | None = None, retry_attempts: int = 3, retry_delay: int = 5
     ):
         self.database_url = database_url
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
-        self._pk_cache: dict = {}
-        self._truncated_tables: set = set(pre_truncated) if pre_truncated else set()
-        self.conn = None
+        self._pk_cache: dict[str, list[str]] = {}
+        self._truncated_tables: set[str] = set(pre_truncated) if pre_truncated else set()
+        self.conn: connection | None = None
 
-    def connect(self):
+    def connect(self) -> connection:
         """Establish database connection with retry.
 
         Passes DATABASE_URL through to libpq verbatim so query-string
@@ -34,19 +35,21 @@ class Database:
         multi-host URIs, etc.) reach the driver.
         """
         if self.conn is not None:
-            return
+            return self.conn
 
         for attempt in range(self.retry_attempts):
             try:
                 self.conn = psycopg2.connect(self.database_url)
                 self.conn.autocommit = False
-                return
+                return self.conn
             except psycopg2.OperationalError:
                 if attempt == self.retry_attempts - 1:
                     raise
                 time.sleep(2**attempt)
 
-    def disconnect(self):
+        raise ValueError("retry_attempts must be positive")
+
+    def disconnect(self) -> None:
         """Close database connection."""
         if self.conn:
             self.conn.close()
@@ -58,26 +61,29 @@ class Database:
         Lets the published Docker image target a fresh managed Postgres
         (Railway, RDS, etc.) without a separate init step.
         """
-        self.connect()
+        conn = self.connect()
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute("SELECT to_regclass('processed_files')")
-                if cur.fetchone()[0] is not None:
+                row = cur.fetchone()
+                if row is None:
+                    raise RuntimeError("Schema query returned no row")
+                if row[0] is not None:
                     return
 
                 sql_path = Path(__file__).parent / "initial.sql"
                 cur.execute(sql_path.read_text())
-                self.conn.commit()
+                conn.commit()
                 logger.info("Applied schema from initial.sql")
         except Exception:
-            self.conn.rollback()
+            conn.rollback()
             raise
 
     def get_processed_files(self, directory: str) -> Set[str]:
         """Get all processed filenames for a directory."""
-        self.connect()
+        conn = self.connect()
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     "SELECT filename FROM processed_files WHERE directory = %s",
                     (directory,),
@@ -89,32 +95,32 @@ class Database:
 
     def mark_processed(self, directory: str, filename: str):
         """Mark a file as processed."""
-        self.connect()
-        with self.conn.cursor() as cur:
+        conn = self.connect()
+        with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO processed_files (directory, filename)
                    VALUES (%s, %s)
                    ON CONFLICT (directory, filename) DO NOTHING""",
                 (directory, filename),
             )
-            self.conn.commit()
+            conn.commit()
 
     def clear_processed_files(self, directory: str):
         """Clear all processed file records for a directory (for force re-processing)."""
-        self.connect()
-        with self.conn.cursor() as cur:
+        conn = self.connect()
+        with conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM processed_files WHERE directory = %s",
                 (directory,),
             )
-            self.conn.commit()
+            conn.commit()
 
     def truncate_table(self, table_name: str):
         """Truncate a table. Used before parallel processing with replace strategy."""
-        self.connect()
-        with self.conn.cursor() as cur:
+        conn = self.connect()
+        with conn.cursor() as cur:
             cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
-            self.conn.commit()
+            conn.commit()
         self._truncated_tables.add(table_name)
 
     def bulk_upsert(self, df: pl.DataFrame, table_name: str, columns: List[str]):
@@ -122,11 +128,11 @@ class Database:
         if df.is_empty():
             return
 
-        self.connect()
+        conn = self.connect()
         temp_table = f"temp_{table_name}_{id(df)}"
 
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 # 1. Create temp table
                 cur.execute(
                     f"CREATE TEMP TABLE {temp_table} "
@@ -140,10 +146,10 @@ class Database:
                 primary_keys = self._get_primary_keys(cur, table_name)
                 self._upsert_from_temp(cur, temp_table, table_name, columns, primary_keys)
 
-                self.conn.commit()
+                conn.commit()
 
         except Exception as e:
-            self.conn.rollback()
+            conn.rollback()
             logger.error(f"Error: {table_name}: {e}")
             raise
 
@@ -163,10 +169,10 @@ class Database:
         if df.is_empty():
             return
 
-        self.connect()
+        conn = self.connect()
 
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 first_batch = table_name not in self._truncated_tables
                 if first_batch:
                     cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
@@ -187,14 +193,14 @@ class Database:
                     primary_keys = self._get_primary_keys(cur, table_name)
                     self._upsert_from_temp(cur, temp_table, table_name, columns, primary_keys)
 
-                self.conn.commit()
+                conn.commit()
 
         except Exception as e:
-            self.conn.rollback()
+            conn.rollback()
             logger.error(f"Error: {table_name}: {e}")
             raise
 
-    def _copy_to_temp(self, cur, df: pl.DataFrame, temp_table: str, columns: List[str]):
+    def _copy_to_temp(self, cur: cursor, df: pl.DataFrame, temp_table: str, columns: List[str]):
         """COPY a DataFrame to the supplied destination table using Polars CSV."""
         columns_str = ", ".join([f'"{col}"' for col in columns])
         csv_bytes = df.write_csv(include_header=False).encode("utf-8", errors="replace")
@@ -205,7 +211,7 @@ class Database:
             io.BytesIO(csv_bytes),
         )
 
-    def _get_primary_keys(self, cur, table_name: str) -> List[str]:
+    def _get_primary_keys(self, cur: cursor, table_name: str) -> List[str]:
         """Get primary key columns for a table with caching."""
         if table_name in self._pk_cache:
             return self._pk_cache[table_name]
@@ -225,7 +231,9 @@ class Database:
         self._pk_cache[table_name] = primary_keys
         return primary_keys
 
-    def _upsert_from_temp(self, cur, temp_table: str, target_table: str, columns: List[str], primary_keys: List[str]):
+    def _upsert_from_temp(
+        self, cur: cursor, temp_table: str, target_table: str, columns: List[str], primary_keys: List[str]
+    ):
         """Upsert from temp to target table."""
         columns_str = ", ".join([f'"{col}"' for col in columns])
         pk_str = ", ".join([f'"{pk}"' for pk in primary_keys])

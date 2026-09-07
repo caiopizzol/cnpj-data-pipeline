@@ -14,7 +14,7 @@ import data_quality_report as report_module  # noqa: E402
 from data_quality_report import cnpj_expected_dv, format_report, sample_pct  # noqa: E402
 
 
-def _base_measurements(enriched_orphans):
+def _base_measurements(enriched_orphans: report_module.EnrichedMeasurement) -> report_module.Measurements:
     """Minimal measurement dict for format_report, parameterized on the
     enriched-coverage section under test."""
     return {
@@ -45,15 +45,15 @@ class TestCnpjExpectedDV:
             ("003944600058", "87"),
         ],
     )
-    def test_known_real_cnpjs(self, first_12, expected):
+    def test_known_real_cnpjs(self, first_12: str, expected: str) -> None:
         assert cnpj_expected_dv(first_12) == expected
 
-    def test_alphanumeric_official_example(self):
+    def test_alphanumeric_official_example(self) -> None:
         # Receita Federal's published alphanumeric example: 12.ABC.345/01DE-35.
         # Stem 12ABC34501DE -> check digits 35 under the ord(c)-48 valuation.
         assert cnpj_expected_dv("12ABC34501DE") == "35"
 
-    def test_rejects_lowercase_and_symbols(self):
+    def test_rejects_lowercase_and_symbols(self) -> None:
         # The stem alphabet is uppercase 0-9/A-Z only; lowercase and
         # punctuation are not valid characters.
         with pytest.raises(ValueError):
@@ -61,7 +61,7 @@ class TestCnpjExpectedDV:
         with pytest.raises(ValueError):
             cnpj_expected_dv("000000000.01")
 
-    def test_rejects_wrong_length(self):
+    def test_rejects_wrong_length(self) -> None:
         with pytest.raises(ValueError):
             cnpj_expected_dv("12345")
         with pytest.raises(ValueError):
@@ -75,18 +75,18 @@ class TestCnpjExpectedDV:
             ("000000000018", "30"),  # Second weighted sum has remainder 1.
         ],
     )
-    def test_zero_digits_for_remainders_zero_and_one(self, stem, expected):
+    def test_zero_digits_for_remainders_zero_and_one(self, stem: str, expected: str) -> None:
         """Synthetic stems exercise both zero-DV boundaries for each digit."""
         assert cnpj_expected_dv(stem) == expected
 
 
 class TestSamplePct:
-    def test_accepts_positive_percentage_up_to_100(self):
+    def test_accepts_positive_percentage_up_to_100(self) -> None:
         assert sample_pct("0.1") == 0.1
         assert sample_pct("100") == 100.0
 
     @pytest.mark.parametrize("value", ["0", "-1", "101", "nan", "inf", "abc"])
-    def test_rejects_invalid_percentages(self, value):
+    def test_rejects_invalid_percentages(self, value: str) -> None:
         with pytest.raises(argparse.ArgumentTypeError):
             sample_pct(value)
 
@@ -94,7 +94,7 @@ class TestSamplePct:
 class TestFormatReportEnrichedSection:
     """Render-level coverage for the enriched-domain coverage section."""
 
-    def test_renders_monthly_vs_enriched_table(self):
+    def test_renders_monthly_vs_enriched_table(self) -> None:
         report = format_report(
             _base_measurements(
                 {
@@ -114,7 +114,7 @@ class TestFormatReportEnrichedSection:
         assert "Monthly orphans" in report and "After enrichment" in report
         assert "estabelecimentos.motivo_situacao_cadastral" in report
 
-    def test_renders_unavailable_note(self):
+    def test_renders_unavailable_note(self) -> None:
         report = format_report(
             _base_measurements({"available": False, "rows": []}),
             scope={"scope_str": "Bernoulli sample 0.1%"},
@@ -131,7 +131,13 @@ class TestFormatReportEnrichedSection:
         (["--full"], None, "full table scan"),
     ],
 )
-def test_cli_report_scope_matches_measurement_sampling(monkeypatch, capsys, argv, expected_sample, expected_scope):
+def test_cli_report_scope_matches_measurement_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    expected_sample: float | None,
+    expected_scope: str,
+) -> None:
     """The printed scope distinguishes check-digit sampling from full-table measurements."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused/test")
     conn = Mock()
@@ -139,7 +145,7 @@ def test_cli_report_scope_matches_measurement_sampling(monkeypatch, capsys, argv
     measurements = _base_measurements({"available": False, "rows": []})
     measure_digits = Mock(return_value=measurements["cnpj_check_digits"])
     monkeypatch.setattr(report_module, "measure_cnpj_check_digits", measure_digits)
-    full_table_measurements = {}
+    full_table_measurements: dict[str, Mock] = {}
     for name in (
         "orphan_fks",
         "enriched_orphans",
@@ -159,3 +165,12 @@ def test_cli_report_scope_matches_measurement_sampling(monkeypatch, capsys, argv
     for measurement in full_table_measurements.values():
         measurement.assert_called_once_with(conn)
     conn.close.assert_called_once_with()
+
+
+def test_count_query_without_row_fails() -> None:
+    from unittest.mock import MagicMock
+
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value.fetchone.return_value = None
+    with pytest.raises(RuntimeError, match="Count query returned no row"):
+        report_module.measure_exterior_uf(conn)

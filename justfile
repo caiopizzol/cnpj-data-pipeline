@@ -36,9 +36,13 @@ format:
 test:
     uv run pytest
 
-# Run all checks (lint, format, test)
+# Check Python types strictly
+typecheck:
+    uv run --frozen pyright
+
+# Run all checks (lint, format, typecheck, test)
 check:
-    uv run ruff check . && uv run ruff format --check . && uv run pytest
+    uv run --frozen ruff check . && uv run --frozen ruff format --check . && uv run --frozen pyright && uv run --frozen pytest
 
 # Data quality report. Only check digits are sampled; --full scans those too.
 # Requires DATABASE_URL pointing at a populated CNPJ database.

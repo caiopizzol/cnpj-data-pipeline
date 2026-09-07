@@ -102,10 +102,10 @@ COLUMNS = {
 }
 
 # Output column lists for tables whose target schema includes columns that
-# don't appear in the source CSV. Synthetic columns are emitted by _transform.
+# don't appear in the source CSV. Synthetic columns are emitted by transform.
 # Other file types insert exactly COLUMNS[file_type].
 #
-# SOCIOCSV: socio_id is a deterministic UUID derived in _transform from the
+# SOCIOCSV: socio_id is a deterministic UUID derived in transform from the
 # canonical identity tuple. It is the primary key of socios; the masked CPF
 # alone is not unique (issue #78).
 OUTPUT_COLUMNS = {
@@ -137,7 +137,7 @@ class LayoutDriftError(ValueError):
     column names are assigned by position."""
 
 
-def _check_layout(utf8_file: Path, file_type: str) -> None:
+def check_layout(utf8_file: Path, file_type: str) -> None:
     """Verify the CSV's column count matches the expected schema.
 
     RFB CSVs are headerless, so Polars assigns column names by position.
@@ -166,7 +166,7 @@ def _check_layout(utf8_file: Path, file_type: str) -> None:
         )
 
 
-def _convert_encoding(file_path: Path) -> Path:
+def convert_encoding(file_path: Path) -> Path:
     """Convert ISO-8859-1 to UTF-8. Returns path to converted file."""
     fd, tmp_path = tempfile.mkstemp(suffix=".utf8.csv")
     os.close(fd)
@@ -207,10 +207,10 @@ def process_file(
     output_columns = _output_columns(file_type)
 
     # Convert to UTF-8 before passing the file to Polars.
-    utf8_file = _convert_encoding(file_path)
+    utf8_file = convert_encoding(file_path)
 
     try:
-        _check_layout(utf8_file, file_type)
+        check_layout(utf8_file, file_type)
 
         try:
             reader = pl.read_csv_batched(
@@ -232,16 +232,16 @@ def process_file(
             for df in batches:
                 if df.is_empty():
                     continue
-                df = _transform(df, file_type)
-                df = _validate(df, file_type)
+                df = transform(df, file_type)
+                df = validate(df, file_type)
                 if typed:
-                    df = _apply_typed_casts(df, file_type)
+                    df = apply_typed_casts(df, file_type)
                 yield df, table_name, output_columns
     finally:
         utf8_file.unlink(missing_ok=True)
 
 
-def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
+def transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     """Apply transformations based on file type."""
 
     # Capital social: "1.234,56" → "1234.56", negative → null
@@ -255,7 +255,7 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
             pl.when(is_negative).then(None).otherwise(pl.col("capital_social")).alias("capital_social")
         )
 
-    # Date columns: "0" or "00000000" → null (placeholder cleanup only, validation in _validate)
+    # Date columns: "0" or "00000000" → null (placeholder cleanup only, validation in validate)
     if file_type in _DATE_COLS:
         for col in _DATE_COLS[file_type]:
             if col in df.columns:
@@ -340,7 +340,7 @@ def _add_socio_id(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(OUTPUT_COLUMNS["SOCIOCSV"])
 
 
-# Date columns by file type (shared between _transform and _validate)
+# Date columns by file type (shared between transform and validate)
 _DATE_COLS: dict[str, list[str]] = {
     "ESTABELE": ["data_situacao_cadastral", "data_inicio_atividade", "data_situacao_especial"],
     "SIMPLESCSV": [
@@ -413,7 +413,7 @@ _FORMAT_RULES: dict[str, list[tuple[str, str, str]]] = {
 }
 
 
-def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
+def validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     """Validate field formats. Log invalid counts, nullify clearly broken values."""
 
     # Format rules (regex)
@@ -456,7 +456,7 @@ def _validate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     return df
 
 
-def _apply_typed_casts(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
+def apply_typed_casts(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     """Cast string columns to their typed Polars forms.
 
     Postgres mode doesn't need this - COPY coerces strings via the column

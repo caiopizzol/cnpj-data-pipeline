@@ -5,6 +5,8 @@ pre-push:
 
 pre-commit:
   commands:
+    typecheck:
+      run: uv run --frozen pyright
     ruff:
       glob: "*.py"
       run: uv run ruff check --fix {staged_files} && git add {staged_files}
