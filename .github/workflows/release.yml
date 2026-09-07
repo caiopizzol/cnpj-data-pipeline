@@ -1,45 +1,54 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
-    permissions:
-      contents: write
-
     steps:
+      - name: Create release token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ steps.token.outputs.token }}
+
       - uses: actions/checkout@v6
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         with:
           fetch-depth: 0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+          ref: ${{ steps.release.outputs.tag_name }}
 
       - uses: actions/setup-node@v4
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         with:
-          node-version: "20"
-
-      - name: Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          pip install python-semantic-release
-          semantic-release version
-          semantic-release publish
+          node-version: '22'
 
       - name: AI Release Notes
-        if: success()
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         uses: caiopizzol/semantic-release-ai-notes@v0.3.1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: claude-haiku-4-5
           style: concise
           update-release: 'true'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.token.outputs.token }}
