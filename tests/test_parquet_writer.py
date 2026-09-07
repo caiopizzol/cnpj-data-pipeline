@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pyarrow.parquet as pq
@@ -242,3 +243,17 @@ class TestZstdCompression:
         meta = pq.ParquetFile(str(output_dir / "empresas.parquet")).metadata
         compression = meta.row_group(0).column(0).compression
         assert compression == "ZSTD"
+
+
+def test_abort_releases_other_writers_after_close_failure(writer: ParquetWriter, output_dir: Path) -> None:
+    failed = MagicMock()
+    failed.close.side_effect = OSError("disk full")
+    other = MagicMock()
+    with patch("parquet_writer.pq.ParquetWriter", side_effect=[failed, other]):
+        writer.write_batch(pl.DataFrame({"codigo": ["01"]}), "cnaes")
+        writer.write_batch(pl.DataFrame({"codigo": ["02"]}), "motivos")
+        writer.abort()
+        writer.abort()
+    failed.close.assert_called_once()
+    other.close.assert_called_once()
+    assert not list(output_dir.glob("*.parquet"))

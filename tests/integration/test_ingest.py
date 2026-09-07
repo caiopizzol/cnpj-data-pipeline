@@ -1,3 +1,5 @@
+from datetime import date
+
 from database import Database
 from processor import process_file
 from tests.integration.support import (
@@ -21,11 +23,9 @@ class TestFullPipeline:
             for batch, table_name, columns in process_file(fixture_path, batch_size=500000):
                 empty_db.bulk_upsert(batch, table_name, columns)
 
-        # Verify row counts (may be less than fixture lines due to PK dedup)
         for table, expected in EXPECTED_COUNTS.items():
             actual = count_rows(empty_db, table)
-            assert actual > 0, f"{table} is empty"
-            assert actual <= expected, f"{table} has more rows ({actual}) than fixture ({expected})"
+            assert actual == expected, f"{table}: expected {expected} rows, got {actual}"
 
     def test_upsert_idempotency(self, test_db: Database) -> None:
         """Loading the same data twice should not create duplicates."""
@@ -61,12 +61,14 @@ class TestFullPipeline:
             capital = fetch_row(cur)[0]
             assert isinstance(capital, float), f"Capital social not float: {capital}"
 
-            # No '0' or '00000000' dates should exist
             cur.execute("""
-                SELECT count(*) FROM estabelecimentos
-                WHERE data_situacao_cadastral::text IN ('0', '00000000')
+                SELECT cnpj_basico, data_situacao_cadastral
+                FROM estabelecimentos
+                WHERE cnpj_basico IN ('07163346', '13810056')
+                  AND cnpj_ordem = '0001'
+                ORDER BY cnpj_basico
             """)
-            assert fetch_row(cur)[0] == 0, "Found invalid dates in estabelecimentos"
+            assert cur.fetchall() == [("07163346", None), ("13810056", date(2016, 11, 25))]
 
     def test_replace_strategy(self, test_db: Database) -> None:
         """Loading with bulk_insert should truncate and reload cleanly."""
@@ -79,8 +81,7 @@ class TestFullPipeline:
         # Verify data is still there (not empty after truncate)
         for table, expected in EXPECTED_COUNTS.items():
             actual = count_rows(test_db, table)
-            assert actual > 0, f"{table} is empty after replace"
-            assert actual <= expected, f"{table} has more rows ({actual}) than fixture ({expected})"
+            assert actual == expected, f"{table}: expected {expected} rows after replace, got {actual}"
 
     def test_replace_handles_cross_batch_pk_overlap(self, test_db: Database) -> None:
         """bulk_insert must handle PK overlap across batches of the same table.

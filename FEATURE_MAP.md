@@ -144,7 +144,7 @@ OUTPUT_FORMAT=parquet PARQUET_OUTPUT_DIR=./parquet-string PARQUET_TYPED_OUTPUT=f
 
 Referências: `OUTPUT_FORMAT`, `PARQUET_OUTPUT_DIR`, `manifest.json`, `schemaVersion`, `sourceMonth`. Código: [main.py](main.py), [parquet_writer.py](parquet_writer.py).
 Mês completo não testado. Testes: [test_main.py](tests/test_main.py) `TestParquetOutput.test_writes_parquet_and_manifest` usa download simulado; [test_parquet_writer.py](tests/test_parquet_writer.py) verifica arquivos, metadados e ZSTD reais.
-Arquivo existente faz a tabela ser pulada, mesmo se incompleto ou de outro mês. `TestParquetResume` cobre essa regra.
+Tabelas em gravação usam `.partial`; após falha, a próxima execução refaz a tabela. Arquivos `.parquet` existentes com metadados legíveis são pulados e incluídos no manifesto. Mês, schema e completude de arquivos antigos não são conferidos. `TestParquetResume` e os testes de retomada em `test_main.py` cobrem essas regras.
 
 ## Exportar Parquet com tipos
 

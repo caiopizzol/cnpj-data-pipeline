@@ -140,7 +140,7 @@ def run_parquet(
         if not group_files:
             continue
 
-        # Skip existing paths; completion, month and schema are not checked.
+        # Resume existing tables; month and schema compatibility are not checked.
         files_to_process: list[str] = []
         tables_in_group: set[str] = set()
         skipped_tables: set[str] = set()
@@ -152,6 +152,7 @@ def run_parquet(
             parquet_path = Path(config.parquet_output_dir) / f"{table_name}.parquet"
             if parquet_path.exists():
                 if table_name not in skipped_tables:
+                    parquet.include_existing_table(table_name)
                     logger.info(f"Skipping {table_name} (already exported)")
                     skipped_tables.add(table_name)
                 continue
@@ -333,6 +334,8 @@ def main(cfg: Config | None = None) -> None:
         sys.exit(1)
 
     finally:
+        if parquet is not None:
+            parquet.abort()
         if db:
             db.disconnect()
         downloader.cleanup()

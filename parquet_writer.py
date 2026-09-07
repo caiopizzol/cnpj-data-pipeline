@@ -99,7 +99,7 @@ class ParquetWriter:
     def _get_writer(self, table_name: str, schema: pa.Schema) -> pq.ParquetWriter:
         """Get or create a ParquetWriter for a table."""
         if table_name not in self._writers:
-            path = self.output_dir / f"{table_name}.parquet"
+            path = self.output_dir / f"{table_name}.parquet.partial"
             self._writers[table_name] = pq.ParquetWriter(
                 str(path),
                 schema,
@@ -131,12 +131,27 @@ class ParquetWriter:
         del self._writers[table_name]
 
         path = self.output_dir / f"{table_name}.parquet"
-        if path.exists():
-            size = path.stat().st_size
-            self.stats[table_name].size_bytes = size
-            self.stats[table_name].file = str(path.relative_to(self.output_dir))
-            return path
-        return None
+        (self.output_dir / f"{table_name}.parquet.partial").replace(path)
+        self.stats[table_name].size_bytes = path.stat().st_size
+        self.stats[table_name].file = path.name
+        return path
+
+    def include_existing_table(self, table_name: str) -> None:
+        """Include a resumed table in the manifest, validating its Parquet footer."""
+        path = self.output_dir / f"{table_name}.parquet"
+        with pq.ParquetFile(path) as existing:
+            self.stats[table_name] = TableStats(
+                rows=existing.metadata.num_rows, size_bytes=path.stat().st_size, file=path.name
+            )
+
+    def abort(self) -> None:
+        """Release writers without publishing incomplete tables."""
+        for table_name, writer in self._writers.items():
+            try:
+                writer.close()
+            except Exception:
+                logger.exception("Failed to close partial output for %s", table_name)
+        self._writers.clear()
 
     def close(self):
         """Close all open writers."""

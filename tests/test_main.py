@@ -1,5 +1,7 @@
 """Tests for main module."""
 
+import json
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -800,7 +802,7 @@ class TestParquetResume:
         parquet_dir = tmp_path / "parquet"
         parquet_dir.mkdir()
         # Pre-create cnaes.parquet to simulate prior export
-        (parquet_dir / "cnaes.parquet").write_bytes(b"existing")
+        pl.DataFrame({"codigo": ["0111301"], "descricao": ["Arroz"]}).write_parquet(parquet_dir / "cnaes.parquet")
 
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         cfg.output_format = "parquet"
@@ -836,7 +838,7 @@ class TestParquetResume:
         parquet_dir = tmp_path / "parquet"
         parquet_dir.mkdir()
         # cnaes already exported, motivos not
-        (parquet_dir / "cnaes.parquet").write_bytes(b"existing")
+        pl.DataFrame({"codigo": ["0111301"], "descricao": ["Arroz"]}).write_parquet(parquet_dir / "cnaes.parquet")
 
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         cfg.output_format = "parquet"
@@ -937,6 +939,7 @@ def test_parquet_write_failure_stops_export(workers: int, cfg: Config, tmp_path:
 
 @pytest.mark.parametrize("workers", [1, 2])
 def test_empty_parquet_input_does_not_publish_a_file(workers: int, cfg: Config, tmp_path: Path) -> None:
+    """Characterize existing behavior: empty sources succeed without a table; this is not a completeness check."""
     cfg.output_format = "parquet"
     cfg.process_workers = workers
     cfg.post_file_command = "publish"
@@ -985,3 +988,95 @@ def test_postgres_marks_success_before_optional_cleanup(keep_files: bool, cfg: C
         db.mark_processed.assert_called_once()
         db.disconnect.assert_called_once()
         assert source.exists() is keep_files
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_parquet_retry_after_later_shard_failure(workers: int, cfg: Config, tmp_path: Path) -> None:
+    cfg.output_format = "parquet"
+    cfg.process_workers = workers
+    source = tmp_path / "CNAECSV.csv"
+
+    def extracted(*args: str) -> Iterator[Path]:
+        source.write_text("0111301;Arroz\n")
+        yield source
+        raise OSError("later shard failed")
+
+    def sequential(directory: str, files: list[str]) -> Iterator[tuple[Path, str]]:
+        for path in extracted():
+            yield path, files[0]
+
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as cls,
+    ):
+        dl = cls.return_value
+        dl.get_latest_directory.return_value = "2024-01"
+        dl.get_directory_files.return_value = ["Cnaes.zip"]
+        dl.download_file.side_effect = extracted
+        dl.download_files.side_effect = sequential
+        with pytest.raises(SystemExit):
+            main(cfg)
+        output = Path(cfg.parquet_output_dir)
+        assert not (output / "cnaes.parquet").exists()
+        assert not (output / "manifest.json").exists()
+        assert (output / "cnaes.parquet.partial").exists()
+
+        source.write_text("0111301;Arroz\n0111302;Milho\n")
+        dl.download_file.side_effect = None
+        dl.download_file.return_value = [source]
+        dl.download_files.side_effect = None
+        dl.download_files.return_value = [(source, "Cnaes.zip")]
+        main(cfg)
+        assert pl.read_parquet(output / "cnaes.parquet").height == 2
+        assert not (output / "cnaes.parquet.partial").exists()
+        manifest = json.loads((output / "manifest.json").read_text())
+        assert manifest["tables"]["cnaes"]["rows"] == 2
+
+
+def test_resumed_manifest_includes_existing_and_new_tables(cfg: Config, tmp_path: Path) -> None:
+    cfg.output_format = "parquet"
+    output = Path(cfg.parquet_output_dir)
+    output.mkdir()
+    pl.DataFrame({"codigo": ["0111301"], "descricao": ["Arroz"]}).write_parquet(output / "cnaes.parquet")
+    source = tmp_path / "MOTICSV.csv"
+    source.write_text("01;Extincao\n")
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as cls,
+    ):
+        dl = cls.return_value
+        dl.get_latest_directory.return_value = "2024-01"
+        dl.get_directory_files.return_value = ["Cnaes.zip", "Motivos.zip"]
+        dl.download_files.return_value = [(source, "Motivos.zip")]
+        main(cfg)
+        first = json.loads((output / "manifest.json").read_text())
+        assert set(first["tables"]) == {"cnaes", "motivos"}
+        assert first["totals"]["rows"] == 2
+        assert first["totals"]["sizeBytes"] == sum(p.stat().st_size for p in output.glob("*.parquet"))
+        dl.download_files.reset_mock()
+        main(cfg)
+        second = json.loads((output / "manifest.json").read_text())
+        assert second["tables"] == first["tables"]
+        assert second["totals"] == first["totals"]
+        dl.download_files.assert_not_called()
+
+
+def test_parquet_resume_rejects_unreadable_file(cfg: Config) -> None:
+    cfg.output_format = "parquet"
+    output = Path(cfg.parquet_output_dir)
+    output.mkdir()
+    (output / "cnaes.parquet").write_bytes(b"truncated")
+    (output / "manifest.json").write_text("previous manifest")
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as cls,
+    ):
+        dl = cls.return_value
+        dl.get_latest_directory.return_value = "2024-01"
+        dl.get_directory_files.return_value = ["Cnaes.zip"]
+        with pytest.raises(SystemExit) as error:
+            main(cfg)
+        assert error.value.code == 1
+        assert (output / "manifest.json").read_text() == "previous manifest"
+        dl.download_files.assert_not_called()
+        dl.cleanup.assert_called_once()

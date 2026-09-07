@@ -3,6 +3,7 @@ import pytest
 from database import Database
 from tests.integration.support import (
     RECIPES_DIR,
+    apply_recipe,
     count_rows,
     fetch_row,
 )
@@ -152,3 +153,33 @@ class TestRecipeSociosQualityFlags:
 
         count_after = count_rows(test_db, "socios_quality_flags")
         assert count_before == count_after, f"Re-running recipe changed row count: {count_before} -> {count_after}"
+
+
+@pytest.mark.parametrize("country, enriched_missing", [("150", False), ("008", True)])
+def test_socios_supplemental_flags(
+    test_db: Database, reference_domains_enriched: None, country: str, enriched_missing: bool
+) -> None:
+    with test_db.connect().cursor() as cur:
+        cur.execute(
+            """
+            UPDATE socios SET pais = %s, qualificacao_do_socio = '36',
+                qualificacao_do_representante_legal = '36'
+            WHERE socio_id = (SELECT socio_id FROM socios ORDER BY socio_id LIMIT 1)
+            RETURNING socio_id
+        """,
+            (country,),
+        )
+        socio_id = fetch_row(cur)[0]
+    test_db.connect().commit()
+    apply_recipe(test_db, "socios_quality_flags")
+    with test_db.connect().cursor() as cur:
+        cur.execute(
+            """
+            SELECT pais_lookup_missing, pais_enriched_lookup_missing,
+                qualificacao_socio_lookup_missing, qualificacao_socio_enriched_lookup_missing,
+                qualificacao_representante_lookup_missing, qualificacao_representante_enriched_lookup_missing
+            FROM socios_quality_flags WHERE socio_id = %s
+        """,
+            (socio_id,),
+        )
+        assert fetch_row(cur) == (True, enriched_missing, True, False, True, False)
