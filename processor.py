@@ -133,19 +133,18 @@ def get_file_type(filename: str) -> Optional[str]:
 
 class LayoutDriftError(ValueError):
     """Raised when a source CSV has a column count that doesn't match what
-    the pipeline expects for its file type. Indicates an RFB schema change
-    that would otherwise be silently mis-interpreted (Polars reads with a
-    fixed new_columns list and would drop extras or null-fill missing fields)."""
+    the pipeline expects for its file type. The source is headerless, so
+    column names are assigned by position."""
 
 
 def _check_layout(utf8_file: Path, file_type: str) -> None:
     """Verify the CSV's column count matches the expected schema.
 
-    RFB CSVs are headerless and the pipeline uses Polars' new_columns to
-    impose column names by position. If RFB adds, removes, or reorders
-    columns between months, Polars silently maps the wrong values to the
-    wrong names. This check counts fields in the first non-empty row and
-    raises LayoutDriftError on mismatch so the failure is loud.
+    RFB CSVs are headerless, so Polars assigns column names by position.
+    Check the first CSV record's field count before binding those names.
+    A blank first record is a mismatch; an empty file is left to Polars.
+    This does not detect reordered columns, field-format errors, or
+    differences in later records.
 
     A real CSV parser is used (csv.reader with ';' delimiter) instead of a
     naive split so quoted-field edge cases don't false-positive.
@@ -207,13 +206,10 @@ def process_file(
     input_columns = COLUMNS[file_type]
     output_columns = _output_columns(file_type)
 
-    # Convert encoding first (faster for Polars to read UTF-8)
+    # Convert to UTF-8 before passing the file to Polars.
     utf8_file = _convert_encoding(file_path)
 
     try:
-        # Verify the CSV layout matches the expected column count before
-        # Polars binds field-by-position to new_columns. Catches RFB schema
-        # changes that would otherwise be silently mis-mapped.
         _check_layout(utf8_file, file_type)
 
         try:
@@ -274,8 +270,8 @@ def _transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     if file_type == "ESTABELE" and "pais" in df.columns:
         df = df.with_columns(pl.col("pais").str.zfill(3))
 
-    # Estabelecimentos: pad 7-digit numeric CEP to 8 (RFB drops the leading
-    # zero for ~0.1% of rows, mostly SP CEPs like 1005010 → 01005010).
+    # Estabelecimentos: pad 7-digit numeric CEP to 8 (1005010 → 01005010).
+    # See docs/data-audit.md for the dated source measurements.
     # Narrow rule: only when the value is exactly 7 digits, all-numeric.
     # Leaves '0', '       0', letters, '00000000', and other shapes untouched
     # so the data_quality_report keeps surfacing them.
@@ -356,7 +352,7 @@ _DATE_COLS: dict[str, list[str]] = {
     "SOCIOCSV": ["data_entrada_sociedade"],
 }
 
-# Valid Brazilian UF codes
+# Brazilian UF codes plus the observed exterior convention EX.
 _VALID_UFS = {
     "AC",
     "AL",
@@ -469,14 +465,12 @@ def _apply_typed_casts(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     land in Parquet as Utf8 strings. Consumers using DuckDB then end up
     doing lexicographic comparisons on what they assume are dates/numbers.
 
-    Inputs to this function have already been validated: dates are
-    YYYYMMDD or null, capital_social has comma-decimals replaced with
-    dots, identificador_matriz_filial is "1" or "2". Casts use
-    strict=False defensively - any survivor that snuck through becomes
-    null rather than raising.
+    The pipeline calls this after date cleanup and decimal normalization.
+    Numeric casts check representability, not domain membership: for
+    example, identificador_matriz_filial="9" becomes integer 9.
+    Uncastable numeric strings become null because strict=False.
 
-    Dtype dispatch on date columns: a batch where every value is null
-    arrives with pl.Null dtype (not Utf8), so str.strptime would crash.
+    Date columns supplied with pl.Null dtype cannot use str.strptime.
     Cast such columns directly to pl.Date so the on-disk Parquet schema
     stays stable across batches.
     """

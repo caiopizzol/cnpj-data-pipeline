@@ -12,11 +12,10 @@ Usage:
 
     just data-quality-report                                # via justfile
 
-The tool defaults to a Bernoulli sample (0.1% of rows) because some
-measurements scan tens of millions of rows. The CNPJ check-digit
-validation in particular is Python-loop-bound; a full scan over ~70M
-estabelecimentos takes minutes. Use --full when you need definitive
-counts (e.g. before a release or as a CI gate).
+Only CNPJ check-digit validation is sampled by default (Bernoulli, 0.1%).
+All other measurements query the full tables. Use --full for exact
+check-digit counts too. Findings do not change the exit status; a CI gate
+needs a separate check against the reported counts.
 
 Currently measured:
 - CNPJ check-digit validity (DV computed from the standard RFB
@@ -32,11 +31,6 @@ Currently measured:
 - Sentinel-like value counts: capital_social = 999999999999,
   representante_legal = '***000000**'.
 - CEP format validity (null, malformed, '00000000' sentinel).
-
-Planned (separate commits, one measurement at a time):
-- Phone format validity (numeric-only, valid DDD codes, length).
-- Same-day Simples/MEI opt-in/opt-out anomaly count.
-- Null coverage by important field.
 """
 
 import argparse
@@ -114,9 +108,8 @@ def measure_cnpj_check_digits(conn, sample_pct: Optional[float] = None) -> dict:
             try:
                 expected = cnpj_expected_dv(basico + ordem)
             except ValueError:
-                # Malformed basico/ordem itself - count as invalid; the
-                # layout-drift check at ingest should normally prevent
-                # this, but be defensive.
+                # Ingest logs malformed field values but preserves them;
+                # column-count checks do not validate the CNPJ stem.
                 invalid += 1
                 if len(examples) < 10:
                     examples.append(
@@ -325,9 +318,10 @@ def measure_enriched_orphans(conn) -> dict:
 
 
 def measure_exterior_uf(conn) -> dict:
-    """Count estabelecimentos with uf='EX' (Exterior). These are valid
-    rows representing addresses outside Brazil, broken out so they don't
-    look like dirty UFs."""
+    """Count uf='EX', the observed convention for exterior addresses.
+
+    The interpretation is empirical; see docs/data-audit.md.
+    """
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM estabelecimentos WHERE uf = 'EX'")
         ex = cur.fetchone()[0]
@@ -370,8 +364,7 @@ def measure_representante_sentinel(conn) -> dict:
 
 def measure_cep_validity(conn) -> dict:
     """CEP should be 8 digits. RFB sometimes carries NULL or the
-    '00000000' sentinel; malformed (non-8-digit) values usually mean
-    upstream corruption."""
+    '00000000' sentinel. Count malformed shapes without inferring their cause."""
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM estabelecimentos")
         total = cur.fetchone()[0]
@@ -529,13 +522,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--full",
         action="store_true",
-        help="Scan all rows. Default is sampled (0.1%%) which is much faster.",
+        help="Scan all rows for check digits too. Other measurements always scan full tables.",
     )
     parser.add_argument(
         "--sample-pct",
         type=sample_pct,
         default=0.1,
-        help="Sample percentage when not using --full. Default: 0.1.",
+        help="Check-digit sample percentage when not using --full. Default: 0.1.",
     )
     args = parser.parse_args(argv)
 
@@ -545,7 +538,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     sample = None if args.full else args.sample_pct
-    scope_str = "full table scan" if args.full else f"Bernoulli sample {sample}%"
+    scope_str = (
+        "full table scan"
+        if args.full
+        else f"Check digits: Bernoulli sample {sample}%; other measurements: full table scans"
+    )
 
     print(f"Connecting to database... (scope: {scope_str})", file=sys.stderr)
     with closing(psycopg2.connect(db_url)) as conn:

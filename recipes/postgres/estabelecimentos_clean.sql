@@ -6,19 +6,18 @@
 --    this recipe selects explicit columns and is unaffected by the additions)
 --
 -- First recipe that actually mutates values. Narrow contract by design:
---   - one row per estabelecimento
+--   - one row per estabelecimento with a matching empresa
 --   - joins estabelecimentos + empresas + data_quality_flags
 --   - preserves raw columns alongside clean columns
 --   - uses ONLY predicates from data_quality_flags (single source of
 --     truth for "what counts as suspicious")
 --   - no new interpretation logic. If a rule changes, it changes in
---     data_quality_flags.sql, and this recipe picks it up automatically
+--     data_quality_flags.sql. Rebuild the flags, then this table.
 --
 -- What this recipe is NOT:
 --   - it is not empresa_detalhe replacement. No reference-table joins,
 --     no descriptions, no enum labels.
---   - it does not include sócios (different grain - see future
---     socios_quality_flags / socios_clean).
+--   - sócios use socios_quality_flags.sql and socios_clean.sql instead.
 --   - it does not synthesize booleans like is_ativa or is_matriz.
 --   - it does not concatenate addresses.
 --

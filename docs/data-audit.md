@@ -49,7 +49,7 @@ Este documento registra o que a Receita Federal entrega, o que o pipeline normal
 | `uf` | 2 letras | validação contra lista de 27 UFs + "EX" | — | — | — |
 | `municipio` | código de município da Receita Federal, string (geralmente 4 dígitos; coluna aceita até 7) | — | — | descrição em `empresa_detalhe` | alta |
 | `tipo_logradouro`, `logradouro`, `numero`, `complemento`, `bairro` | TEXT, maiúsculas, sem acentos | — | — | concatenação em receita futura (opcional) | baixa |
-| `cep` | 8 dígitos, string | padding `zfill(8)` quando o valor é exatamente 7 dígitos numéricos (a Receita Federal perde o zero à esquerda em ~0,1% das linhas, sobretudo CEPs `0xxxxxxx` de São Paulo) | — | flag `cep_is_zero_sentinel` / `cep_is_malformed` em `data_quality_flags` | média |
+| `cep` | 8 dígitos, string | padding `zfill(8)` quando o valor é exatamente 7 dígitos numéricos (a Receita Federal perde o zero à esquerda em ~0,1% das linhas, sobretudo CEPs `0xxxxxxx` de São Paulo) | — | coluna `cep_status` em `data_quality_flags` | média |
 | `ddd_1`, `telefone_1`, etc. | strings de dígitos, sem formatação | — | — | — | — |
 | `correio_eletronico` | TEXT, maiúsculas | — | — | — | — |
 
@@ -177,7 +177,7 @@ A receita `recipes/postgres/empresa_detalhe.sql` implementa:
 - **`CREATE TABLE AS`**: modelo esperado para receitas aplicadas depois do ingest.
 - **Código cru ao lado do rótulo, sem substituição**: a descrição entra como coluna adicional (`situacao_cadastral_descricao`, `porte_descricao`, `identificador_matriz_filial_descricao`); o código cru continua na linha (`situacao_cadastral` segue "02"). Sem booleanos (`is_ativa`, `is_matriz`) — esses ficam para receitas futuras.
 
-## Receitas planejadas após a primeira
+## Receitas disponíveis e próximas possibilidades
 
 1. **`data_quality_flags`** (v1.22.0+, recipeVersion 2 com os sinais enriquecidos) — tabela estreita, uma linha por estabelecimento, com sinais sem mutação de valor: `cep_status`, `is_exterior`, `pais_lookup_missing`, `motivo_lookup_missing`, `pais_enriched_lookup_missing`, `motivo_enriched_lookup_missing`, `capital_social_is_suspicious_sentinel`. Os pares `*_lookup_missing` (mensal) e `*_enriched_lookup_missing` (enriquecido) ficam separados de propósito: o primeiro mede a lacuna interna da entrega; o segundo mede o que continua sem resolução depois das linhas suplementares oficiais (depende de `reference_domains_enriched`). Serve como predicate-source para `estabelecimentos_clean`. Sócios ficam em `socios_quality_flags` por terem grão diferente.
 2. **`estabelecimentos_clean`** (v1.23.0+) — junta `estabelecimentos`, `empresas` e `data_quality_flags`. Primeira receita que altera valores: emite `cep_clean` (NULL quando `cep_status != 'valid_shape'`) e `capital_social_clean` (NULL quando `capital_social_is_suspicious_sentinel`). Preserva os valores crus (`cep_raw`, `capital_social_raw`) ao lado das colunas limpas. Usa exclusivamente os predicados de `data_quality_flags` — qualquer mudança de interpretação acontece lá, não aqui.
@@ -188,4 +188,4 @@ A receita `recipes/postgres/empresa_detalhe.sql` implementa:
 7. **`labels`** — `porte`, `situacao_cadastral`, `identificador_matriz_filial`, `identificador_de_socio` e `faixa_etaria` têm rótulo: a receita `reference_domain_labels` materializa as tabelas estáticas, `empresa_detalhe` expõe as três primeiras e `socios_detalhe` as duas de sócio. Não fica enum oficial sem coluna de descrição prevista.
 8. **`booleanos`** — colunas convenientes como `is_ativa`, `is_matriz`, `is_optante_simples_atual`. Cada uma deve documentar a regra usada.
 
-Tabelas de busca específicas (`lookup_empresas_nome`, `lookup_nome_fantasia`) e agregações por UF/CNAE/ano não estão no roadmap das receitas genéricas. São casos de uso específicos o bastante para ficar no repositório do consumidor.
+`empresas_busca_nome` e `empresas_busca_nome_counts` são receitas opcionais disponíveis para busca de matrizes ativas por nome e totais por UF, município e CNAE. Consulte [o catálogo](../recipes/README.md) para dependências e execução; elas não fazem parte da carga padrão.

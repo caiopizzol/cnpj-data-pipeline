@@ -23,7 +23,6 @@ from config import config
 from downloader import Downloader
 from processor import FILE_MAPPINGS, get_file_type, process_file
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -182,7 +181,6 @@ def main():
         db.ensure_schema()
 
     try:
-        # Select directory
         if args.month:
             available = downloader.get_available_directories()
             if args.month not in available:
@@ -211,7 +209,6 @@ def main():
 
         logger.info(f"Processing {len(pending_files)} files from {directory}")
 
-        # Sort files by processing order
         pending_files.sort(key=get_file_priority)
 
         if is_parquet:
@@ -222,7 +219,7 @@ def main():
                 if not group_files:
                     continue
 
-                # Filter out files whose tables are already exported (resume)
+                # Skip existing paths; completion, month and schema are not checked.
                 files_to_process = []
                 tables_in_group = set()
                 skipped_tables = set()

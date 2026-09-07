@@ -65,18 +65,17 @@ class TestCnpjExpectedDV:
         with pytest.raises(ValueError):
             cnpj_expected_dv("00000000000012")  # 14 not 12
 
-    def test_dv_zero_when_mod11_lt_2(self):
-        """When (11 - sum % 11) >= 10, the rule pins the digit to 0.
-        Need a 12-digit string where the weighted sum mod 11 is 0 or 10.
-        Use Banco do Brasil's known case to spot-check the path exists.
-        Other CNPJs naturally exercise it; this test just guards against
-        a regression in the >= 10 branch."""
-        # Constructed: '999999990001' computes to something specific.
-        # Trust the deterministic output - if the algorithm regresses,
-        # the known-CNPJ tests above will catch it. This is a smoke test.
-        result = cnpj_expected_dv("999999990001")
-        assert len(result) == 2
-        assert result.isdigit()
+    @pytest.mark.parametrize(
+        "stem,expected",
+        [
+            ("000000000000", "00"),  # Both weighted sums have remainder 0.
+            ("000000000006", "04"),  # First weighted sum has remainder 1.
+            ("000000000018", "30"),  # Second weighted sum has remainder 1.
+        ],
+    )
+    def test_zero_digits_for_remainders_zero_and_one(self, stem, expected):
+        """Synthetic stems exercise both zero-DV boundaries for each digit."""
+        assert cnpj_expected_dv(stem) == expected
 
 
 class TestSamplePct:

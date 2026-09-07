@@ -2,11 +2,10 @@
 --
 -- recipeVersion: 2
 --
--- Narrow per-estabelecimento table of data-quality signals. One row per
--- estabelecimento (keyed by cnpj_basico + cnpj_ordem + cnpj_dv). No source
--- columns are mutated or duplicated - this recipe only emits flags so a
--- later estabelecimentos_clean.sql can apply the interpretations using
--- these same predicates as its single source of truth.
+-- Data-quality signals for estabelecimentos with a matching empresa,
+-- keyed by cnpj_basico + cnpj_ordem + cnpj_dv. Source values are preserved;
+-- only keys and flags are emitted so estabelecimentos_clean.sql can
+-- apply interpretations from these flags.
 --
 -- Apply after the pipeline finishes ingest. The *_enriched_lookup_missing
 -- flags compare against the enriched lookups, so run that recipe first:

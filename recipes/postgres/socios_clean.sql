@@ -14,7 +14,7 @@
 --   - uses ONLY predicates from socios_quality_flags (single source of
 --     truth for "what counts as suspicious")
 --   - no new interpretation logic. If a rule changes, it changes in
---     socios_quality_flags.sql, and this recipe picks it up automatically
+--     socios_quality_flags.sql. Rebuild the flags, then this table.
 --
 -- What this recipe is NOT:
 --   - no labels for PF / PJ / Estrangeiro

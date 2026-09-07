@@ -7,7 +7,7 @@
 -- (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio) is kept
 -- alongside as lookup columns but is no longer unique (issue #78).
 --
--- No source columns are changed or duplicated here. This recipe only
+-- Only source keys are copied; source values are unchanged. This recipe
 -- materializes predicates that consumers can use later in their own clean
 -- tables or reports.
 --

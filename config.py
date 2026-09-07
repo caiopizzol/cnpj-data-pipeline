@@ -33,8 +33,7 @@ class Config:
     # When true (opt-in for backward compatibility in v1.x), cast date and
     # numeric columns to their typed Polars forms before writing Parquet.
     # The Postgres output is already typed via initial.sql column types;
-    # this flag exists to bring Parquet to parity. The default will flip
-    # to true at the next major version bump.
+    # this flag opts Parquet into those date and numeric types.
     parquet_typed_output: bool = False
     post_file_command: str = ""  # Command to run after each parquet file (receives file path as arg)
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
