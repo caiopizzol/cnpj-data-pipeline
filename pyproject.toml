@@ -37,6 +37,7 @@ addopts = "-v --tb=short"
 
 [dependency-groups]
 dev = [
+    "pyright==1.1.411",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.8.0",
@@ -48,3 +49,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"
+extraPaths = ["scripts"]
