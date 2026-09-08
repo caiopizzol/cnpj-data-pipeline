@@ -1,6 +1,7 @@
 """Check benchmark provenance, output verification, and failure reporting."""
 
 import json
+import runpy
 from pathlib import Path
 from threading import Event
 from unittest.mock import patch
@@ -35,7 +36,7 @@ def test_prepare_and_measure_real_http_sample(
 
     output = tmp_path / "output"
     monkeypatch.setattr("sys.argv", ["benchmark", "run", str(source), str(output), "--typed"])
-    main()
+    runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/benchmark_pipeline.py"), run_name="__main__")
     report = json.loads((output / "measurement.json").read_text())
     assert report["rows"] == 1
     assert report["typed"] is True

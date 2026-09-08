@@ -32,9 +32,9 @@ lint:
 format:
     uv run ruff format .
 
-# Run tests
+# Run tests with coverage (requires PostgreSQL)
 test:
-    uv run pytest
+    uv run --frozen pytest --cov
 
 # Check Python types strictly
 typecheck:
@@ -42,7 +42,7 @@ typecheck:
 
 # Run all checks (lint, format, typecheck, test)
 check:
-    uv run --frozen ruff check . && uv run --frozen ruff format --check . && uv run --frozen pyright && uv run --frozen pytest
+    uv run --frozen ruff check . && uv run --frozen ruff format --check . && uv run --frozen pyright && uv run --frozen pytest --cov
 
 # Data quality report. Only check digits are sampled; --full scans those too.
 # Requires DATABASE_URL pointing at a populated CNPJ database.

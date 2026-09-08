@@ -23,6 +23,16 @@ python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v --tb=short"
 
+[tool.coverage.run]
+branch = true
+source = ["."]
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+fail_under = 94
+precision = 2
+include_namespace_packages = true
+
 [dependency-groups]
 dev = [
     "numpy>=2.4.6",
