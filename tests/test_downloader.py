@@ -1721,3 +1721,46 @@ def test_cleanup_keeps_downloaded_artifacts_when_requested(config: Config, tmp_p
     downloader.cleanup()
     assert archive.exists()
     assert paths[0].read_text() == "01;One\n"
+
+
+@pytest.mark.parametrize("directory_link", [False, True])
+def test_extraction_rejects_internal_symlink_alias(config: Config, tmp_path: Path, directory_link: bool) -> None:
+    original = tmp_path / "original"
+    original.mkdir()
+    sentinel = original / "CNAECSV"
+    sentinel.write_text("keep me")
+    alias = tmp_path / ("linked" if directory_link else "CNAECSV")
+    alias.symlink_to(original if directory_link else sentinel, target_is_directory=directory_link)
+    member = "linked/CNAECSV" if directory_link else "CNAECSV"
+    archive = tmp_path / "2024-03.Cnaes.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(member, "overwrite")
+    config.keep_files = True
+    downloader = Downloader(config)
+    with pytest.raises(ValueError, match="Unsafe archive member"):
+        downloader.download_file("2024-03", "Cnaes.zip")
+    config.keep_files = False
+    downloader.cleanup()
+    assert sentinel.read_text() == "keep me"
+    assert alias.is_symlink()
+    assert not archive.exists()
+
+
+def test_cleanup_preserves_directory_after_extraction_failure(config: Config, tmp_path: Path) -> None:
+    target = tmp_path / "CNAECSV"
+    target.mkdir()
+    sentinel = target / "notes.txt"
+    sentinel.write_text("keep me")
+    archive = tmp_path / "2024-03.Cnaes.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("CNAECSV", "01;One\n")
+    config.keep_files = True
+    downloader = Downloader(config)
+    with pytest.raises(IsADirectoryError):
+        downloader.download_file("2024-03", "Cnaes.zip")
+    config.keep_files = False
+    downloader.cleanup()
+    downloader.cleanup()
+    assert target.is_dir()
+    assert sentinel.read_text() == "keep me"
+    assert not archive.exists()

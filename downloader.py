@@ -300,6 +300,10 @@ class Downloader:
                             member_path.is_absolute()
                             or ".." in member_path.parts
                             or not extract_path.resolve().is_relative_to(self.temp_path.resolve())
+                            or any(
+                                (self.temp_path / Path(*member_path.parts[:index])).is_symlink()
+                                for index in range(1, len(member_path.parts) + 1)
+                            )
                         ):
                             raise ValueError(f"Unsafe archive member: {member}")
                         self._owned_paths.add(extract_path)
@@ -671,5 +675,6 @@ class Downloader:
             return
 
         for file in self._owned_paths:
-            file.unlink(missing_ok=True)
+            if file.is_file() or file.is_symlink():
+                file.unlink(missing_ok=True)
         self._owned_paths.clear()
