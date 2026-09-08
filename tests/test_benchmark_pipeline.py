@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import polars as pl
 import pytest
+import requests
 
 from config import Config
 from scripts.benchmark_pipeline import logical_sha256, main, measure, prepare, sha256
@@ -31,6 +32,7 @@ def test_prepare_and_measure_real_http_sample(
     assert preparation["archive_sha256"] == sha256(work / "2024-01.Cnaes.zip")
     assert preparation["sample_sha256"] == sha256(source)
     assert preparation["sample_rows"] == 1
+    assert preparation["resumed_preparation"] is False
     assert downloads == ["/2024-01/Cnaes.zip"]
     assert source.read_text(encoding="iso-8859-1") == '"0111301";"Cultivo de café"\n'
 
@@ -49,6 +51,64 @@ def test_prepare_and_measure_real_http_sample(
     assert pl.read_parquet(output / "cnaes.parquet").rows() == [("0111301", "Cultivo de café")]
     with pytest.raises(FileExistsError):
         measure(source, output, 500_000, True)
+    with pytest.raises(ValueError, match="unfinished preparation"):
+        prepare(Config(database_url="", temp_dir=str(work), base_url=base_url), "2024-01", "Cnaes.zip", 1)
+
+
+def test_prepare_retries_saved_partial_for_same_request(
+    source_server: tuple[str, Event, list[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_url, _failure, _downloads = source_server
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    work = tmp_path / "sample"
+    config = Config(database_url="", temp_dir=str(work), base_url=base_url, keep_files=True)
+    partial = work / "Cnaes.zip.2024-01.part"
+
+    def interrupted_download(_month: str, _archive: str) -> list[Path]:
+        partial.write_bytes(b"partial ZIP")
+        raise requests.exceptions.ConnectionError("interrupted")
+
+    with patch("scripts.benchmark_pipeline.TimedDownloader.download_file", side_effect=interrupted_download):
+        with pytest.raises(requests.exceptions.ConnectionError):
+            prepare(config, "2024-01", "Cnaes.zip", 1)
+    assert partial.read_bytes() == b"partial ZIP"
+    with pytest.raises(ValueError, match="unfinished preparation"):
+        prepare(config, "2024-02", "Cnaes.zip", 1)
+    assert partial.read_bytes() == b"partial ZIP"
+
+    (work / "unrelated.zip").write_bytes(b"not the requested archive")
+    with patch("requests.get", wraps=requests.get) as get:
+        result = prepare(config, "2024-01", "Cnaes.zip", 1)
+    assert get.call_args.kwargs["headers"]["Range"] == "bytes=11-"
+    assert result["resumed_preparation"] is True
+    assert result["sample_rows"] == 1
+    assert result["archive_sha256"] == sha256(work / "2024-01.Cnaes.zip")
+    assert not partial.exists()
+
+
+def test_prepare_rejects_unowned_directory(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="unfinished preparation"):
+        prepare(Config(database_url="", temp_dir=str(tmp_path)), "2024-01", "Cnaes.zip", 1)
+
+
+def test_prepare_retries_cached_zip_after_sampling_failure(
+    source_server: tuple[str, Event, list[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_url, _failure, downloads = source_server
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    config = Config(database_url="", temp_dir=str(tmp_path / "sample"), base_url=base_url, keep_files=True)
+    with patch("scripts.benchmark_pipeline.csv.writer", side_effect=OSError("disk full")):
+        with pytest.raises(OSError, match="disk full"):
+            prepare(config, "2024-01", "Cnaes.zip", 1)
+
+    result = prepare(config, "2024-01", "Cnaes.zip", 1)
+    assert result["resumed_preparation"] is True
+    assert result["sample_rows"] == 1
+    assert downloads == ["/2024-01/Cnaes.zip"]
+    report = json.loads((tmp_path / "sample/sample.json").read_text())
+    assert report["download_and_crc_seconds"] > 0
 
 
 def test_checksum_ignores_row_groups_but_detects_data_schema_and_order_changes(tmp_path: Path) -> None:

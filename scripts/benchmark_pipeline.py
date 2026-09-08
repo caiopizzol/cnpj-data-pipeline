@@ -2,6 +2,8 @@
 
 Run from the repository root with ``uv run python -m scripts.benchmark_pipeline``.
 Use a new process and output directory for each measurement.
+Retry failed preparation with the same arguments and directory; setup times
+cover only the latest attempt, marked by ``resumed_preparation``.
 """
 
 import argparse
@@ -34,6 +36,12 @@ def sha256(path: Path) -> str:
 class TimedDownloader(Downloader):
     download_seconds: float = 0.0
 
+    def _cached_zip_is_valid(self, zip_path: Path) -> bool:
+        started = perf_counter()
+        valid = super()._cached_zip_is_valid(zip_path)
+        self.download_seconds += perf_counter() - started
+        return valid
+
     def _download_zip(
         self,
         url: str,
@@ -52,7 +60,19 @@ def prepare(config: Config, month: str, archive: str, rows: int) -> dict[str, ob
     if rows < 1:
         raise ValueError("Sample rows must be positive")
     root = Path(config.temp_dir)
-    root.mkdir(parents=True, exist_ok=False)
+    request = {"month": month, "archive": archive, "base_url": config.base_url, "rows": rows}
+    request_path = root / "prepare.json"
+    resuming = root.exists()
+    if resuming:
+        if (
+            (root / "sample.json").exists()
+            or not request_path.exists()
+            or json.loads(request_path.read_text()) != request
+        ):
+            raise ValueError("Use a new directory or retry the same unfinished preparation")
+    else:
+        root.mkdir(parents=True)
+        request_path.write_text(json.dumps(request, indent=2) + "\n")
     downloader = TimedDownloader(config)
     started = perf_counter()
     sources = downloader.download_file(month, archive)
@@ -73,11 +93,12 @@ def prepare(config: Config, month: str, archive: str, rows: int) -> dict[str, ob
     if sampled == 0:
         raise ValueError("Source CSV is empty")
     sampling_seconds = perf_counter() - started
+    [archive_path] = [path for path in root.glob("*.zip") if path.name.endswith(f".{archive}")]
     result: dict[str, object] = {
         "source_month": month,
         "source_base_url": config.base_url,
         "archive": archive,
-        "archive_sha256": sha256(next(root.glob("*.zip"))),
+        "archive_sha256": sha256(archive_path),
         "member": source.name,
         "source_csv_bytes": source.stat().st_size,
         "source_csv_sha256": sha256(source),
@@ -88,6 +109,7 @@ def prepare(config: Config, month: str, archive: str, rows: int) -> dict[str, ob
         "download_and_crc_seconds": downloader.download_seconds,
         "extraction_seconds": download_extract_seconds - downloader.download_seconds,
         "sampling_seconds": sampling_seconds,
+        "resumed_preparation": resuming,
     }
     (root / "sample.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
