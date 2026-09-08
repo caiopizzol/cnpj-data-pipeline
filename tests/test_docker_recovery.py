@@ -32,14 +32,14 @@ def test_docker_recovers_incomplete_zip(
 
         def run() -> subprocess.CompletedProcess[str]:
             name = f"cnpj-recovery-{uuid4().hex}"
+            platform = os.environ.get("CNPJ_TEST_PLATFORM")
             try:
                 return subprocess.run(
                     [
                         "docker",
                         "run",
                         "--rm",
-                        "--platform",
-                        os.environ.get("CNPJ_TEST_PLATFORM", "linux/amd64"),
+                        *(["--platform", platform] if platform else []),
                         "--name",
                         name,
                         "--network",
