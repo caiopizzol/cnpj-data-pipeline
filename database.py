@@ -119,6 +119,10 @@ class Database:
             conn.commit()
         self._truncated_tables.add(table_name)
 
+    def preserve_tables(self, tables: set[str]) -> None:
+        """Keep completed shards when resuming a replace load."""
+        self._truncated_tables.update(tables)
+
     def bulk_upsert(self, df: pl.DataFrame, table_name: str, columns: list[str]):
         """Bulk upsert using temp table + COPY."""
         if df.is_empty():
