@@ -302,6 +302,7 @@ class Downloader:
                         logger.debug(f"Extracted: {member}")
 
             if not extracted_files:
+                zip_path.unlink(missing_ok=True)
                 raise ValueError(f"No recognized source files in {directory}/{filename}")
 
         finally:
