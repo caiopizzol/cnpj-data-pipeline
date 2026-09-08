@@ -1,7 +1,9 @@
 """Tests for processor module."""
 
+import hashlib
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -360,9 +362,17 @@ class TestSocioId:
 
         result = transform(df, "SOCIOCSV")
 
-        import uuid
-
         uuid.UUID(result["socio_id"][0])  # raises if not a valid UUID string
+
+    @pytest.mark.parametrize(
+        "name", ["", "alice", "ação café", "𐐨", "long" * 10_000], ids=["empty", "ascii", "accents", "unicode", "long"]
+    )
+    def test_preserves_existing_uuid_values(self, name: str) -> None:
+        df = self._make_df([("12345678", "2", name, "***123456**", "20200101")])
+        payload = "\x1f".join(["12345678", "2", "***123456**", name, "20200101"])
+        expected = str(uuid.UUID(bytes=hashlib.blake2b(payload.encode("utf-8"), digest_size=16).digest()))
+
+        assert transform(df, "SOCIOCSV")["socio_id"][0] == expected
 
 
 class TestValidate:

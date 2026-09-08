@@ -92,6 +92,23 @@ just check   # Rodar lint, format, typecheck e testes
 
 `just typecheck` roda o Pyright em modo estrito no código, scripts e testes. Também faz parte de `just check`, do CI e do pre-commit do Lefthook. Erros de tipagem fazem essas verificações falharem. Para ativar os hooks no clone, instale o Lefthook e rode `lefthook install`.
 
+### Medir desempenho
+
+No Linux ou macOS, prepare uma amostra uma vez e compare versões usando o mesmo CSV:
+
+```bash
+uv run python -m scripts.benchmark_pipeline prepare 2026-08 Socios1.zip /tmp/cnpj-sample --rows 250000
+for run in 1 2 3; do
+  uv run python -m scripts.benchmark_pipeline run /tmp/cnpj-sample/sample.*SOCIOCSV /tmp/cnpj-run-$run
+done
+```
+
+Use pastas novas a cada comparação. `prepare` baixa o ZIP inteiro, extrai e guarda os primeiros registros completos. `sample.json` registra a origem, os checksums e os tempos de download (com validação CRC), extração e amostragem.
+
+Cada `run` usa um processo novo e grava `measurement.json` com tempos de processamento e escrita Parquet, CPU, pico de memória do processo, versões das ferramentas e checksum lógico da saída. Para comparar, mantenha `--batch-size` (padrão: 500000) e `--typed` iguais e alterne as versões. Confira a contagem de linhas e o checksum da saída antes de comparar tempos.
+
+Os tempos excluem a inicialização do Python, a leitura prévia do CSV para contar linhas/calcular checksum e a verificação final. A leitura prévia aquece o cache. O pico de memória inclui a preparação do processo, mas é capturado antes da verificação, que lê toda a saída em memória. Os resultados medem essa amostra em Parquet; não medem PostgreSQL nem a carga mensal completa.
+
 ## Uso
 
 ```bash
