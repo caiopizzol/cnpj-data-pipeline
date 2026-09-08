@@ -2,7 +2,6 @@
 
 import io
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -154,51 +153,24 @@ class Database:
             raise
 
     def bulk_insert(self, df: pl.DataFrame, table_name: str, columns: list[str]):
-        """Bulk insert under LOADING_STRATEGY=replace.
-
-        First batch per table, unless pre-truncated: TRUNCATE then COPY
-        directly into the target. This requires unique keys within that batch.
-
-        Subsequent batches and pre-truncated workers: COPY into a temp
-        table and merge via the existing upsert helper. RFB occasionally ships
-        the same (cnpj_basico, cnpj_ordem, cnpj_dv) across two sharded ZIPs of the
-        same source table (e.g. Estabelecimentos0.zip and Estabelecimentos5.zip);
-        without the temp-table path the second batch's direct COPY crashes
-        on the PK constraint.
-        """
+        """Truncate once, then use the duplicate-safe upsert path for every batch."""
         if df.is_empty():
             return
 
         conn = self.connect()
-
+        first_batch = table_name not in self._truncated_tables
         try:
-            with conn.cursor() as cur:
-                first_batch = table_name not in self._truncated_tables
-                if first_batch:
+            if first_batch:
+                with conn.cursor() as cur:
                     cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
-                    self._truncated_tables.add(table_name)
-                    logger.info(f"Truncated {table_name}")
-                    # No existing rows can conflict; this batch must have unique keys.
-                    self._copy_dataframe(cur, df, table_name, columns)
-                else:
-                    # Cross-batch PK overlap path. Same temp-then-upsert
-                    # pattern as bulk_upsert.
-                    temp_table = f"{table_name}_tmp_{os.getpid()}"
-                    cur.execute(
-                        f"CREATE TEMP TABLE IF NOT EXISTS {temp_table} "
-                        f"(LIKE {table_name} INCLUDING DEFAULTS INCLUDING STORAGE) ON COMMIT DROP"
-                    )
-                    cur.execute(f"TRUNCATE {temp_table}")
-                    self._copy_dataframe(cur, df, temp_table, columns)
-                    primary_keys = self._get_primary_keys(cur, table_name)
-                    self._upsert_from_temp(cur, temp_table, table_name, columns, primary_keys)
-
-                conn.commit()
-
-        except Exception as e:
+            self.bulk_upsert(df, table_name, columns)
+        except Exception:
             conn.rollback()
-            logger.error(f"Error: {table_name}: {e}")
             raise
+
+        if first_batch:
+            self._truncated_tables.add(table_name)
+            logger.info(f"Truncated {table_name}")
 
     def _copy_dataframe(self, cur: cursor, df: pl.DataFrame, table_name: str, columns: list[str]):
         """COPY a DataFrame to the supplied destination table using Polars CSV."""
