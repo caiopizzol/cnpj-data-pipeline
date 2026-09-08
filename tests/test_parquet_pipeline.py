@@ -146,3 +146,20 @@ def test_retry_runs_failed_post_file_command_without_reloading_table(
     assert cnaes.read_bytes() == original
     assert "/2024-01/Cnaes.zip" not in downloads
     assert (output / "manifest.json").exists()
+
+    previous_output = {path.name: path.read_bytes() for path in output.iterdir()}
+    downloads.clear()
+    with patch("main.subprocess.run") as publish:
+        main(cfg)
+    calls = [call.args[0] for call in publish.call_args_list]
+    assert sorted(calls) == sorted(
+        ["publish", "--label", "CNPJ sample", str(output / f"{table}.parquet")] for table in ("cnaes", "empresas")
+    )
+    assert downloads == []
+    assert {path.name: path.read_bytes() for path in output.iterdir() if path.suffix == ".parquet"} == {
+        name: content for name, content in previous_output.items() if name.endswith(".parquet")
+    }
+    assert (
+        json.loads((output / "manifest.json").read_text())["tables"]
+        == json.loads(previous_output["manifest.json"])["tables"]
+    )
