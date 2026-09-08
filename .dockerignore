@@ -16,4 +16,3 @@ parquet
 .env.*
 CHANGELOG.md
 .prqrc.json
-uv.lock
