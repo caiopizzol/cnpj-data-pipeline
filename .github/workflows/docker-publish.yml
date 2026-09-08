@@ -79,4 +79,7 @@ jobs:
       - name: Test published image recovery
         env:
           CNPJ_TEST_IMAGE: ghcr.io/${{ github.repository }}@${{ steps.image.outputs.digest }}
-        run: uv run --frozen pytest tests/test_docker_recovery.py
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            CNPJ_TEST_PLATFORM="$platform" uv run --frozen pytest tests/test_docker_recovery.py
+          done

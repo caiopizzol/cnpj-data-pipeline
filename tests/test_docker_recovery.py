@@ -38,6 +38,8 @@ def test_docker_recovers_incomplete_zip(
                         "docker",
                         "run",
                         "--rm",
+                        "--platform",
+                        os.environ.get("CNPJ_TEST_PLATFORM", "linux/amd64"),
                         "--name",
                         name,
                         "--network",
@@ -62,7 +64,7 @@ def test_docker_recovers_incomplete_zip(
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=120,
+                    timeout=300,
                 )
             finally:
                 subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=30)
