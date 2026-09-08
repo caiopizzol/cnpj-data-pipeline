@@ -2,6 +2,13 @@
 
 <!-- version list -->
 
+## [1.38.7](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.6...v1.38.7) (2026-09-08)
+
+
+### Bug Fixes
+
+* **postgres:** handle duplicates in first replace batch ([#129](https://github.com/caiopizzol/cnpj-data-pipeline/issues/129)) ([95cda62](https://github.com/caiopizzol/cnpj-data-pipeline/commit/95cda624189a374f1399781b1b73488c00af01a9))
+
 ## [1.38.6](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.5...v1.38.6) (2026-09-08)
 
 
