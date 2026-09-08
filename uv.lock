@@ -90,7 +90,7 @@ wheels = [
 
 [[package]]
 name = "cnpj-data-pipeline"
-version = "1.38.5"
+version = "1.38.6"
 source = { virtual = "." }
 dependencies = [
     { name = "polars" },
