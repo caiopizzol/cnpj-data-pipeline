@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## [1.38.5](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.4...v1.38.5) (2026-09-08)
+
+
+### Bug Fixes
+
+* **downloader:** discard rejected ZIP caches ([#123](https://github.com/caiopizzol/cnpj-data-pipeline/issues/123)) ([159562b](https://github.com/caiopizzol/cnpj-data-pipeline/commit/159562b80f8530a77ea48ea2fefd78633c7f1aa8))
+* **downloader:** isolate monthly caches and reject empty archives ([#120](https://github.com/caiopizzol/cnpj-data-pipeline/issues/120)) ([bb3a515](https://github.com/caiopizzol/cnpj-data-pipeline/commit/bb3a5157edc44cd6b11573a598383444e713ed49))
+* **postgres:** preserve completed shards on replace restart ([#126](https://github.com/caiopizzol/cnpj-data-pipeline/issues/126)) ([c4e7dc3](https://github.com/caiopizzol/cnpj-data-pipeline/commit/c4e7dc3633b36e6976ba858e195bc7febb374c10))
+
+
+### Performance Improvements
+
+* **pipeline:** benchmark loading and enforce coverage ([#125](https://github.com/caiopizzol/cnpj-data-pipeline/issues/125)) ([d20bc8c](https://github.com/caiopizzol/cnpj-data-pipeline/commit/d20bc8c072eea07a5f93612fb65e1e098896b110))
+
 ## [1.38.4](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.3...v1.38.4) (2026-09-07)
 
 
