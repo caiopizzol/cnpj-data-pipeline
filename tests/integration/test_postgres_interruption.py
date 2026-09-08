@@ -51,13 +51,13 @@ main.main(cfg)
 
 
 @pytest.fixture
-def source_files() -> dict[str, tuple[str, str]]:
+def source_files() -> dict[str, dict[str, str]]:
     rows = (FIXTURES_DIR / "SOCIOCSV.csv").read_text(encoding="iso-8859-1").splitlines(keepends=True)
     assert len(rows) == 2000
     return {
-        "Socios0.zip": ("0.SOCIOCSV.csv", "".join(rows[:1000])),
+        "Socios0.zip": {"0.SOCIOCSV.csv": "".join(rows[:1000])},
         # Include a shared key to exercise cross-shard duplicate handling on replay.
-        "Socios1.zip": ("1.SOCIOCSV.csv", "".join(rows[1000:]) + rows[999]),
+        "Socios1.zip": {"1.SOCIOCSV.csv": "".join(rows[1000:]) + rows[999]},
     }
 
 
