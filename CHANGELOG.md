@@ -2,6 +2,13 @@
 
 <!-- version list -->
 
+## [1.38.6](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.5...v1.38.6) (2026-09-08)
+
+
+### Bug Fixes
+
+* **postgres:** mark ZIP complete after all CSVs load ([#127](https://github.com/caiopizzol/cnpj-data-pipeline/issues/127)) ([0280fcf](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0280fcffd1938d3bffcefd7eb51e496b8b9756d1))
+
 ## [1.38.5](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.4...v1.38.5) (2026-09-08)
 
 
