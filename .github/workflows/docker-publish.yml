@@ -16,20 +16,9 @@ jobs:
       contents: read
       packages: write
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: cnpj
-        ports:
-          - 5435:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
+    outputs:
+      image: ghcr.io/${{ github.repository }}@${{ steps.image.outputs.digest }}
+      tag: ${{ steps.ref.outputs.tag }}
 
     steps:
       - name: Resolve tag
@@ -74,12 +63,50 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  recovery:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cnpj
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.publish.outputs.tag }}
+
+      - uses: docker/setup-qemu-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: astral-sh/setup-uv@v7
 
       - name: Test published image recovery
         env:
-          CNPJ_TEST_IMAGE: ghcr.io/${{ github.repository }}@${{ steps.image.outputs.digest }}
-        run: |
-          for platform in linux/amd64 linux/arm64; do
-            CNPJ_TEST_PLATFORM="$platform" uv run --frozen pytest tests/test_docker_recovery.py
-          done
+          CNPJ_TEST_IMAGE: ${{ needs.publish.outputs.image }}
+          CNPJ_TEST_PLATFORM: ${{ matrix.platform }}
+        run: uv run --frozen pytest tests/test_docker_recovery.py
