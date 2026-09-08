@@ -16,6 +16,21 @@ jobs:
       contents: read
       packages: write
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cnpj
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Resolve tag
         id: ref
@@ -46,6 +61,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: image
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -58,7 +74,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test image
-        run: |
-          docker run --rm --platform linux/amd64 \
-            ghcr.io/${{ github.repository }}:latest --list | head -5
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Test published image recovery
+        env:
+          CNPJ_TEST_IMAGE: ghcr.io/${{ github.repository }}@${{ steps.image.outputs.digest }}
+        run: uv run --frozen pytest tests/test_docker_recovery.py

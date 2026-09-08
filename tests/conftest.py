@@ -20,13 +20,7 @@ def source_files() -> dict[str, dict[str, str]]:
 
 @pytest.fixture
 def source_server(source_files: dict[str, dict[str, str]]) -> Iterator[tuple[str, Event, list[str]]]:
-    archives: dict[str, bytes] = {}
-    for filename, members in source_files.items():
-        buffer = BytesIO()
-        with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
-            for member, csv in members.items():
-                archive.writestr(member, csv.encode("iso-8859-1"))
-        archives[f"/2024-01/{filename}"] = buffer.getvalue()
+    archives = {f"/2024-01/{filename}": members for filename, members in source_files.items()}
 
     fail_second_shard = Event()
     downloads: list[str] = []
@@ -54,7 +48,11 @@ def source_server(source_files: dict[str, dict[str, str]]) -> Iterator[tuple[str
             if self.path == "/2024-01/Empresas1.zip" and fail_second_shard.is_set():
                 self.send_error(503, "Second shard unavailable")
             else:
-                self.respond(200, archives[self.path], "application/zip")
+                buffer = BytesIO()
+                with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+                    for member, csv in archives[self.path].items():
+                        archive.writestr(member, csv.encode("iso-8859-1"))
+                self.respond(200, buffer.getvalue(), "application/zip")
 
         def log_message(self, format: str, *args: object) -> None:
             pass
