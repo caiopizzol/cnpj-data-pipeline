@@ -24,7 +24,7 @@
 > **Desde v1.35.0** — _Suporte ao CNPJ alfanumérico da Receita Federal, previsto para novas inscrições a partir de julho de 2026. `cnpj_basico` e `cnpj_ordem` aceitam `0-9` e `A-Z`; `cnpj_dv` continua numérico. CNPJs numéricos existentes seguem compatíveis sem mudança._
 
 > [!TIP]
-> **Novo** — _Estratégia de carga configurável. Use `LOADING_STRATEGY=replace` para carga completa mais rápida (TRUNCATE + INSERT) ou `upsert` (default) para manter disponibilidade durante a carga._
+> **Novo** — _Estratégia de carga configurável. Use `LOADING_STRATEGY=replace` para substituir os dados (TRUNCATE + UPSERT) ou `upsert` (default) para manter disponibilidade durante a carga._
 
 ## Requisitos
 
@@ -171,7 +171,7 @@ Sobre `search_path`: o schema precisa existir antes (`CREATE SCHEMA cnpj;`), o l
 | Estratégia | Comando | Quando usar |
 |------------|---------|-------------|
 | `upsert` | `LOADING_STRATEGY=upsert just run` | Insere registros novos e atualiza existentes. O banco continua acessível durante a carga. |
-| `replace` | `LOADING_STRATEGY=replace just run` | Substitui os dados da competência processada. Mais rápido, mas faz TRUNCATE antes da carga. |
+| `replace` | `LOADING_STRATEGY=replace just run` | Substitui os dados da competência processada. Faz TRUNCATE antes da carga e aceita chaves repetidas. |
 
 ### Formato de saída
 
