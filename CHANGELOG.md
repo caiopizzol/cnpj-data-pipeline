@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## [1.38.8](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.7...v1.38.8) (2026-09-08)
+
+
+### Bug Fixes
+
+* **downloader:** clean only owned download files ([#137](https://github.com/caiopizzol/cnpj-data-pipeline/issues/137)) ([ea8e8f9](https://github.com/caiopizzol/cnpj-data-pipeline/commit/ea8e8f944c9eb4a1d049904c43aa04fd7d76d162))
+* **parquet:** retry post-file commands on resume ([#136](https://github.com/caiopizzol/cnpj-data-pipeline/issues/136)) ([ad1d8ff](https://github.com/caiopizzol/cnpj-data-pipeline/commit/ad1d8fff58a001828dc810cb6e6ebf5a58b8f3fd))
+* **pipeline:** validate modes and publish manifests atomically ([#135](https://github.com/caiopizzol/cnpj-data-pipeline/issues/135)) ([0aa2149](https://github.com/caiopizzol/cnpj-data-pipeline/commit/0aa214972960b218b795e837c0be1234be5d7ec6))
+
+
+### Performance Improvements
+
+* **benchmark:** measure PostgreSQL sample loads ([#133](https://github.com/caiopizzol/cnpj-data-pipeline/issues/133)) ([9e62e18](https://github.com/caiopizzol/cnpj-data-pipeline/commit/9e62e18ab19891a738994c923cb2a5d63081918a))
+
 ## [1.38.7](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.6...v1.38.7) (2026-09-08)
 
 
