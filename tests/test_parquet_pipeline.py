@@ -106,3 +106,60 @@ def test_parquet_download_and_retry_match_clean_export(
             "files": 2,
             "sizeBytes": sum(path.stat().st_size for path in output.glob("*.parquet")),
         }
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_retry_runs_failed_post_file_command_without_reloading_table(
+    source_server: tuple[str, Event, list[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workers: int
+) -> None:
+    import subprocess
+    from unittest.mock import patch
+
+    base_url, _failure, downloads = source_server
+    monkeypatch.setattr("sys.argv", ["cnpj-pipeline", "--month", "2024-01"])
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    output = tmp_path / "output"
+    cfg = Config(
+        database_url="",
+        base_url=base_url,
+        share_token="test",
+        temp_dir=str(tmp_path / "downloads"),
+        output_format="parquet",
+        parquet_output_dir=str(output),
+        process_workers=workers,
+        post_file_command='publish --label "CNPJ sample"',
+        retry_delay=0,
+    )
+    cnaes = output / "cnaes.parquet"
+    with patch("main.subprocess.run", side_effect=subprocess.CalledProcessError(1, "publish")):
+        with pytest.raises(SystemExit) as error:
+            main(cfg)
+        assert error.value.code == 1
+    original = cnaes.read_bytes()
+    assert not (output / "manifest.json").exists()
+    downloads.clear()
+    with patch("main.subprocess.run") as publish:
+        main(cfg)
+    calls = [call.args[0] for call in publish.call_args_list]
+    assert calls.count(["publish", "--label", "CNPJ sample", str(cnaes)]) == 1
+    assert ["publish", "--label", "CNPJ sample", str(output / "empresas.parquet")] in calls
+    assert cnaes.read_bytes() == original
+    assert "/2024-01/Cnaes.zip" not in downloads
+    assert (output / "manifest.json").exists()
+
+    previous_output = {path.name: path.read_bytes() for path in output.iterdir()}
+    downloads.clear()
+    with patch("main.subprocess.run") as publish:
+        main(cfg)
+    calls = [call.args[0] for call in publish.call_args_list]
+    assert sorted(calls) == sorted(
+        ["publish", "--label", "CNPJ sample", str(output / f"{table}.parquet")] for table in ("cnaes", "empresas")
+    )
+    assert downloads == []
+    assert {path.name: path.read_bytes() for path in output.iterdir() if path.suffix == ".parquet"} == {
+        name: content for name, content in previous_output.items() if name.endswith(".parquet")
+    }
+    assert (
+        json.loads((output / "manifest.json").read_text())["tables"]
+        == json.loads(previous_output["manifest.json"])["tables"]
+    )

@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import logging
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable
@@ -146,16 +147,30 @@ def wait_for_workers(futures: dict[Future[None], str], failure_message: str) -> 
         raise RuntimeError(failure_message)
 
 
+def run_post_file_command(path: Path, command: list[str]) -> None:
+    """Run an idempotent hook; resuming an export can repeat it."""
+    if command:
+        logger.info(f"  Running post-file command for {path.name}")
+        subprocess.run([*command, str(path)], check=True)
+
+
 def run_parquet(
     pending_files: list[str], directory: str, downloader: Downloader, parquet: "ParquetWriter", config: Config
 ) -> None:
+    command = shlex.split(config.post_file_command)
+    existing_tables: set[str] = set()
     # Validate all existing tables before downloading or publishing any new ones.
     for filename in pending_files:
         file_type = get_zip_file_type(filename)
         if file_type and file_type in FILE_MAPPINGS:
             table = FILE_MAPPINGS[file_type]
-            if table not in parquet.stats and (Path(config.parquet_output_dir) / f"{table}.parquet").exists():
-                parquet.include_existing_table(table)
+            if (Path(config.parquet_output_dir) / f"{table}.parquet").exists():
+                if table not in parquet.stats:
+                    parquet.include_existing_table(table)
+                existing_tables.add(table)
+
+    for table in sorted(existing_tables):
+        run_post_file_command(Path(config.parquet_output_dir) / f"{table}.parquet", command)
 
     file_groups = group_files_by_dependency(pending_files)
     workers = config.process_workers
@@ -209,12 +224,7 @@ def run_parquet(
             parquet_path = parquet.flush_table(table_name)
             if parquet_path:
                 logger.info(f"  {table_name}: flushed → {parquet_path.name}")
-                if config.post_file_command:
-                    logger.info(f"  Running post-file command for {parquet_path.name}")
-                    subprocess.run(
-                        [*config.post_file_command.split(), str(parquet_path)],
-                        check=True,
-                    )
+                run_post_file_command(parquet_path, command)
 
 
 def run_postgres(
@@ -333,6 +343,9 @@ def main(cfg: Config | None = None) -> None:
             db.clear_processed_files(directory)
 
         all_files = downloader.get_directory_files(directory)
+        unsupported = [name for name in all_files if get_zip_file_type(name) is None]
+        if unsupported:
+            logger.warning("Skipping unsupported source files: %s", ", ".join(unsupported))
 
         if db:
             processed = db.get_processed_files(directory)

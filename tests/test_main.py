@@ -1156,3 +1156,20 @@ def test_parquet_resume_rejects_incompatible_output_before_processing(
     assert existing.read_bytes() == previous_file
     assert manifest.read_text() == "previous manifest"
     assert not (output / "cnaes.parquet").exists()
+
+
+@pytest.mark.parametrize("output_format", ["postgres", "parquet"])
+def test_reports_unsupported_source_archives(cfg: Config, caplog: pytest.LogCaptureFixture, output_format: str) -> None:
+    cfg.output_format = output_format
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("main.Downloader") as downloader_cls,
+        patch("database.Database"),
+        patch("main.run_postgres"),
+        patch("main.run_parquet"),
+    ):
+        downloader = downloader_cls.return_value
+        downloader.get_latest_directory.return_value = "2024-01"
+        downloader.get_directory_files.return_value = ["Cnaes.zip", "Regimes.zip"]
+        main(cfg)
+    assert "Skipping unsupported source files: Regimes.zip" in caplog.text

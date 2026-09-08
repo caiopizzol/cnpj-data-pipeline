@@ -33,7 +33,9 @@ class Config:
     # The Postgres output is already typed via initial.sql column types;
     # this flag opts Parquet into those date and numeric types.
     parquet_typed_output: bool = False
-    post_file_command: str = ""  # Command to run after each parquet file (receives file path as arg)
+    # Receives the final Parquet path; repeats for resumed tables before manifest publication.
+    # Must be idempotent: every run with this command can execute it again.
+    post_file_command: str = ""
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
     share_token: str = "YggdBLfdninEJX9"
 
