@@ -37,6 +37,19 @@ class Config:
     base_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
     share_token: str = "YggdBLfdninEJX9"
 
+    def __post_init__(self) -> None:
+        if self.output_format not in ("postgres", "parquet"):
+            raise ValueError("OUTPUT_FORMAT must be postgres or parquet")
+        if self.loading_strategy not in ("upsert", "replace"):
+            raise ValueError("LOADING_STRATEGY must be upsert or replace")
+        for name, value in {
+            "BATCH_SIZE": self.batch_size,
+            "DOWNLOAD_WORKERS": self.download_workers,
+            "PROCESS_WORKERS": self.process_workers,
+        }.items():
+            if value < 1:
+                raise ValueError(f"{name} must be positive")
+
     @classmethod
     def from_env(cls) -> "Config":
         """Create config from environment variables."""
