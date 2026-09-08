@@ -2,6 +2,8 @@
 
 import json
 import runpy
+import subprocess
+import sys
 from pathlib import Path
 from threading import Event
 from unittest.mock import patch
@@ -77,7 +79,7 @@ def test_prepare_retries_saved_partial_for_same_request(
         prepare(config, "2024-02", "Cnaes.zip", 1)
     assert partial.read_bytes() == b"partial ZIP"
 
-    (work / "unrelated.zip").write_bytes(b"not the requested archive")
+    (work / "2023-12.Cnaes.zip").write_bytes(b"not the requested archive")
     with patch("requests.get", wraps=requests.get) as get:
         result = prepare(config, "2024-01", "Cnaes.zip", 1)
     assert get.call_args.kwargs["headers"]["Range"] == "bytes=11-"
@@ -92,13 +94,14 @@ def test_prepare_rejects_unowned_directory(tmp_path: Path) -> None:
         prepare(Config(database_url="", temp_dir=str(tmp_path)), "2024-01", "Cnaes.zip", 1)
 
 
+@pytest.mark.parametrize("keep_files", [False, True])
 def test_prepare_retries_cached_zip_after_sampling_failure(
-    source_server: tuple[str, Event, list[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    source_server: tuple[str, Event, list[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, keep_files: bool
 ) -> None:
     base_url, _failure, downloads = source_server
     monkeypatch.setenv("NO_PROXY", "127.0.0.1")
     monkeypatch.setenv("no_proxy", "127.0.0.1")
-    config = Config(database_url="", temp_dir=str(tmp_path / "sample"), base_url=base_url, keep_files=True)
+    config = Config(database_url="", temp_dir=str(tmp_path / "sample"), base_url=base_url, keep_files=keep_files)
     with patch("scripts.benchmark_pipeline.csv.writer", side_effect=OSError("disk full")):
         with pytest.raises(OSError, match="disk full"):
             prepare(config, "2024-01", "Cnaes.zip", 1)
@@ -109,6 +112,61 @@ def test_prepare_retries_cached_zip_after_sampling_failure(
     assert downloads == ["/2024-01/Cnaes.zip"]
     report = json.loads((tmp_path / "sample/sample.json").read_text())
     assert report["download_and_crc_seconds"] > 0
+    assert config.keep_files is keep_files
+
+
+def test_prepare_retries_interrupted_manifest_write(
+    source_server: tuple[str, Event, list[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_url, _failure, downloads = source_server
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    work = tmp_path / "sample"
+    config = Config(database_url="", temp_dir=str(work), base_url=base_url, keep_files=True)
+    write_text = Path.write_text
+
+    def interrupted_write(path: Path, data: str) -> int:
+        if path.name in ("sample.json", "sample.json.tmp"):
+            write_text(path, '{"unfinished":')
+            raise OSError("interrupted manifest")
+        return write_text(path, data)
+
+    with patch.object(Path, "write_text", autospec=True, side_effect=interrupted_write):
+        with pytest.raises(OSError, match="interrupted manifest"):
+            prepare(config, "2024-01", "Cnaes.zip", 1)
+    assert not (work / "sample.json").exists()
+    result = prepare(config, "2024-01", "Cnaes.zip", 1)
+    assert json.loads((work / "sample.json").read_text()) == result
+    assert downloads == ["/2024-01/Cnaes.zip"]
+
+
+def test_prepare_excludes_other_process_and_releases_lock_after_failure(tmp_path: Path) -> None:
+    work = tmp_path / "sample"
+    config = Config(database_url="", temp_dir=str(work))
+    contender = """
+import sys
+from unittest.mock import patch
+from config import Config
+from scripts.benchmark_pipeline import prepare
+with patch("scripts.benchmark_pipeline.TimedDownloader.download_file", side_effect=RuntimeError("concurrent download")):
+    prepare(Config(database_url="", temp_dir=sys.argv[1]), "2024-01", "Cnaes.zip", 1)
+"""
+
+    def download(_month: str, _archive: str) -> list[Path]:
+        process = subprocess.run(
+            [sys.executable, "-c", contender, str(work)], capture_output=True, text=True, timeout=15
+        )
+        assert process.returncode != 0
+        assert "BlockingIOError" in process.stderr
+        assert "concurrent download" not in process.stderr
+        raise RuntimeError("first process interrupted")
+
+    with patch("scripts.benchmark_pipeline.TimedDownloader.download_file", side_effect=download):
+        with pytest.raises(RuntimeError, match="first process interrupted"):
+            prepare(config, "2024-01", "Cnaes.zip", 1)
+    with patch("scripts.benchmark_pipeline.TimedDownloader.download_file", side_effect=RuntimeError("lock released")):
+        with pytest.raises(RuntimeError, match="lock released"):
+            prepare(config, "2024-01", "Cnaes.zip", 1)
 
 
 def test_checksum_ignores_row_groups_but_detects_data_schema_and_order_changes(tmp_path: Path) -> None:

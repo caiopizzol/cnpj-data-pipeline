@@ -8,6 +8,7 @@ cover only the latest attempt, marked by ``resumed_preparation``.
 
 import argparse
 import csv
+import fcntl
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ import platform
 import resource
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from itertools import islice
 from pathlib import Path
 from time import perf_counter
@@ -35,6 +37,9 @@ def sha256(path: Path) -> str:
 
 class TimedDownloader(Downloader):
     download_seconds: float = 0.0
+
+    def archive_path(self, month: str, archive: str) -> Path:
+        return self.temp_path / f"{self._directory_slug(month)}.{archive}"
 
     def _cached_zip_is_valid(self, zip_path: Path) -> bool:
         started = perf_counter()
@@ -59,6 +64,15 @@ class TimedDownloader(Downloader):
 def prepare(config: Config, month: str, archive: str, rows: int) -> dict[str, object]:
     if rows < 1:
         raise ValueError("Sample rows must be positive")
+    root = Path(config.temp_dir).resolve()
+    root.parent.mkdir(parents=True, exist_ok=True)
+    # Keep the lock file so contenders always lock the same inode.
+    with root.with_name(f".{root.name}.prepare.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return _prepare(replace(config, temp_dir=str(root), keep_files=True), month, archive, rows)
+
+
+def _prepare(config: Config, month: str, archive: str, rows: int) -> dict[str, object]:
     root = Path(config.temp_dir)
     request = {"month": month, "archive": archive, "base_url": config.base_url, "rows": rows}
     request_path = root / "prepare.json"
@@ -93,12 +107,11 @@ def prepare(config: Config, month: str, archive: str, rows: int) -> dict[str, ob
     if sampled == 0:
         raise ValueError("Source CSV is empty")
     sampling_seconds = perf_counter() - started
-    [archive_path] = [path for path in root.glob("*.zip") if path.name.endswith(f".{archive}")]
     result: dict[str, object] = {
         "source_month": month,
         "source_base_url": config.base_url,
         "archive": archive,
-        "archive_sha256": sha256(archive_path),
+        "archive_sha256": sha256(downloader.archive_path(month, archive)),
         "member": source.name,
         "source_csv_bytes": source.stat().st_size,
         "source_csv_sha256": sha256(source),
@@ -111,7 +124,9 @@ def prepare(config: Config, month: str, archive: str, rows: int) -> dict[str, ob
         "sampling_seconds": sampling_seconds,
         "resumed_preparation": resuming,
     }
-    (root / "sample.json").write_text(json.dumps(result, indent=2) + "\n")
+    manifest = root / "sample.json.tmp"
+    manifest.write_text(json.dumps(result, indent=2) + "\n")
+    manifest.replace(root / "sample.json")
     return result
 
 
@@ -211,9 +226,7 @@ def main() -> None:
     run_parser.add_argument("--typed", action="store_true")
     args = parser.parse_args()
     if args.command == "prepare":
-        config = Config(
-            database_url="", temp_dir=str(args.work_dir), base_url=args.base_url, keep_files=True, download_workers=1
-        )
+        config = Config(database_url="", temp_dir=str(args.work_dir), base_url=args.base_url, download_workers=1)
         result = prepare(config, args.month, args.archive, args.rows)
     else:
         result = measure(args.source, args.output, args.batch_size, args.typed)
