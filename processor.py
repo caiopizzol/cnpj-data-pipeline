@@ -5,7 +5,6 @@ import hashlib
 import logging
 import os
 import tempfile
-import uuid
 from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
@@ -196,8 +195,8 @@ def _canonical_name_expr(col: str) -> pl.Expr:
 
 
 def _payload_to_uuid(payload: str) -> str:
-    digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16).digest()
-    return str(uuid.UUID(bytes=digest))
+    digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16).hexdigest()
+    return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
 
 
 _SOCIO_ID_INPUTS = (

@@ -1,8 +1,13 @@
+ignore:
+  - tests
+
 coverage:
   status:
     project:
       default:
-        target: auto
+        target: 94%
+        threshold: 0%
     patch:
       default:
-        target: auto
+        target: 100%
+        threshold: 0%
