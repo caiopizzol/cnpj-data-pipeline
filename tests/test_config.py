@@ -132,3 +132,19 @@ class TestFromEnv:
 
         assert cfg.base_url == "https://custom.server/webdav"
         assert cfg.share_token == "custom_token"
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("OUTPUT_FORMAT", "parqet"),
+        ("LOADING_STRATEGY", "replcae"),
+        ("BATCH_SIZE", "0"),
+        ("DOWNLOAD_WORKERS", "0"),
+        ("PROCESS_WORKERS", "-1"),
+    ],
+)
+def test_rejects_settings_that_silently_change_or_stall_the_load(name: str, value: str) -> None:
+    with patch.dict("os.environ", {name: value}, clear=True):
+        with pytest.raises(ValueError, match=name):
+            Config.from_env()

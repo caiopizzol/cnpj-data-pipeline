@@ -204,7 +204,12 @@ class ParquetWriter:
             }
 
         manifest_path = self.output_dir / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2))
+        temporary_path = manifest_path.with_suffix(".json.tmp")
+        try:
+            temporary_path.write_text(json.dumps(manifest, indent=2))
+            temporary_path.replace(manifest_path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
         logger.info(f"Manifest written to {manifest_path}")
 
         return manifest

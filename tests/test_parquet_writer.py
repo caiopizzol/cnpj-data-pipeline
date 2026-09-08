@@ -282,3 +282,36 @@ def test_resume_rejects_empty_table(output_dir: Path) -> None:
     with pytest.raises(ValueError, match="cnaes.parquet: empty table"):
         resumed.include_existing_table("cnaes")
     assert not resumed.stats
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_failed_manifest_write_preserves_published_manifest(tmp_path: Path, existing: bool) -> None:
+    writer = ParquetWriter(tmp_path, source_month="2026-08")
+    manifest_path = tmp_path / "manifest.json"
+    previous = b'{"previous": true}'
+    if existing:
+        manifest_path.write_bytes(previous)
+    original = Path.write_text
+
+    def fail_after_partial_write(path: Path, data: str) -> int:
+        original(path, data[:10])
+        raise OSError("disk full")
+
+    with patch.object(Path, "write_text", fail_after_partial_write):
+        with pytest.raises(OSError, match="disk full"):
+            writer.write_manifest(source_month="2026-08")
+    if existing:
+        assert manifest_path.read_bytes() == previous
+    else:
+        assert not manifest_path.exists()
+
+
+def test_failed_manifest_replace_preserves_previous_and_can_retry(tmp_path: Path) -> None:
+    writer = ParquetWriter(tmp_path, source_month="2026-08")
+    previous = writer.write_manifest(source_month="2026-08")
+    with patch.object(Path, "replace", side_effect=OSError("replace failed")):
+        with pytest.raises(OSError, match="replace failed"):
+            writer.write_manifest(source_month="2026-08")
+    assert json.loads((tmp_path / "manifest.json").read_text()) == previous
+    result = writer.write_manifest(source_month="2026-08")
+    assert json.loads((tmp_path / "manifest.json").read_text()) == result
