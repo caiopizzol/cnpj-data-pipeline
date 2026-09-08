@@ -133,6 +133,7 @@ class Downloader:
         self.temp_path = Path(config.temp_dir)
         self.temp_path.mkdir(exist_ok=True)
         self.auth = (config.share_token, "")
+        self._owned_paths: set[Path] = set()
 
     def _propfind(self, path: str = "") -> ElementTree.Element:
         """Execute a WebDAV PROPFIND request and return parsed XML."""
@@ -270,6 +271,7 @@ class Downloader:
         """Download a single ZIP file and extract CSV files."""
         url = f"{self.config.base_url}/{directory}/{filename}"
         zip_path = self.temp_path / f"{self._directory_slug(directory)}.{filename}"
+        self._owned_paths.add(zip_path)
 
         # Skip download if keeping files and valid ZIP already exists
         # Use info logging when tqdm is disabled (e.g., Docker, CI)
@@ -292,7 +294,19 @@ class Downloader:
                     is_cnpj_file = any(pattern in member_upper for pattern in CNPJ_FILE_PATTERNS)
 
                     if is_cnpj_file:
-                        extract_path = self.temp_path / member
+                        member_path = Path(member)
+                        extract_path = self.temp_path / member_path
+                        if (
+                            member_path.is_absolute()
+                            or ".." in member_path.parts
+                            or not extract_path.resolve().is_relative_to(self.temp_path.resolve())
+                            or any(
+                                (self.temp_path / Path(*member_path.parts[:index])).is_symlink()
+                                for index in range(1, len(member_path.parts) + 1)
+                            )
+                        ):
+                            raise ValueError(f"Unsafe archive member: {member}")
+                        self._owned_paths.add(extract_path)
                         zip_ref.extract(member, self.temp_path)
                         extracted_files.append(extract_path)
                         logger.debug(f"Extracted: {member}")
@@ -648,7 +662,9 @@ class Downloader:
         return True
 
     def cleanup(self):
-        """Clean up temporary files, preserving .part resume state.
+        """Remove this instance's ZIPs and extracted files; preserve unrelated files.
+
+        Files orphaned by a killed process are not swept automatically.
 
         cleanup() runs in main's finally block, so it also executes after a
         failed run - deleting partials there would forfeit cross-run resume,
@@ -658,6 +674,7 @@ class Downloader:
         if self.config.keep_files:
             return
 
-        for file in self.temp_path.glob("*"):
-            if file.is_file() and file.suffix != ".part":
-                file.unlink()
+        for file in self._owned_paths:
+            if file.is_file() or file.is_symlink():
+                file.unlink(missing_ok=True)
+        self._owned_paths.clear()
