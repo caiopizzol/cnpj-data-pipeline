@@ -210,6 +210,15 @@ def run_parquet(
 def run_postgres(
     pending_files: list[str], directory: str, downloader: Downloader, db: "Database", config: Config
 ) -> None:
+    resumed_tables: set[str] = set()
+    if config.loading_strategy == "replace":
+        resumed_tables = {
+            FILE_MAPPINGS[ft]
+            for filename in db.get_processed_files(directory)
+            if (ft := get_zip_file_type(filename)) and ft in FILE_MAPPINGS
+        }
+        db.preserve_tables(resumed_tables)
+
     # Database mode: process files by dependency group
     file_groups = group_files_by_dependency(pending_files)
     workers = config.process_workers
@@ -225,7 +234,7 @@ def run_postgres(
                 pre_truncated = {
                     FILE_MAPPINGS[ft] for f in group_files if (ft := get_zip_file_type(f)) and ft in FILE_MAPPINGS
                 }
-                for table in pre_truncated:
+                for table in pre_truncated - resumed_tables:
                     db.truncate_table(table)
 
             logger.info(f"Processing {len(group_files)} files with {workers} workers...")
