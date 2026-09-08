@@ -9,6 +9,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -44,6 +46,22 @@ jobs:
 
       - name: Test with coverage
         run: uv run --frozen pytest --cov --cov-report=xml --cov-report=term-missing
+
+      - name: Build Docker image
+        run: docker build -t cnpj-recovery:ci .
+
+      - name: Test Docker recovery
+        run: CNPJ_TEST_IMAGE=cnpj-recovery:ci uv run --frozen pytest tests/test_docker_recovery.py
+
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Build ARM64 Docker image
+        run: docker build --platform linux/arm64 -t cnpj-recovery:arm64 .
+
+      - name: Test ARM64 Docker recovery
+        run: CNPJ_TEST_IMAGE=cnpj-recovery:arm64 CNPJ_TEST_PLATFORM=linux/arm64 uv run --frozen pytest tests/test_docker_recovery.py
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

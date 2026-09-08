@@ -48,3 +48,7 @@ check:
 # Requires DATABASE_URL pointing at a populated CNPJ database.
 data-quality-report *ARGS:
     uv run python scripts/data_quality_report.py {{ARGS}}
+
+# Test a Linux Docker image against local PostgreSQL on port 5435
+test-docker IMAGE:
+    CNPJ_TEST_IMAGE={{quote(IMAGE)}} uv run --frozen pytest tests/test_docker_recovery.py
