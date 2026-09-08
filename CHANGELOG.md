@@ -2,6 +2,13 @@
 
 <!-- version list -->
 
+## [1.38.9](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.8...v1.38.9) (2026-09-08)
+
+
+### Bug Fixes
+
+* **ci:** isolate published image platform checks ([#138](https://github.com/caiopizzol/cnpj-data-pipeline/issues/138)) ([cd4ea4b](https://github.com/caiopizzol/cnpj-data-pipeline/commit/cd4ea4b75815782df270eabb91caaac81482e9fb))
+
 ## [1.38.8](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.7...v1.38.8) (2026-09-08)
 
 
