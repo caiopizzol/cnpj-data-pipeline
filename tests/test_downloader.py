@@ -682,15 +682,18 @@ class TestCleanup:
     """Test cleanup functionality."""
 
     def test_removes_temp_files(self, config: Config, tmp_path: Path) -> None:
-        """Test that cleanup removes temporary files."""
-        # Create some temp files
-        (tmp_path / "file1.csv").write_text("data")
-        (tmp_path / "file2.zip").write_bytes(b"data")
-
+        archive = tmp_path / "2024-03.Cnaes.zip"
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr("CNAECSV", "01;One\n")
+        config.keep_files = True
         downloader = DownloadProbe(config)
+        paths = downloader.download_file("2024-03", "Cnaes.zip")
+        assert paths[0].exists()
+        config.keep_files = False
         downloader.cleanup()
-
-        assert len(list(tmp_path.glob("*"))) == 0
+        downloader.cleanup()
+        assert not archive.exists()
+        assert not paths[0].exists()
 
     def test_skips_cleanup_when_keep_files(self, tmp_path: Path) -> None:
         """Test that cleanup is skipped when keep_files is True."""
@@ -1221,7 +1224,11 @@ class TestResumeEdgeCases:
 
     def test_cleanup_preserves_part_files(self, downloader: DownloadProbe, tmp_path: Path) -> None:
         downloader.config.keep_files = False
-        (tmp_path / "2024-03.Cnaes.zip").write_bytes(b"done")
+        with zipfile.ZipFile(tmp_path / "2024-03.Cnaes.zip", "w") as z:
+            z.writestr("CNAECSV", "01;One\n")
+        downloader.config.keep_files = True
+        downloader.download_file("2024-03", "Cnaes.zip")
+        downloader.config.keep_files = False
         (tmp_path / "Empresas0.zip.2024-03.part").write_bytes(b"resume me")
 
         downloader.cleanup()
@@ -1641,3 +1648,76 @@ class TestDownloadSourceIntegrity:
                 list(downloader.download_files("2024-03", [filename]))
         assert len(http.calls) == 1
         assert not (tmp_path / f"2024-03.{filename}").exists()
+
+
+def test_cleanup_preserves_unrelated_files(config: Config, tmp_path: Path) -> None:
+    files = {"notes.txt": b"keep notes", "foreign.zip": b"keep archive", "other.csv": b"keep source"}
+    for name, content in files.items():
+        (tmp_path / name).write_bytes(content)
+    Downloader(config).cleanup()
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == files
+
+
+def test_cleanup_removes_partially_extracted_owned_file(config: Config, tmp_path: Path) -> None:
+    archive = tmp_path / "2024-03.Cnaes.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("nested/CNAECSV", "01;One\n")
+    config.keep_files = True
+    downloader = Downloader(config)
+
+    def fail_extract(_zip: zipfile.ZipFile, member: str, path: Path) -> str:
+        target = path / member
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("partial")
+        raise OSError("disk full")
+
+    with patch.object(zipfile.ZipFile, "extract", fail_extract):
+        with pytest.raises(OSError, match="disk full"):
+            downloader.download_file("2024-03", "Cnaes.zip")
+    config.keep_files = False
+    downloader.cleanup()
+    assert not archive.exists()
+    assert not (tmp_path / "nested/CNAECSV").exists()
+
+
+@pytest.mark.parametrize("member", ["../CNAECSV", "/CNAECSV", "nested/../CNAECSV"])
+def test_rejects_archive_paths_that_change_during_extraction(config: Config, tmp_path: Path, member: str) -> None:
+    archive = tmp_path / "2024-03.Cnaes.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(member, "01;One\n")
+    config.keep_files = True
+    with pytest.raises(ValueError, match="Unsafe archive member"):
+        Downloader(config).download_file("2024-03", "Cnaes.zip")
+
+
+def test_extraction_does_not_follow_symlink_outside_temp(config: Config, tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "CNAECSV"
+    sentinel.write_text("keep me")
+    workspace = tmp_path / "downloads"
+    workspace.mkdir()
+    (workspace / "linked").symlink_to(outside, target_is_directory=True)
+    archive = workspace / "2024-03.Cnaes.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("linked/CNAECSV", "overwrite")
+    config.temp_dir = str(workspace)
+    config.keep_files = True
+    downloader = Downloader(config)
+    with pytest.raises(ValueError, match="Unsafe archive member"):
+        downloader.download_file("2024-03", "Cnaes.zip")
+    config.keep_files = False
+    downloader.cleanup()
+    assert sentinel.read_text() == "keep me"
+
+
+def test_cleanup_keeps_downloaded_artifacts_when_requested(config: Config, tmp_path: Path) -> None:
+    archive = tmp_path / "2024-03.Cnaes.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("nested/CNAECSV", "01;One\n")
+    config.keep_files = True
+    downloader = Downloader(config)
+    paths = downloader.download_file("2024-03", "Cnaes.zip")
+    downloader.cleanup()
+    assert archive.exists()
+    assert paths[0].read_text() == "01;One\n"
