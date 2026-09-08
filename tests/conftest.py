@@ -10,21 +10,22 @@ import pytest
 
 
 @pytest.fixture
-def source_files() -> dict[str, tuple[str, str]]:
+def source_files() -> dict[str, dict[str, str]]:
     return {
-        "Cnaes.zip": ("CNAECSV.csv", '"0111301";"Cultivo de café"\n'),
-        "Empresas0.zip": ("0.EMPRECSV.csv", '"00000001";"Café Brasil";"2062";"49";"1.234,56";"01";""\n'),
-        "Empresas1.zip": ("1.EMPRECSV.csv", '"00000002";"Ação Comércio";"2062";"49";"50,00";"03";""\n'),
+        "Cnaes.zip": {"CNAECSV.csv": '"0111301";"Cultivo de café"\n'},
+        "Empresas0.zip": {"0.EMPRECSV.csv": '"00000001";"Café Brasil";"2062";"49";"1.234,56";"01";""\n'},
+        "Empresas1.zip": {"1.EMPRECSV.csv": '"00000002";"Ação Comércio";"2062";"49";"50,00";"03";""\n'},
     }
 
 
 @pytest.fixture
-def source_server(source_files: dict[str, tuple[str, str]]) -> Iterator[tuple[str, Event, list[str]]]:
+def source_server(source_files: dict[str, dict[str, str]]) -> Iterator[tuple[str, Event, list[str]]]:
     archives: dict[str, bytes] = {}
-    for filename, (member, csv) in source_files.items():
+    for filename, members in source_files.items():
         buffer = BytesIO()
         with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
-            archive.writestr(member, csv.encode("iso-8859-1"))
+            for member, csv in members.items():
+                archive.writestr(member, csv.encode("iso-8859-1"))
         archives[f"/2024-01/{filename}"] = buffer.getvalue()
 
     fail_second_shard = Event()

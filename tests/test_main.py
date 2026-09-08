@@ -155,7 +155,7 @@ class TestMain:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
-        mock_downloader.download_files.return_value = iter([])
+        mock_downloader.download_archives.return_value = iter([])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_db = MagicMock()
@@ -188,7 +188,7 @@ class TestMain:
 
         main(cfg=cfg)
 
-        mock_downloader.download_files.assert_not_called()
+        mock_downloader.download_archives.assert_not_called()
 
     @patch("main.process_file")
     @patch("database.Database")
@@ -218,7 +218,7 @@ class TestMain:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
-        mock_downloader.download_files.return_value = iter([(csv_file, "Cnaes.zip")])
+        mock_downloader.download_archives.return_value = iter([([csv_file], "Cnaes.zip")])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_db = MagicMock()
@@ -1105,7 +1105,7 @@ def test_empty_postgres_source_is_not_marked(workers: int, cfg: Config, tmp_path
         dl.get_latest_directory.return_value = "2024-01"
         dl.get_directory_files.return_value = ["Cnaes.zip"]
         dl.download_file.return_value = [source]
-        dl.download_files.return_value = [(source, "Cnaes.zip")]
+        dl.download_archives.return_value = [([source], "Cnaes.zip")]
         db = db_cls.return_value
         db.get_processed_files.return_value = []
         with pytest.raises(SystemExit) as error:

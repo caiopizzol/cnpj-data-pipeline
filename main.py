@@ -58,8 +58,8 @@ def pg_worker(
 
     db = Database(cfg.database_url, pre_truncated=pre_truncated, retry_attempts=cfg.retry_attempts)
     try:
-        for csv_path in downloader.download_file(directory, zip_filename):
-            load_postgres_csv(csv_path, zip_filename, directory, db, cfg)
+        paths = downloader.download_file(directory, zip_filename)
+        load_postgres_archive(paths, zip_filename, directory, db, cfg)
     except Exception as e:
         logger.error(f"Error processing {zip_filename}: {e}")
         raise
@@ -79,10 +79,24 @@ def parquet_worker(
             raise
 
 
-def load_postgres_csv(
-    csv_path: Path,
+def load_postgres_archive(
+    paths: list[Path],
     zip_filename: str,
     directory: str,
+    db: "Database",
+    cfg: Config,
+    progress: Callable[[int], None] | None = None,
+) -> None:
+    for path in paths:
+        load_postgres_csv(path, db, cfg, progress)
+    db.mark_processed(directory, zip_filename)
+    if not cfg.keep_files:
+        for path in paths:
+            path.unlink(missing_ok=True)
+
+
+def load_postgres_csv(
+    csv_path: Path,
     db: "Database",
     cfg: Config,
     progress: Callable[[int], None] | None = None,
@@ -98,11 +112,7 @@ def load_postgres_csv(
     if rows == 0:
         raise ValueError(f"Empty source: {csv_path.name}")
 
-    db.mark_processed(directory, zip_filename)
     logger.info(f"  {csv_path.name}: {rows:,} rows")
-
-    if csv_path.exists() and not cfg.keep_files:
-        csv_path.unlink()
 
 
 def write_parquet_csv(csv_path: Path, parquet: "ParquetWriter", cfg: Config) -> None:
@@ -245,22 +255,22 @@ def run_postgres(
                 wait_for_workers(futures, "One or more workers failed, aborting to prevent data corruption")
         else:
             # Sequential: download in parallel, process one at a time
-            file_iterator = downloader.download_files(directory, group_files)
+            file_iterator = downloader.download_archives(directory, group_files)
             with tqdm(file_iterator, total=len(group_files), desc="Processing", unit="file") as pbar:
-                for csv_path, zip_filename in pbar:
-                    pbar.set_postfix_str(csv_path.name[:30])
+                for paths, zip_filename in pbar:
+                    pbar.set_postfix_str(zip_filename[:30])
                     try:
-                        load_postgres_csv(
-                            csv_path,
+                        load_postgres_archive(
+                            paths,
                             zip_filename,
                             directory,
                             db,
                             config,
-                            lambda rows: pbar.set_postfix_str(f"{csv_path.name[:20]} {rows:,} rows"),
+                            lambda rows: pbar.set_postfix_str(f"{zip_filename[:20]} {rows:,} rows"),
                         )
 
                     except Exception as e:
-                        logger.error(f"Error: {csv_path.name}: {e}")
+                        logger.error(f"Error: {zip_filename}: {e}")
                         raise
 
 

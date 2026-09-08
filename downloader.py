@@ -194,15 +194,13 @@ class Downloader:
         return self._download_and_extract(directory, filename)
 
     def download_files(self, directory: str, files: list[str]) -> Iterator[tuple[Path, str]]:
-        """
-        Download files with parallel support.
+        """Yield individual CSV paths with their ZIP filenames."""
+        for paths, filename in self.download_archives(directory, files):
+            for path in paths:
+                yield path, filename
 
-        Reference tables are downloaded first (sequentially),
-        then data files in parallel.
-
-        Yields:
-            Tuple of (extracted_csv_path, original_zip_filename)
-        """
+    def download_archives(self, directory: str, files: list[str]) -> Iterator[tuple[list[Path], str]]:
+        """Yield all CSV paths from each completed ZIP, keeping archive boundaries."""
         if not files:
             return
 
@@ -218,8 +216,7 @@ class Downloader:
 
         # Process reference files first (sequentially)
         for filename in reference_files:
-            for csv_path in self._download_and_extract(directory, filename, adaptive_concurrency):
-                yield csv_path, filename
+            yield self._download_and_extract(directory, filename, adaptive_concurrency), filename
 
         # Process data files in parallel
         if data_files:
@@ -230,7 +227,7 @@ class Downloader:
         directory: str,
         files: list[str],
         adaptive_concurrency: AdaptiveDownloadConcurrency,
-    ) -> Iterator[tuple[Path, str]]:
+    ) -> Iterator[tuple[list[Path], str]]:
         """Download data files in parallel using ThreadPoolExecutor."""
         with ThreadPoolExecutor(max_workers=self.config.download_workers) as executor:
             next_file_index = 0
@@ -262,8 +259,7 @@ class Downloader:
                 submit_until_limit()
 
                 for filename, extracted_files in completed_downloads:
-                    for csv_path in extracted_files:
-                        yield csv_path, filename
+                    yield extracted_files, filename
 
     def _download_and_extract(
         self,
