@@ -1,0 +1,28 @@
+name: Test integrity
+
+# Runs the base branch's copy of this workflow, so a pull request cannot change the check that
+# judges it. The action reads git only and never checks out or runs the pull request's code.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+# `actions: read` and `checks: read` let a title edit or an unrelated label keep the verdict
+# already on this commit.
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+# A run started by a label change can finish before an older run on the same commit. Only the
+# latest run for a pull request counts, so an older result never overwrites a newer one.
+concurrency:
+  group: test-integrity-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test-integrity:
+    name: Test integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: caiopizzol/skills/.github/actions/test-integrity@dc51895c12b650031af010705a7dc957a8ea5dd1
