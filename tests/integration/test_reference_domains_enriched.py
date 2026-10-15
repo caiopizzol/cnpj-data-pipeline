@@ -166,7 +166,7 @@ class TestRecipeReferenceDomainsEnriched:
 
     def test_idempotent(self, test_db: Database) -> None:
         """Re-running the recipe drops+recreates without error, same counts."""
-        sql = self.RECIPE_PATH.read_text()
+        sql = self.RECIPE_PATH.read_text(encoding="utf-8")
         counts_before = {t: count_rows(test_db, t) for t in self.ENRICHED_TABLES}
         with test_db.connect().cursor() as cur:
             cur.execute(sql)

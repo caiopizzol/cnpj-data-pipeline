@@ -294,7 +294,7 @@ class TestRecipeEmpresaDetalhe:
     def test_idempotent(self, test_db: Database) -> None:
         """Re-running the recipe should drop+recreate without error and
         produce the same row count."""
-        sql = self.RECIPE_PATH.read_text()
+        sql = self.RECIPE_PATH.read_text(encoding="utf-8")
         count_before = count_rows(test_db, "empresa_detalhe")
 
         with test_db.connect().cursor() as cur:

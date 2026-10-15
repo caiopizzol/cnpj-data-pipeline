@@ -1,7 +1,7 @@
 -- recipes/postgres/empresas_busca_nome_counts.sql
 --
 -- recipeVersion: 1
--- depends on: recipes/postgres/empresas_busca_nome.sql (recipeVersion 1)
+-- depends on: recipes/postgres/empresas_busca_nome.sql (recipeVersion 2)
 --
 -- Precomputed count rollups for the three filter shapes consumer-facing
 -- search surfaces typically expose alongside an exact "X results found"

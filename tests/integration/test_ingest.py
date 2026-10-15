@@ -20,7 +20,7 @@ class TestFullPipeline:
             fixture_path = FIXTURES_DIR / fixture_name
             assert fixture_path.exists(), f"Missing fixture: {fixture_name}"
 
-            for batch, table_name, columns in process_file(fixture_path, batch_size=500000):
+            for batch, table_name, columns in process_file(fixture_path, batch_size=1000):
                 empty_db.bulk_upsert(batch, table_name, columns)
 
         for table, expected in EXPECTED_COUNTS.items():
@@ -35,7 +35,7 @@ class TestFullPipeline:
         # Load again
         for fixture_name in PROCESSING_ORDER:
             fixture_path = FIXTURES_DIR / fixture_name
-            for batch, table_name, columns in process_file(fixture_path, batch_size=500000):
+            for batch, table_name, columns in process_file(fixture_path, batch_size=1000):
                 test_db.bulk_upsert(batch, table_name, columns)
 
         # Counts should be identical
@@ -75,7 +75,7 @@ class TestFullPipeline:
         # Load with replace strategy
         for fixture_name in PROCESSING_ORDER:
             fixture_path = FIXTURES_DIR / fixture_name
-            for batch, table_name, columns in process_file(fixture_path, batch_size=500000):
+            for batch, table_name, columns in process_file(fixture_path, batch_size=1000):
                 test_db.bulk_insert(batch, table_name, columns)
 
         # Verify data is still there (not empty after truncate)
@@ -96,7 +96,10 @@ class TestFullPipeline:
         same estabelecimentos fixture - second call must not raise.
         """
         fixture_path = FIXTURES_DIR / "ESTABELE.csv"
-        all_batches = list(process_file(fixture_path, batch_size=500000))
+        # Keep the fixture split into realistic small batches. A 500k-row
+        # request makes Polars reserve disproportionately large CSV buffers on
+        # Windows even though this fixture is only a few thousand rows.
+        all_batches = list(process_file(fixture_path, batch_size=1000))
         assert len(all_batches) > 0, "fixture produced no batches"
 
         # First pass: truncate + load (fast path)

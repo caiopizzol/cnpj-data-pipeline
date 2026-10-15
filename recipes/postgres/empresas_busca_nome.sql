@@ -1,6 +1,6 @@
 -- recipes/postgres/empresas_busca_nome.sql
 --
--- recipeVersion: 1
+-- recipeVersion: 2
 -- depends on: empresas, estabelecimentos, cnaes, municipios (base pipeline tables)
 --
 -- Search-by-name serving table for the most common access pattern over
@@ -31,14 +31,11 @@
 --     (municipio_codigo + municipio_nome, cnae_fiscal_principal +
 --     cnae_descricao) so consumers can re-join the reference tables
 --     for richer surfaces without re-querying the base.
---   - Composite indexes cover (filter, razao_social, PK-suffix) to
---     support prefix filtering and common ordering patterns. They do
---     not guarantee a sort-free plan in every case; verify with EXPLAIN
---     for your workload, especially under non-default collations or
---     when stacking multiple filters.
---   - text_pattern_ops on razao_social enables LIKE 'PREFIX%' index use.
---     Substring LIKE ('%PREFIX%') needs GIN + pg_trgm; see the opt-in
---     block at the bottom.
+--   - Locale-ordered indexes serve browse queries. C-collated companions
+--     serve LIKE 'PREFIX%' plus sort-free ORDER BY ... COLLATE "C" for
+--     unfiltered, UF, municipality-name/code, and CNAE search shapes.
+--   - GIN trigram indexes serve ILIKE and substring search on both
+--     razao_social and nome_fantasia.
 
 DROP TABLE IF EXISTS empresas_busca_nome;
 
@@ -77,33 +74,30 @@ ALTER TABLE empresas_busca_nome
 CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_cnpj
     ON empresas_busca_nome (cnpj);
 
--- Prefix LIKE on razao_social followed by basico and ordem.
--- Supports the LIKE 'PREFIX%' predicate; whether Postgres can use it to
--- avoid a sort under a specific ORDER BY depends on collation and the
--- rest of the query (see the EXPLAIN note in the header).
-CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_razao_prefix
+-- Prefix LIKE on razao_social followed by basico and ordem. The explicit C
+-- collation lets the same index constrain LIKE 'PREFIX%' and provide the
+-- requested ordering. Prefix-search callers must use the matching expression:
+--   ORDER BY razao_social COLLATE "C", cnpj_basico, cnpj_ordem
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_razao_prefix_c
     ON empresas_busca_nome
-    (razao_social text_pattern_ops, cnpj_basico, cnpj_ordem);
+    (razao_social COLLATE "C", cnpj_basico, cnpj_ordem);
 
 -- UF filter + sort by razao_social.
 CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_razao
     ON empresas_busca_nome
     (uf, razao_social, cnpj_basico, cnpj_ordem);
 
--- UF filter + LIKE 'PREFIX%' on razao_social. The default-opclass
--- uf_razao above supports sort-by-razao under uf= equality but cannot
--- range-scan LIKE 'PREFIX%' under non-C collations. This composite
--- uses text_pattern_ops on razao_social so PG can enter at
--- (uf=$1, razao_social>='PREFIX') for a prefix range scan. Index-only
--- execution depends on the projected columns and heap visibility;
--- verify ordering and heap fetches with EXPLAIN for the actual query.
+-- UF filter + LIKE 'PREFIX%' on razao_social. The default-collation
+-- uf_razao above supports locale ordering under uf= equality but cannot
+-- range-scan LIKE 'PREFIX%' under non-C collations. This C-collated index
+-- supports both the prefix range and ORDER BY ... COLLATE "C".
 --
--- Pairs with idx_..._razao_prefix above: that one serves uf-less
+-- Pairs with idx_..._razao_prefix_c above: that one serves uf-less
 -- prefix lookups (e.g. chat name resolution); this one serves
 -- uf-filtered search list queries.
-CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_razao_prefix
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_razao_prefix_c
     ON empresas_busca_nome
-    (uf, razao_social text_pattern_ops, cnpj_basico, cnpj_ordem);
+    (uf, razao_social COLLATE "C", cnpj_basico, cnpj_ordem);
 
 -- UF + município (denormalized name) + sort. Indexes municipio_nome
 -- because that's typically what consumer-facing filters expose. Add a
@@ -112,22 +106,48 @@ CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_municipio_razao
     ON empresas_busca_nome
     (uf, municipio_nome, razao_social, cnpj_basico, cnpj_ordem);
 
+-- Prefix-search companion for the same filter. Keep the locale-ordered index
+-- above for browse queries without a prefix.
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_municipio_razao_prefix_c
+    ON empresas_busca_nome
+    (uf, municipio_nome, razao_social COLLATE "C", cnpj_basico, cnpj_ordem);
+
+-- Equivalent paths for consumers that use the stable RFB municipality code
+-- instead of the denormalized display name.
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_municipio_codigo_razao
+    ON empresas_busca_nome
+    (uf, municipio_codigo, razao_social, cnpj_basico, cnpj_ordem);
+
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_municipio_codigo_razao_prefix_c
+    ON empresas_busca_nome
+    (uf, municipio_codigo, razao_social COLLATE "C", cnpj_basico, cnpj_ordem);
+
 -- UF + CNAE + sort by razao_social.
 CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_cnae_razao
     ON empresas_busca_nome
     (uf, cnae_fiscal_principal, razao_social, cnpj_basico, cnpj_ordem);
 
-ANALYZE empresas_busca_nome;
+-- Prefix-search companion for the same filter. Callers must use the matching
+-- ORDER BY razao_social COLLATE "C", cnpj_basico, cnpj_ordem expression.
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_cnae_razao_prefix_c
+    ON empresas_busca_nome
+    (uf, cnae_fiscal_principal, razao_social COLLATE "C", cnpj_basico, cnpj_ordem);
 
--- Optional: substring LIKE on razao_social via trigram GIN.
--- Uncomment if you need LIKE '%PREFIX%' (or ILIKE) patterns. The index
--- is significantly larger than the b-tree indexes above and refresh is
--- slower; only enable when substring search is a real requirement.
---
---   CREATE EXTENSION IF NOT EXISTS pg_trgm;
---   CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_razao_trgm
---       ON empresas_busca_nome
---       USING gin (razao_social gin_trgm_ops);
+-- Case-insensitive and substring searches cannot use the B-tree prefix
+-- indexes. The trigram index avoids a full-table scan for ILIKE and
+-- LIKE '%TRECHO%', especially for rare or absent terms.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_razao_trgm
+    ON empresas_busca_nome
+    USING gin (razao_social gin_trgm_ops);
+
+-- nome_fantasia is also exposed by this serving table. Without a trigram
+-- index, an absent ILIKE/substring term scans the entire relation.
+CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_fantasia_trgm
+    ON empresas_busca_nome
+    USING gin (nome_fantasia gin_trgm_ops);
+
+ANALYZE empresas_busca_nome;
 
 -- Storage check (run separately):
 --   SELECT
