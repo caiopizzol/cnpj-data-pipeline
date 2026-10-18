@@ -151,13 +151,14 @@ class TestMain:
         args = msvcrt.locking.call_args.args
         assert args[1:] == (msvcrt.LK_NBLCK, 1)
 
-    def test_lock_failure_other_than_contention_is_raised(self, cfg: Config) -> None:
+    def test_lock_failure_other_than_contention_is_raised(self, cfg: Config, monkeypatch: pytest.MonkeyPatch) -> None:
         """A filesystem that cannot lock must fail loudly, not report a run that does not exist."""
-        with (
-            patch("fcntl.flock", side_effect=OSError(errno.ENOLCK, "No locks available")),
-            pytest.raises(OSError, match="No locks available"),
-            run_lock(cfg.temp_dir),
-        ):
+        fcntl = MagicMock(LOCK_EX=2, LOCK_NB=4)
+        fcntl.flock.side_effect = OSError(errno.ENOLCK, "No locks available")
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setitem(sys.modules, "fcntl", fcntl)
+
+        with pytest.raises(OSError, match="No locks available"), run_lock(cfg.temp_dir):
             pass
 
     @patch("main.Downloader")
