@@ -221,12 +221,17 @@ class TestTruncateTable:
         cast(MagicMock, connected_db.conn).cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
         cast(MagicMock, connected_db.conn).cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        connected_db.truncate_table("empresas")
+        connected_db.truncate_tables({"socios", "empresas"})
 
         mock_cur.execute.assert_called_once()
-        assert mock_cur.execute.call_args[0][0] == "TRUNCATE TABLE empresas"
+        assert mock_cur.execute.call_args[0][0] == "TRUNCATE TABLE empresas, socios"
         cast(MagicMock, connected_db.conn).commit.assert_called_once()
-        assert "empresas" in connected_db.truncated_tables
+        assert {"empresas", "socios"} <= connected_db.truncated_tables
+
+    def test_truncate_nothing_skips_the_database(self, connected_db: DatabaseProbe) -> None:
+        connected_db.truncate_tables(set())
+
+        cast(MagicMock, connected_db.conn).cursor.assert_not_called()
 
     def test_pre_truncated_constructor_param(self) -> None:
         """Database should accept pre_truncated tables via constructor."""

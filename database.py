@@ -110,13 +110,15 @@ class Database:
             )
             conn.commit()
 
-    def truncate_table(self, table_name: str):
-        """Truncate a table. Used before parallel processing with replace strategy."""
+    def truncate_tables(self, table_names: set[str]):
+        """Truncate tables in one statement, so none is emptied if any is blocked. Used before parallel replace."""
+        if not table_names:
+            return
         conn = self.connect()
         with conn.cursor() as cur:
-            cur.execute(f"TRUNCATE TABLE {table_name}")
+            cur.execute(f"TRUNCATE TABLE {', '.join(sorted(table_names))}")
             conn.commit()
-        self._truncated_tables.add(table_name)
+        self._truncated_tables.update(table_names)
 
     def preserve_tables(self, tables: set[str]) -> None:
         """Keep completed shards when resuming a replace load."""

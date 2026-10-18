@@ -101,7 +101,7 @@ def test_killed_pipeline_replays_like_uninterrupted_load(
     expected = snapshot()
     assert len(expected) == 2000
     assert empty_db.get_processed_files("2024-01") == {"Socios0.zip", "Socios1.zip"}
-    empty_db.truncate_table("socios")
+    empty_db.truncate_tables({"socios"})
     empty_db.clear_processed_files("2024-01")
 
     killed = subprocess.run([*command, "yes"], capture_output=True, timeout=60)
