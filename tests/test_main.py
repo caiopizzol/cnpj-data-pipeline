@@ -1,6 +1,5 @@
 """Tests for main module."""
 
-import fcntl
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -10,7 +9,15 @@ import polars as pl
 import pytest
 
 from config import Config
-from main import get_file_priority, group_files_by_dependency, main, parquet_worker, parse_args, pg_worker
+from main import (
+    get_file_priority,
+    group_files_by_dependency,
+    main,
+    parquet_worker,
+    parse_args,
+    pg_worker,
+    run_lock,
+)
 from parquet_writer import ParquetWriter
 
 
@@ -116,10 +123,8 @@ class TestMain:
         mock_args.return_value = MagicMock(list=False, month=None, force=False)
         cfg.output_format = "postgres"
 
-        with open(Path(cfg.temp_dir) / ".pipeline.lock", "a") as held:
-            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            with pytest.raises(SystemExit) as exc_info:
-                main(cfg=cfg)
+        with run_lock(cfg.temp_dir), pytest.raises(SystemExit) as exc_info:
+            main(cfg=cfg)
 
         assert exc_info.value.code == 1
         mock_downloader_cls.assert_not_called()

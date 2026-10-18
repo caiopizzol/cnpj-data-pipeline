@@ -11,7 +11,6 @@ Usage:
 """
 
 import argparse
-import fcntl
 import logging
 import shlex
 import subprocess
@@ -20,7 +19,7 @@ from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 from tqdm import tqdm
 
@@ -286,6 +285,21 @@ def run_postgres(
                         raise
 
 
+def _try_lock(lock_file: TextIO) -> bool:
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
 @contextmanager
 def run_lock(temp_dir: str) -> Generator[None]:
     """Lock TEMP_DIR for one run; runs sharing it would delete and append to each other's downloads.
@@ -294,9 +308,7 @@ def run_lock(temp_dir: str) -> Generator[None]:
     """
     Path(temp_dir).mkdir(parents=True, exist_ok=True)
     with open(Path(temp_dir) / ".pipeline.lock", "a") as lock_file:
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not _try_lock(lock_file):
             logger.error(f"Another run is using TEMP_DIR {temp_dir}; exiting.")
             sys.exit(1)
         yield
