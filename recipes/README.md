@@ -23,9 +23,11 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 
 ## Como aplicar
 
-Depois da carga (`just run`), rode apenas as receitas que você precisa. Cada receita roda em uma transação; se falhar, as tabelas da execução anterior continuam intactas. `ON_ERROR_STOP=1` faz o `psql` parar no primeiro erro e sair com código diferente de zero:
+Depois da carga (`just run`), rode apenas as receitas que você precisa. Cada receita roda em uma transação; se falhar, as tabelas da execução anterior continuam intactas. Durante a reconstrução, quem lê essas tabelas espera o `COMMIT`. `ON_ERROR_STOP=1` faz o `psql` parar no primeiro erro e sair com código diferente de zero; `set -e` interrompe a sequência, para que uma receita não rode sobre um pré-requisito que falhou:
 
 ```bash
+set -e
+
 # Domínios de referência enriquecidos (pré-requisito de empresa_detalhe)
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domains_enriched.sql
 
