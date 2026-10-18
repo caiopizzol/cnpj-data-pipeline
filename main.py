@@ -254,8 +254,7 @@ def run_postgres(
                 pre_truncated = {
                     FILE_MAPPINGS[ft] for f in group_files if (ft := get_zip_file_type(f)) and ft in FILE_MAPPINGS
                 }
-                for table in pre_truncated - resumed_tables:
-                    db.truncate_table(table)
+                db.truncate_tables(pre_truncated - resumed_tables)
 
             logger.info(f"Processing {len(group_files)} files with {workers} workers...")
             with ThreadPoolExecutor(max_workers=workers) as executor:

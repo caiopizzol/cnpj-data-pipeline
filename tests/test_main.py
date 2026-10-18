@@ -742,7 +742,7 @@ class TestPreTruncation:
 
         main(cfg=cfg)
 
-        mock_db.truncate_table.assert_called_with("empresas")
+        mock_db.truncate_tables.assert_called_once_with({"empresas"})
 
         # Workers should receive pre_truncated set
         for call in mock_pg_worker.call_args_list:
@@ -782,7 +782,7 @@ class TestPreTruncation:
 
         main(cfg=cfg)
 
-        mock_db.truncate_table.assert_not_called()
+        mock_db.truncate_tables.assert_not_called()
 
 
 def create_existing_export(output: Path) -> None:
