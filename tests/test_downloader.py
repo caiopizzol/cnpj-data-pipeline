@@ -1,8 +1,12 @@
 """Tests for downloader module."""
 
 import logging
+import threading
+import time
 import zipfile
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import TypedDict
 from unittest.mock import MagicMock, patch
@@ -61,6 +65,14 @@ class GetCall(TypedDict):
 
 
 class DownloadProbe(Downloader):
+    @property
+    def adaptive(self) -> AdaptiveDownloadConcurrency:
+        return self._adaptive
+
+    @adaptive.setter
+    def adaptive(self, value: AdaptiveDownloadConcurrency) -> None:
+        self._adaptive = value
+
     download_and_extract = Downloader._download_and_extract
     download_zip = Downloader._download_zip
     is_read_timeout = Downloader._is_read_timeout
@@ -626,15 +638,16 @@ class TestAdaptiveDownloadIntegration:
 
     def test_stalled_file_resumes_and_completes_after_degrading_to_one(
         self,
-        downloader: DownloadProbe,
+        config: Config,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        downloader.config.download_workers = 4
-        downloader.config.stall_degrade_threshold = 1
-        downloader.config.retry_attempts = 3
-        downloader.config.retry_delay = 0
+        config.download_workers = 4
+        config.stall_degrade_threshold = 1
+        config.retry_attempts = 3
+        config.retry_delay = 0
+        downloader = DownloadProbe(config)
         downloader.config.keep_files = True
         monkeypatch.setenv("TQDM_DISABLE", "1")
         caplog.set_level(logging.WARNING, logger="downloader")
@@ -1471,7 +1484,7 @@ class TestAttemptLevelConcurrency:
         self, downloader: DownloadProbe, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         downloader.config.retry_attempts = 1
-        adaptive = AdaptiveDownloadConcurrency(4, 3)
+        adaptive = downloader.adaptive
         monkeypatch.setattr(
             requests,
             "get",
@@ -1485,7 +1498,6 @@ class TestAttemptLevelConcurrency:
                 "Cnaes.zip",
                 downloader.temp_path / "Cnaes.zip",
                 logging.getLogger(__name__).debug,
-                adaptive,
             )
 
         assert adaptive.stall_count == 1
@@ -1512,7 +1524,6 @@ class TestAttemptLevelConcurrency:
                 "Cnaes.zip",
                 downloader.temp_path / "Cnaes.zip",
                 logging.getLogger(__name__).debug,
-                None,
             )
 
         assert sleeps == [40, 80, 120]  # 40*2^2=160 capped at MAX_RETRY_BACKOFF_SECONDS
@@ -1524,6 +1535,7 @@ class TestAttemptLevelConcurrency:
         races one more attempt through at the old concurrency."""
         downloader.config.retry_attempts = 1
         adaptive = ConcurrencyProbe(4, 1)
+        downloader.adaptive = adaptive
         active_at_record: list[int] = []
         original = adaptive.record_stall
 
@@ -1545,7 +1557,6 @@ class TestAttemptLevelConcurrency:
                 "Cnaes.zip",
                 downloader.temp_path / "Cnaes.zip",
                 logging.getLogger(__name__).debug,
-                adaptive,
             )
 
         assert active_at_record == [1]
@@ -1764,3 +1775,30 @@ def test_cleanup_preserves_directory_after_extraction_failure(config: Config, tm
     assert target.is_dir()
     assert sentinel.read_text() == "keep me"
     assert not archive.exists()
+
+
+def test_concurrent_single_file_downloads_share_the_download_limit(config: Config) -> None:
+    """PROCESS_WORKERS threads each call download_file; together they must not exceed DOWNLOAD_WORKERS streams."""
+    config.download_workers = 1
+    downloader = Downloader(config)
+    active = peak = 0
+    lock = threading.Lock()
+
+    def stream(url: str, filename: str, zip_path: Path, part_path: Path) -> None:
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.05)
+        with zipfile.ZipFile(zip_path, "w") as z:
+            z.writestr("CNAECSV", "01;One\n")
+        with lock:
+            active -= 1
+
+    with (
+        patch.object(downloader, "_download_zip_once", side_effect=stream),
+        ThreadPoolExecutor(max_workers=3) as pool,
+    ):
+        list(pool.map(partial(downloader.download_file, "2024-03"), ["A.zip", "B.zip", "C.zip"]))
+
+    assert peak == 1

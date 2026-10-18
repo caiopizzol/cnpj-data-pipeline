@@ -7,7 +7,7 @@ import time
 import zipfile
 from collections.abc import Callable, Generator, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Condition, Lock
@@ -134,6 +134,9 @@ class Downloader:
         self.temp_path.mkdir(exist_ok=True)
         self.auth = (config.share_token, "")
         self._owned_paths: set[Path] = set()
+        # One limiter per run: every download path, including PROCESS_WORKERS
+        # threads calling download_file, shares DOWNLOAD_WORKERS and its backoff.
+        self._adaptive = AdaptiveDownloadConcurrency(config.download_workers, config.stall_degrade_threshold)
 
     def _propfind(self, path: str = "") -> ElementTree.Element:
         """Execute a WebDAV PROPFIND request and return parsed XML."""
@@ -210,25 +213,16 @@ class Downloader:
         # Split into reference and data files
         reference_files = [f for f in files if f in REFERENCE_FILES]
         data_files = [f for f in files if f not in REFERENCE_FILES]
-        adaptive_concurrency = AdaptiveDownloadConcurrency(
-            self.config.download_workers,
-            self.config.stall_degrade_threshold,
-        )
 
         # Process reference files first (sequentially)
         for filename in reference_files:
-            yield self._download_and_extract(directory, filename, adaptive_concurrency), filename
+            yield self._download_and_extract(directory, filename), filename
 
         # Process data files in parallel
         if data_files:
-            yield from self._download_parallel(directory, data_files, adaptive_concurrency)
+            yield from self._download_parallel(directory, data_files)
 
-    def _download_parallel(
-        self,
-        directory: str,
-        files: list[str],
-        adaptive_concurrency: AdaptiveDownloadConcurrency,
-    ) -> Iterator[tuple[list[Path], str]]:
+    def _download_parallel(self, directory: str, files: list[str]) -> Iterator[tuple[list[Path], str]]:
         """Download data files in parallel using ThreadPoolExecutor."""
         with ThreadPoolExecutor(max_workers=self.config.download_workers) as executor:
             next_file_index = 0
@@ -236,17 +230,10 @@ class Downloader:
 
             def submit_until_limit() -> None:
                 nonlocal next_file_index
-                while (
-                    next_file_index < len(files) and len(future_to_filename) < adaptive_concurrency.current_concurrency
-                ):
+                while next_file_index < len(files) and len(future_to_filename) < self._adaptive.current_concurrency:
                     filename = files[next_file_index]
                     next_file_index += 1
-                    future = executor.submit(
-                        self._download_and_extract,
-                        directory,
-                        filename,
-                        adaptive_concurrency,
-                    )
+                    future = executor.submit(self._download_and_extract, directory, filename)
                     future_to_filename[future] = filename
 
             submit_until_limit()
@@ -266,7 +253,6 @@ class Downloader:
         self,
         directory: str,
         filename: str,
-        adaptive: AdaptiveDownloadConcurrency | None = None,
     ) -> list[Path]:
         """Download a single ZIP file and extract CSV files."""
         url = f"{self.config.base_url}/{directory}/{filename}"
@@ -280,7 +266,7 @@ class Downloader:
         if self.config.keep_files and zip_path.exists() and self._cached_zip_is_valid(zip_path):
             log(f"Using cached: {filename}")
         else:
-            self._download_zip(url, directory, filename, zip_path, log, adaptive)
+            self._download_zip(url, directory, filename, zip_path, log)
 
         # Extract CSV files
         extracted_files: list[Path] = []
@@ -347,7 +333,6 @@ class Downloader:
         filename: str,
         zip_path: Path,
         log: Callable[[str], None],
-        adaptive: AdaptiveDownloadConcurrency | None,
     ) -> None:
         """Download a ZIP through a resumable .part file and validate it."""
         # The .part name carries the source directory (month): CNPJ file names
@@ -370,7 +355,7 @@ class Downloader:
         while True:
             try:
                 log(f"Downloading {filename}...")
-                with adaptive.stream_permit() if adaptive is not None else nullcontext():
+                with self._adaptive.stream_permit():
                     try:
                         self._download_zip_once(url, filename, zip_path, part_path)
                     except (DownloadStalledError, requests.exceptions.ConnectTimeout):
@@ -380,8 +365,7 @@ class Downloader:
                         # Record while the permit is still held, so waiters
                         # wake to the degraded limit rather than racing one
                         # more attempt through at the old concurrency.
-                        if adaptive is not None:
-                            adaptive.record_stall()
+                        self._adaptive.record_stall()
                         raise
                 return
             except Exception as e:
