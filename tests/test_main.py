@@ -1,6 +1,7 @@
 """Tests for main module."""
 
 import json
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -129,6 +130,25 @@ class TestMain:
         assert exc_info.value.code == 1
         mock_downloader_cls.assert_not_called()
         mock_db_cls.assert_not_called()
+
+    @pytest.mark.parametrize("locked", [False, True])
+    def test_windows_lock_uses_msvcrt(self, cfg: Config, monkeypatch: pytest.MonkeyPatch, locked: bool) -> None:
+        """On Windows the lock is a non-blocking msvcrt byte lock; a held lock refuses the run."""
+        msvcrt = MagicMock(LK_NBLCK=2)
+        if locked:
+            msvcrt.locking.side_effect = PermissionError("locked")
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setitem(sys.modules, "msvcrt", msvcrt)
+
+        if locked:
+            with pytest.raises(SystemExit), run_lock(cfg.temp_dir):
+                pass
+        else:
+            with run_lock(cfg.temp_dir):
+                pass
+
+        args = msvcrt.locking.call_args.args
+        assert args[1:] == (msvcrt.LK_NBLCK, 1)
 
     @patch("main.Downloader")
     @patch("main.parse_args")
