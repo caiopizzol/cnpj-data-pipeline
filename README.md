@@ -105,7 +105,7 @@ just run --month 2024-11 --force  # Reprocessar mês no PostgreSQL
 
 Cada comando executa o pipeline uma vez e encerra. Sem `--month`, ele seleciona a competência mais recente disponível. No PostgreSQL, arquivos já processados são ignorados.
 
-Para manter a base atualizada, configure um cron job ou outro scheduler para executar periodicamente `just run` ou `docker compose run --rm pipeline`. Não use `--force` nas execuções agendadas.
+Para manter a base atualizada, configure um cron job ou outro scheduler para executar periodicamente `just run` ou `docker compose run --rm pipeline`. Não use `--force` nas execuções agendadas. Uma execução trava o `TEMP_DIR` até terminar: se o agendador iniciar outra enquanto a anterior ainda roda, a nova sai com erro sem tocar em nada. Execuções que precisam rodar ao mesmo tempo devem usar `TEMP_DIR` diferentes.
 
 ## Configuração
 
