@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## [1.38.10](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.9...v1.38.10) (2026-10-18)
+
+
+### Bug Fixes
+
+* **database:** truncate replace tables without CASCADE ([#146](https://github.com/caiopizzol/cnpj-data-pipeline/issues/146)) ([54a6592](https://github.com/caiopizzol/cnpj-data-pipeline/commit/54a659287defda40a466160424ca8fe4ba6325ef))
+* **downloader:** share one download limiter across every download path ([#149](https://github.com/caiopizzol/cnpj-data-pipeline/issues/149)) ([f8aae2d](https://github.com/caiopizzol/cnpj-data-pipeline/commit/f8aae2d09649e68d3e7a222b64e0f4a424a04fe1))
+* **main:** refuse to start while another run holds TEMP_DIR ([#148](https://github.com/caiopizzol/cnpj-data-pipeline/issues/148)) ([6b1ceae](https://github.com/caiopizzol/cnpj-data-pipeline/commit/6b1ceaeea440f63ed20705f7370439ee5c2bb824))
+* **packaging:** ship initial.sql in the wheel ([#147](https://github.com/caiopizzol/cnpj-data-pipeline/issues/147)) ([987febc](https://github.com/caiopizzol/cnpj-data-pipeline/commit/987febcdb71693587bf15a6e335bffee3f4e0b4e))
+* **processor:** keep scheduled Simples and MEI exclusion dates ([#144](https://github.com/caiopizzol/cnpj-data-pipeline/issues/144)) ([e4ffed8](https://github.com/caiopizzol/cnpj-data-pipeline/commit/e4ffed899cb0e44f72bfcee5961622fcfd9bccdb))
+* **recipes:** run each recipe in one transaction ([#145](https://github.com/caiopizzol/cnpj-data-pipeline/issues/145)) ([887c3de](https://github.com/caiopizzol/cnpj-data-pipeline/commit/887c3ded18bcd03e26b10e8024709fc8e380cd0d))
+
+
+### Documentation
+
+* correct sócio pais padding claim ([#143](https://github.com/caiopizzol/cnpj-data-pipeline/issues/143)) ([85a11af](https://github.com/caiopizzol/cnpj-data-pipeline/commit/85a11afc9997e022aaf732817603c5d3fb0ac2fe))
+
 ## [1.38.9](https://github.com/caiopizzol/cnpj-data-pipeline/compare/v1.38.8...v1.38.9) (2026-09-08)
 
 
