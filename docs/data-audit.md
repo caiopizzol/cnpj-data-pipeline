@@ -74,7 +74,7 @@ Este documento registra o que a Receita Federal entrega, o que o pipeline normal
 |---|---|---|---|---|---|
 | `cnpj_basico` | 8 caracteres alfanuméricos (0-9, A-Z), PK | validação regex `^[0-9A-Z]{8}$` | — | — | — |
 | `opcao_pelo_simples` | "S" \| "N" | validação regex | — | incluído cru em `empresa_detalhe` | alta |
-| `data_opcao_pelo_simples`, `data_exclusao_do_simples`, `data_opcao_pelo_mei`, `data_exclusao_do_mei` | YYYYMMDD ou null | normalização de datas | tipado em Parquet (v1.18+) | incluído cru em `empresa_detalhe` | alta |
+| `data_opcao_pelo_simples`, `data_exclusao_do_simples`, `data_opcao_pelo_mei`, `data_exclusao_do_mei` | YYYYMMDD ou null; exclusões podem vir no futuro (agendadas, ex.: `20261231`) | normalização de datas; as duas exclusões aceitam data futura | tipado em Parquet (v1.18+) | incluído cru em `empresa_detalhe` | alta |
 | `opcao_pelo_mei` | "S" \| "N" | validação regex | — | incluído cru em `empresa_detalhe` | alta |
 
 > Observação: `dados_simples` é por `cnpj_basico` (empresa-nível), não por estabelecimento. Em `empresa_detalhe` essas colunas se repetem em todas as linhas de uma mesma empresa.

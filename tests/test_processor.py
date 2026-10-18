@@ -495,6 +495,22 @@ class TestValidate:
         assert result["data_situacao_cadastral"][0] is None
         assert result["data_situacao_cadastral"][1] == "20230101"
 
+    def test_validate_scheduled_exclusion_dates_kept(self) -> None:
+        """Simples/MEI exclusions are scheduled ahead (e.g. year end), so future dates are real."""
+        df = pl.DataFrame(
+            {
+                "data_opcao_pelo_simples": ["29991231"],
+                "data_exclusao_do_simples": ["29991231"],
+                "data_exclusao_do_mei": ["29991231"],
+            }
+        )
+
+        result = validate(df, "SIMPLESCSV")
+
+        assert result["data_opcao_pelo_simples"][0] is None
+        assert result["data_exclusao_do_simples"][0] == "29991231"
+        assert result["data_exclusao_do_mei"][0] == "29991231"
+
     def test_validate_date_before_1900_nullified(self) -> None:
         """Test that dates before 1900 are nullified."""
         df = pl.DataFrame({"data_situacao_cadastral": ["18501231", "19000101"]})
