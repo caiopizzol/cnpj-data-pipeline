@@ -63,7 +63,7 @@ Este documento registra o que a Receita Federal entrega, o que o pipeline normal
 | `cnpj_cpf_do_socio` | já mascarado pela Receita Federal: `***123456**` (CPF) ou CNPJ completo | substitui null por "00000000000000" para manter a chave primária | — | — | — |
 | `qualificacao_do_socio` | 2 dígitos | — | — | descrição em `socios_detalhe` | baixa |
 | `data_entrada_sociedade` | YYYYMMDD | mesma normalização que outras datas | tipado em Parquet (v1.18+) | — | — |
-| `pais` | 3 dígitos zero-padded | padding | — | descrição em `socios_detalhe` | baixa |
+| `pais` | 3 dígitos zero-padded (já vem assim da fonte) | — | — | descrição em `socios_detalhe` | baixa |
 | `representante_legal` | `***000000**` quando não há | — | — | valor sentinela → null em receita futura (`socios_cleanup`) | baixa |
 | `qualificacao_do_representante_legal` | "00" quando não há | — | — | valor sentinela → null em receita futura | baixa |
 | `faixa_etaria` | "0".."9" ("0" = não se aplica) | validação regex | — | descrições (`socios_detalhe`) | baixa |

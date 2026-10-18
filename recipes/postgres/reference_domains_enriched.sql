@@ -74,8 +74,8 @@ WHERE NOT EXISTS (SELECT 1 FROM motivos m WHERE m.codigo = s.codigo);
 ALTER TABLE motivos_enriched ADD PRIMARY KEY (codigo);
 
 -- NOTE: SERPRO's pais.csv stores codes unpadded (e.g. "15", "42"); the pipeline
--- pads estabelecimentos/socios.pais to 3 digits (zfill). The supplemental rows
--- below use the 3-digit form so they match the data's padded codes.
+-- pads estabelecimentos.pais to 3 digits (zfill), and socios.pais arrives padded.
+-- The supplemental rows below use the 3-digit form so they match the data.
 
 -- ---------------------------------------------------------------------------
 -- paises_enriched
