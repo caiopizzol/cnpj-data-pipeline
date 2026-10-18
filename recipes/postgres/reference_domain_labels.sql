@@ -21,7 +21,7 @@
 --
 -- Apply after the pipeline finishes ingest, BEFORE any recipe that wants these
 -- descriptions (empresa_detalhe, socios_detalhe):
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domain_labels.sql
 --
 -- Dependencies: none (static data; the JOIN targets are validated below).
 --
@@ -54,6 +54,8 @@
 -- ---------------------------------------------------------------------------
 -- portes_empresa
 -- ---------------------------------------------------------------------------
+BEGIN;
+
 DROP TABLE IF EXISTS portes_empresa;
 CREATE TABLE portes_empresa (
     codigo      text PRIMARY KEY,
@@ -165,3 +167,5 @@ ANALYZE situacoes_cadastrais;
 ANALYZE indicadores_matriz_filial;
 ANALYZE identificadores_socio;
 ANALYZE faixas_etarias;
+
+COMMIT;

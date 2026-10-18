@@ -22,8 +22,10 @@
 --   - it does not concatenate addresses.
 --
 -- Apply after data_quality_flags has been built:
---     psql "$DATABASE_URL" -f recipes/postgres/data_quality_flags.sql
---     psql "$DATABASE_URL" -f recipes/postgres/estabelecimentos_clean.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/data_quality_flags.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/estabelecimentos_clean.sql
+
+BEGIN;
 
 DROP TABLE IF EXISTS estabelecimentos_clean;
 CREATE TABLE estabelecimentos_clean AS
@@ -59,3 +61,5 @@ CREATE INDEX IF NOT EXISTS idx_estabelecimentos_clean_cnpj ON estabelecimentos_c
 CREATE INDEX IF NOT EXISTS idx_estabelecimentos_clean_basico ON estabelecimentos_clean (cnpj_basico);
 
 ANALYZE estabelecimentos_clean;
+
+COMMIT;

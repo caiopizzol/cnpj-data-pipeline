@@ -24,8 +24,10 @@
 --   - no cnpj_cpf_do_socio mutation - the masked source stays as-is
 --
 -- Apply after socios_quality_flags has been built:
---     psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql
---     psql "$DATABASE_URL" -f recipes/postgres/socios_clean.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/socios_quality_flags.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/socios_clean.sql
+
+BEGIN;
 
 DROP TABLE IF EXISTS socios_clean;
 CREATE TABLE socios_clean AS
@@ -64,3 +66,5 @@ CREATE INDEX IF NOT EXISTS idx_socios_clean_lookup
     ON socios_clean (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio);
 
 ANALYZE socios_clean;
+
+COMMIT;

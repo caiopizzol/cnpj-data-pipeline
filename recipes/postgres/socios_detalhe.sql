@@ -11,9 +11,9 @@
 -- from the enriched lookups, and identificador_de_socio/faixa_etaria
 -- descriptions come from the static domain-label tables, so run both of those
 -- recipes first:
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
---     psql "$DATABASE_URL" -f recipes/postgres/socios_detalhe.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domains_enriched.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domain_labels.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/socios_detalhe.sql
 --
 -- Re-run after each monthly ingest to refresh.
 --
@@ -40,6 +40,8 @@
 -- old triple (cnpj_basico + identificador_de_socio + cnpj_cpf_do_socio) is NOT
 -- unique - two PF sócios of the same company can share the 6 visible digits of
 -- the masked CPF (issue #78) - so it must never be used as this table's key.
+
+BEGIN;
 
 DROP TABLE IF EXISTS socios_detalhe;
 CREATE TABLE socios_detalhe AS
@@ -74,3 +76,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_socios_detalhe_socio_id ON socios_detalhe 
 CREATE INDEX IF NOT EXISTS idx_socios_detalhe_basico ON socios_detalhe (cnpj_basico);
 
 ANALYZE socios_detalhe;
+
+COMMIT;
