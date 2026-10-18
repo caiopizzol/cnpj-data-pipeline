@@ -1,5 +1,6 @@
 """Tests for main module."""
 
+import errno
 import json
 import sys
 from collections.abc import Iterator
@@ -149,6 +150,15 @@ class TestMain:
 
         args = msvcrt.locking.call_args.args
         assert args[1:] == (msvcrt.LK_NBLCK, 1)
+
+    def test_lock_failure_other_than_contention_is_raised(self, cfg: Config) -> None:
+        """A filesystem that cannot lock must fail loudly, not report a run that does not exist."""
+        with (
+            patch("fcntl.flock", side_effect=OSError(errno.ENOLCK, "No locks available")),
+            pytest.raises(OSError, match="No locks available"),
+            run_lock(cfg.temp_dir),
+        ):
+            pass
 
     @patch("main.Downloader")
     @patch("main.parse_args")

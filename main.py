@@ -286,17 +286,21 @@ def run_postgres(
 
 
 def _try_lock(lock_file: TextIO) -> bool:
-    try:
-        if sys.platform == "win32":
-            import msvcrt
+    """Return False only when another process holds the lock; other lock failures propagate."""
+    if sys.platform == "win32":
+        import msvcrt
 
+        try:
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
+        except PermissionError:  # EACCES: the byte is locked by another process
+            return False
+    else:
+        import fcntl
 
+        try:
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return False
+        except BlockingIOError:  # EWOULDBLOCK: another process holds the lock
+            return False
     return True
 
 
