@@ -8,7 +8,7 @@
 -- reference table.
 --
 -- Apply after the pipeline finishes ingest:
---     psql "$DATABASE_URL" -f recipes/postgres/cnaes_hierarquia.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/cnaes_hierarquia.sql
 --
 -- Re-run after each monthly ingest to refresh.
 --
@@ -28,6 +28,8 @@
 --     kept with secao = NULL, not dropped.
 --   - Carries cnaes.descricao for labels; does not add seção/divisão/grupo names
 --     (would need a second IBGE transcription, out of scope).
+
+BEGIN;
 
 DROP TABLE IF EXISTS cnaes_hierarquia;
 CREATE TABLE cnaes_hierarquia AS
@@ -62,3 +64,5 @@ CREATE INDEX IF NOT EXISTS idx_cnaes_hierarquia_grupo ON cnaes_hierarquia (grupo
 CREATE INDEX IF NOT EXISTS idx_cnaes_hierarquia_classe ON cnaes_hierarquia (classe);
 
 ANALYZE cnaes_hierarquia;
+
+COMMIT;

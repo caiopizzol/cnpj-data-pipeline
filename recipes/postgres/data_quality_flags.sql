@@ -9,8 +9,8 @@
 --
 -- Apply after the pipeline finishes ingest. The *_enriched_lookup_missing
 -- flags compare against the enriched lookups, so run that recipe first:
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
---     psql "$DATABASE_URL" -f recipes/postgres/data_quality_flags.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domains_enriched.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/data_quality_flags.sql
 --
 -- Dependencies: reference_domains_enriched.sql (motivos_enriched, paises_enriched).
 --
@@ -34,6 +34,8 @@
 --     PDF does not document EX explicitly; this flag should be read as
 --     "matches the observed exterior pattern", not "is officially
 --     exterior".
+
+BEGIN;
 
 DROP TABLE IF EXISTS data_quality_flags;
 CREATE TABLE data_quality_flags AS
@@ -79,3 +81,5 @@ CREATE INDEX IF NOT EXISTS idx_data_quality_flags_motivo_enriched_missing
     ON data_quality_flags (cnpj_basico) WHERE motivo_enriched_lookup_missing;
 
 ANALYZE data_quality_flags;
+
+COMMIT;

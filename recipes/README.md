@@ -23,40 +23,40 @@ A regra está em [../docs/post-processing.md](../docs/post-processing.md): o pip
 
 ## Como aplicar
 
-Depois da carga (`just run`), rode apenas as receitas que você precisa:
+Depois da carga (`just run`), rode apenas as receitas que você precisa. Cada receita roda em uma transação; se falhar, as tabelas da execução anterior continuam intactas. `ON_ERROR_STOP=1` faz o `psql` parar no primeiro erro e sair com código diferente de zero:
 
 ```bash
 # Domínios de referência enriquecidos (pré-requisito de empresa_detalhe)
-psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domains_enriched.sql
 
 # Rótulos estáticos de domínio (pré-requisito de empresa_detalhe)
-psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domain_labels.sql
 
 # Tabela denormalizada para consulta (depende de reference_domains_enriched e reference_domain_labels)
-psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresa_detalhe.sql
 
 # Sinais de qualidade e camada limpa de estabelecimentos
-psql "$DATABASE_URL" -f recipes/postgres/data_quality_flags.sql
-psql "$DATABASE_URL" -f recipes/postgres/estabelecimentos_clean.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/data_quality_flags.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/estabelecimentos_clean.sql
 
 # CNAEs secundários em tabela lateral
-psql "$DATABASE_URL" -f recipes/postgres/cnae_secundaria_exploded.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/cnae_secundaria_exploded.sql
 
 # Hierarquia CNAE (seção/divisão/grupo/classe) por subclasse
-psql "$DATABASE_URL" -f recipes/postgres/cnaes_hierarquia.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/cnaes_hierarquia.sql
 
 # Sinais de qualidade e camada limpa por sócio
-psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql
-psql "$DATABASE_URL" -f recipes/postgres/socios_clean.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/socios_quality_flags.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/socios_clean.sql
 
 # Tabela por sócio com descrições (depende de reference_domains_enriched e reference_domain_labels)
-psql "$DATABASE_URL" -f recipes/postgres/socios_detalhe.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/socios_detalhe.sql
 
 # Tabela de serviço para busca por nome em matrizes ativas
-psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresas_busca_nome.sql
 
 # Rollups de contagem para empresas_busca_nome
-psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome_counts.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresas_busca_nome_counts.sql
 ```
 
 Rode novamente após cada carga mensal para atualizar. Quando uma receita depende de outra, isso aparece no cabeçalho do SQL.

@@ -16,7 +16,7 @@
 -- companion recipe with a different predicate.
 --
 -- Apply after the pipeline finishes ingest:
---     psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresas_busca_nome.sql
 --
 -- Re-run after each monthly ingest to refresh.
 --
@@ -39,6 +39,8 @@
 --   - text_pattern_ops on razao_social enables LIKE 'PREFIX%' index use.
 --     Substring LIKE ('%PREFIX%') needs GIN + pg_trgm; see the opt-in
 --     block at the bottom.
+
+BEGIN;
 
 DROP TABLE IF EXISTS empresas_busca_nome;
 
@@ -118,6 +120,8 @@ CREATE INDEX IF NOT EXISTS idx_empresas_busca_nome_uf_cnae_razao
     (uf, cnae_fiscal_principal, razao_social, cnpj_basico, cnpj_ordem);
 
 ANALYZE empresas_busca_nome;
+
+COMMIT;
 
 -- Optional: substring LIKE on razao_social via trigram GIN.
 -- Uncomment if you need LIKE '%PREFIX%' (or ILIKE) patterns. The index

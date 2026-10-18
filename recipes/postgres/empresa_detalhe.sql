@@ -9,9 +9,9 @@
 -- descriptions come from the enriched lookups, and porte/situacao_cadastral/
 -- matriz_filial descriptions come from the static domain-label tables, so run
 -- both of those recipes first:
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
---     psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domains_enriched.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domain_labels.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresa_detalhe.sql
 --
 -- Re-run after each monthly ingest to refresh.
 --
@@ -40,6 +40,8 @@
 --     recipes/postgres/cnae_secundaria_exploded.sql provides a side table.
 --   - cnpj column is materialized as basico||ordem||dv. Trivial in SQL
 --     but avoids repeating the concatenation in every consumer query.
+
+BEGIN;
 
 DROP TABLE IF EXISTS empresa_detalhe;
 CREATE TABLE empresa_detalhe AS
@@ -121,3 +123,5 @@ CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_cnpj ON empresa_detalhe (cnpj);
 CREATE INDEX IF NOT EXISTS idx_empresa_detalhe_basico ON empresa_detalhe (cnpj_basico);
 
 ANALYZE empresa_detalhe;
+
+COMMIT;

@@ -17,8 +17,8 @@
 -- three physical tables.
 --
 -- Apply after empresas_busca_nome has been built/refreshed:
---     psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome.sql
---     psql "$DATABASE_URL" -f recipes/postgres/empresas_busca_nome_counts.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresas_busca_nome.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresas_busca_nome_counts.sql
 --
 -- Re-run after each monthly ingest to refresh.
 --
@@ -40,6 +40,8 @@
 --   - Includes a NULL bucket for cnae_fiscal_principal because some
 --     estabelecimento rows in the source have no CNAE; consumers can
 --     decide whether to surface it or filter it out.
+
+BEGIN;
 
 DROP TABLE IF EXISTS empresas_busca_nome_counts;
 
@@ -86,6 +88,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_empresas_busca_nome_counts_uf_cnae
     WHERE kind = 'uf_cnae';
 
 ANALYZE empresas_busca_nome_counts;
+
+COMMIT;
 
 -- Lookup patterns (consumer side):
 --

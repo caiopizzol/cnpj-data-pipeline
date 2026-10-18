@@ -13,8 +13,8 @@
 --
 -- Apply after the pipeline finishes ingest. The *_enriched_lookup_missing
 -- flags compare against the enriched lookups, so run that recipe first:
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
---     psql "$DATABASE_URL" -f recipes/postgres/socios_quality_flags.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domains_enriched.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/socios_quality_flags.sql
 --
 -- Dependencies: reference_domains_enriched.sql (paises_enriched,
 -- qualificacoes_socios_enriched).
@@ -37,6 +37,8 @@
 --   - qualificacao_representante_lookup_missing excludes '00' on purpose -
 --     that's the placeholder qualification that pairs with the placeholder
 --     representante_legal, not an orphan.
+
+BEGIN;
 
 DROP TABLE IF EXISTS socios_quality_flags;
 CREATE TABLE socios_quality_flags AS
@@ -108,3 +110,5 @@ CREATE INDEX IF NOT EXISTS idx_socios_quality_flags_qual_representante_enriched_
     ON socios_quality_flags (cnpj_basico) WHERE qualificacao_representante_enriched_lookup_missing;
 
 ANALYZE socios_quality_flags;
+
+COMMIT;

@@ -8,7 +8,7 @@
 -- activity" without scanning a string column.
 --
 -- Apply after the pipeline finishes ingest:
---     psql "$DATABASE_URL" -f recipes/postgres/cnae_secundaria_exploded.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/cnae_secundaria_exploded.sql
 --
 -- Design choices (see docs/data-audit.md for the broader recipe roadmap):
 --   - Trim whitespace and drop empty entries: handles trailing commas
@@ -23,6 +23,8 @@
 --     7-digit, but anything else is preserved as-is for transparency.
 --   - No position column. Adds bytes for a use case nobody has asked
 --     for. Easy to add later if needed.
+
+BEGIN;
 
 DROP TABLE IF EXISTS cnae_secundaria_exploded;
 CREATE TABLE cnae_secundaria_exploded AS
@@ -45,3 +47,5 @@ CREATE INDEX IF NOT EXISTS idx_cnae_secundaria_exploded_estabelecimento
     ON cnae_secundaria_exploded (cnpj_basico, cnpj_ordem, cnpj_dv);
 
 ANALYZE cnae_secundaria_exploded;
+
+COMMIT;

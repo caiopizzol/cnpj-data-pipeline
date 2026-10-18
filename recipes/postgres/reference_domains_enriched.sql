@@ -12,9 +12,9 @@
 --
 -- Apply after the pipeline finishes ingest, BEFORE any recipe that wants the
 -- enriched descriptions:
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domains_enriched.sql
---     psql "$DATABASE_URL" -f recipes/postgres/reference_domain_labels.sql
---     psql "$DATABASE_URL" -f recipes/postgres/empresa_detalhe.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domains_enriched.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/reference_domain_labels.sql
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f recipes/postgres/empresa_detalhe.sql
 --
 -- Dependencies: motivos, paises, qualificacoes_socios (base load).
 --
@@ -47,6 +47,8 @@
 -- ---------------------------------------------------------------------------
 -- motivos_enriched
 -- ---------------------------------------------------------------------------
+BEGIN;
+
 DROP TABLE IF EXISTS motivos_enriched;
 CREATE TABLE motivos_enriched AS
 SELECT
@@ -160,3 +162,5 @@ ALTER TABLE qualificacoes_socios_enriched ADD PRIMARY KEY (codigo);
 ANALYZE motivos_enriched;
 ANALYZE paises_enriched;
 ANALYZE qualificacoes_socios_enriched;
+
+COMMIT;
