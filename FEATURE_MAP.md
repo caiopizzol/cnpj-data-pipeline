@@ -9,7 +9,7 @@ Comece na raiz de uma cópia limpa do repositório, com Python 3.11+ e `uv`:
 uv sync --frozen
 ```
 
-Use `uv run --frozen python main.py`: `uv sync` não instala o atalho `cnpj-pipeline`.
+Use `uv run --frozen python main.py` ou `uv run --frozen cnpj-pipeline`.
 As opções, variáveis e nomes de tabelas abaixo servem de referência para automação.
 Não há interface gráfica nem atalhos de teclado próprios. Opções curtas: `-h`, `-l`, `-m` e `-f`.
 

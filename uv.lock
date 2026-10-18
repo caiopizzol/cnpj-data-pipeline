@@ -91,7 +91,7 @@ wheels = [
 [[package]]
 name = "cnpj-data-pipeline"
 version = "1.38.9"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "polars" },
     { name = "psycopg2-binary" },
