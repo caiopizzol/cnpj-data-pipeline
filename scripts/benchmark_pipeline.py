@@ -25,7 +25,7 @@ import polars as pl
 import pyarrow as pa
 
 from config import Config
-from downloader import AdaptiveDownloadConcurrency, Downloader
+from downloader import Downloader
 from parquet_writer import ParquetWriter
 from processor import process_file
 
@@ -54,10 +54,9 @@ class TimedDownloader(Downloader):
         filename: str,
         zip_path: Path,
         log: Callable[[str], None],
-        adaptive: AdaptiveDownloadConcurrency | None,
     ) -> None:
         started = perf_counter()
-        super()._download_zip(url, directory, filename, zip_path, log, adaptive)
+        super()._download_zip(url, directory, filename, zip_path, log)
         self.download_seconds += perf_counter() - started
 
 
