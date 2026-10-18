@@ -3,14 +3,18 @@
 import errno
 import json
 import sys
-from collections.abc import Iterator
+import time
+import zipfile
+from collections.abc import Generator, Iterator
 from pathlib import Path
+from typing import TypeVar
 from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
 
 from config import Config
+from downloader import Downloader
 from main import (
     get_file_priority,
     group_files_by_dependency,
@@ -21,6 +25,13 @@ from main import (
     run_lock,
 )
 from parquet_writer import ParquetWriter
+
+T = TypeVar("T")
+
+
+def downloads(items: list[T]) -> Generator[T]:
+    """A download double shaped like the real generator methods, which main() closes."""
+    yield from items
 
 
 @pytest.fixture
@@ -211,7 +222,7 @@ class TestMain:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
-        mock_downloader.download_archives.return_value = iter([])
+        mock_downloader.download_archives.return_value = downloads([])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_db = MagicMock()
@@ -274,7 +285,7 @@ class TestMain:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
-        mock_downloader.download_archives.return_value = iter([([csv_file], "Cnaes.zip")])
+        mock_downloader.download_archives.return_value = downloads([([csv_file], "Cnaes.zip")])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_db = MagicMock()
@@ -348,7 +359,7 @@ class TestParquetOutput:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
-        mock_downloader.download_files.return_value = iter([(csv_file, "Cnaes.zip")])
+        mock_downloader.download_files.return_value = downloads([(csv_file, "Cnaes.zip")])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_process_file.return_value = iter(
@@ -386,7 +397,7 @@ class TestParquetOutput:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
-        mock_downloader.download_files.return_value = iter([(tmp_path / "CNAECSV.D51213", "Cnaes.zip")])
+        mock_downloader.download_files.return_value = downloads([(tmp_path / "CNAECSV.D51213", "Cnaes.zip")])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_process_file.return_value = iter([(pl.DataFrame({"codigo": ["001"]}), "cnaes", ["codigo"])])
@@ -416,7 +427,9 @@ class TestParquetOutput:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Estabele.zip"]
-        mock_downloader.download_files.return_value = iter([(tmp_path / "ESTABELE.D51213", "Estabele.zip")])
+        mock_downloader.download_files.return_value = (
+            item for item in [(tmp_path / "ESTABELE.D51213", "Estabele.zip")]
+        )
         mock_downloader_cls.return_value = mock_downloader
 
         mock_process_file.return_value = iter(
@@ -481,7 +494,7 @@ class TestParquetOutput:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip"]
-        mock_downloader.download_files.return_value = iter([(csv_file, "Cnaes.zip")])
+        mock_downloader.download_files.return_value = downloads([(csv_file, "Cnaes.zip")])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_process_file.return_value = iter(
@@ -917,7 +930,7 @@ class TestParquetResume:
         mock_downloader = MagicMock()
         mock_downloader.get_latest_directory.return_value = "2024-01"
         mock_downloader.get_directory_files.return_value = ["Cnaes.zip", "Motivos.zip"]
-        mock_downloader.download_files.return_value = iter([(csv_file, "Motivos.zip")])
+        mock_downloader.download_files.return_value = downloads([(csv_file, "Motivos.zip")])
         mock_downloader_cls.return_value = mock_downloader
 
         mock_process_file.return_value = iter(
@@ -979,7 +992,7 @@ def test_parquet_write_failure_stops_export(workers: int, cfg: Config, tmp_path:
         downloader.get_latest_directory.return_value = "2024-01"
         downloader.get_directory_files.return_value = ["Cnaes.zip", "Empresas0.zip"]
         downloader.download_file.return_value = [source]
-        downloader.download_files.return_value = [(source, "Cnaes.zip")]
+        downloader.download_files.return_value = downloads([(source, "Cnaes.zip")])
         writer = writer_cls.return_value
         writer.write_batch.side_effect = OSError("disk full")
 
@@ -1018,7 +1031,7 @@ def test_empty_parquet_input_does_not_publish_a_file(workers: int, cfg: Config, 
         downloader.get_latest_directory.return_value = "2024-01"
         downloader.get_directory_files.return_value = ["Cnaes.zip"]
         downloader.download_file.return_value = [source]
-        downloader.download_files.return_value = [(source, "Cnaes.zip")]
+        downloader.download_files.return_value = downloads([(source, "Cnaes.zip")])
 
         with pytest.raises(SystemExit) as error:
             main(cfg=cfg)
@@ -1090,7 +1103,7 @@ def test_parquet_retry_after_later_shard_failure(workers: int, cfg: Config, tmp_
         dl.download_file.side_effect = None
         dl.download_file.return_value = [source]
         dl.download_files.side_effect = None
-        dl.download_files.return_value = [(source, "Cnaes.zip")]
+        dl.download_files.return_value = downloads([(source, "Cnaes.zip")])
         main(cfg)
         assert pl.read_parquet(output / "cnaes.parquet").height == 2
         assert not (output / "cnaes.parquet.partial").exists()
@@ -1112,7 +1125,7 @@ def test_resumed_manifest_includes_existing_and_new_tables(cfg: Config, tmp_path
         dl = cls.return_value
         dl.get_latest_directory.return_value = "2024-01"
         dl.get_directory_files.return_value = ["Cnaes.zip", "Motivos.zip"]
-        dl.download_files.return_value = [(source, "Motivos.zip")]
+        dl.download_files.return_value = downloads([(source, "Motivos.zip")])
         main(cfg)
         first = json.loads((output / "manifest.json").read_text())
         assert set(first["tables"]) == {"cnaes", "motivos"}
@@ -1161,7 +1174,7 @@ def test_empty_postgres_source_is_not_marked(workers: int, cfg: Config, tmp_path
         dl.get_latest_directory.return_value = "2024-01"
         dl.get_directory_files.return_value = ["Cnaes.zip"]
         dl.download_file.return_value = [source]
-        dl.download_archives.return_value = [([source], "Cnaes.zip")]
+        dl.download_archives.return_value = downloads([([source], "Cnaes.zip")])
         db = db_cls.return_value
         db.get_processed_files.return_value = []
         with pytest.raises(SystemExit) as error:
@@ -1229,3 +1242,30 @@ def test_reports_unsupported_source_archives(cfg: Config, caplog: pytest.LogCapt
         downloader.get_directory_files.return_value = ["Cnaes.zip", "Regimes.zip"]
         main(cfg)
     assert "Skipping unsupported source files: Regimes.zip" in caplog.text
+
+
+def test_failed_load_waits_for_in_flight_downloads_before_releasing_the_lock(cfg: Config) -> None:
+    """A load failure must not release TEMP_DIR while another download is still writing to it."""
+    cfg.output_format = "postgres"
+    cfg.download_workers = 2
+    finished: list[str] = []
+
+    def stream(self: Downloader, url: str, filename: str, zip_path: Path, part_path: Path) -> None:
+        if filename == "Empresas1.zip":
+            time.sleep(0.5)  # still streaming when Empresas0's load fails
+            finished.append(filename)
+        with zipfile.ZipFile(zip_path, "w") as z:
+            z.writestr("EMPRECSV", "1;x\n")
+
+    with (
+        patch("main.parse_args", return_value=MagicMock(list=False, month=None, force=False)),
+        patch("database.Database"),
+        patch.object(Downloader, "_download_zip_once", stream),
+        patch.object(Downloader, "get_latest_directory", return_value="2024-01"),
+        patch.object(Downloader, "get_directory_files", return_value=["Empresas0.zip", "Empresas1.zip"]),
+        patch("main.load_postgres_archive", side_effect=RuntimeError("load failed")),
+        pytest.raises(SystemExit),
+    ):
+        main(cfg)
+
+    assert finished == ["Empresas1.zip"], "main returned while a download was still running"

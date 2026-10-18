@@ -194,13 +194,13 @@ class Downloader:
         self._prune_stale_partials(directory)
         return self._download_and_extract(directory, filename)
 
-    def download_files(self, directory: str, files: list[str]) -> Iterator[tuple[Path, str]]:
+    def download_files(self, directory: str, files: list[str]) -> Generator[tuple[Path, str]]:
         """Yield individual CSV paths with their ZIP filenames."""
         for paths, filename in self.download_archives(directory, files):
             for path in paths:
                 yield path, filename
 
-    def download_archives(self, directory: str, files: list[str]) -> Iterator[tuple[list[Path], str]]:
+    def download_archives(self, directory: str, files: list[str]) -> Generator[tuple[list[Path], str]]:
         """Yield all CSV paths from each completed ZIP, keeping archive boundaries."""
         if not files:
             return

@@ -17,7 +17,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
@@ -212,13 +212,15 @@ def run_parquet(
                 wait_for_workers(futures, "One or more workers failed, aborting to prevent incomplete export")
         else:
             for zip_filename in files_to_process:
-                for csv_path, _ in downloader.download_files(directory, [zip_filename]):
-                    try:
-                        write_parquet_csv(csv_path, parquet, config)
+                # closing() stops in-flight downloads before a failure releases the run lock.
+                with closing(downloader.download_files(directory, [zip_filename])) as csv_files:
+                    for csv_path, _ in csv_files:
+                        try:
+                            write_parquet_csv(csv_path, parquet, config)
 
-                    except Exception as e:
-                        logger.error(f"Error: {csv_path.name}: {e}")
-                        raise
+                        except Exception as e:
+                            logger.error(f"Error: {csv_path.name}: {e}")
+                            raise
 
         # Flush tables in this group and run post-file commands
         for table_name in tables_in_group:
@@ -266,8 +268,12 @@ def run_postgres(
                 wait_for_workers(futures, "One or more workers failed, aborting to prevent data corruption")
         else:
             # Sequential: download in parallel, process one at a time
+            # closing() stops in-flight downloads before a failure releases the run lock.
             file_iterator = downloader.download_archives(directory, group_files)
-            with tqdm(file_iterator, total=len(group_files), desc="Processing", unit="file") as pbar:
+            with (
+                closing(file_iterator),
+                tqdm(file_iterator, total=len(group_files), desc="Processing", unit="file") as pbar,
+            ):
                 for paths, zip_filename in pbar:
                     pbar.set_postfix_str(zip_filename[:30])
                     try:
