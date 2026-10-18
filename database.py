@@ -114,7 +114,7 @@ class Database:
         """Truncate a table. Used before parallel processing with replace strategy."""
         conn = self.connect()
         with conn.cursor() as cur:
-            cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
+            cur.execute(f"TRUNCATE TABLE {table_name}")
             conn.commit()
         self._truncated_tables.add(table_name)
 
@@ -162,7 +162,7 @@ class Database:
         try:
             if first_batch:
                 with conn.cursor() as cur:
-                    cur.execute(f"TRUNCATE TABLE {table_name} CASCADE")
+                    cur.execute(f"TRUNCATE TABLE {table_name}")
             self.bulk_upsert(df, table_name, columns)
         except Exception:
             conn.rollback()

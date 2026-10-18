@@ -224,7 +224,7 @@ class TestTruncateTable:
         connected_db.truncate_table("empresas")
 
         mock_cur.execute.assert_called_once()
-        assert "TRUNCATE TABLE empresas CASCADE" in mock_cur.execute.call_args[0][0]
+        assert mock_cur.execute.call_args[0][0] == "TRUNCATE TABLE empresas"
         cast(MagicMock, connected_db.conn).commit.assert_called_once()
         assert "empresas" in connected_db.truncated_tables
 
