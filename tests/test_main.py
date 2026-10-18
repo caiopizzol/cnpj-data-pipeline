@@ -1,5 +1,6 @@
 """Tests for main module."""
 
+import fcntl
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -104,6 +105,25 @@ class TestMain:
             main()
 
             mock_db_cls.assert_not_called()
+
+    @patch("database.Database")
+    @patch("main.Downloader")
+    @patch("main.parse_args")
+    def test_second_run_on_same_temp_dir_exits_untouched(
+        self, mock_args: MagicMock, mock_downloader_cls: MagicMock, mock_db_cls: MagicMock, cfg: Config
+    ) -> None:
+        """A run already holding TEMP_DIR makes a second run exit before touching downloads or the database."""
+        mock_args.return_value = MagicMock(list=False, month=None, force=False)
+        cfg.output_format = "postgres"
+
+        with open(Path(cfg.temp_dir) / ".pipeline.lock", "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with pytest.raises(SystemExit) as exc_info:
+                main(cfg=cfg)
+
+        assert exc_info.value.code == 1
+        mock_downloader_cls.assert_not_called()
+        mock_db_cls.assert_not_called()
 
     @patch("main.Downloader")
     @patch("main.parse_args")

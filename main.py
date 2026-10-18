@@ -11,12 +11,14 @@ Usage:
 """
 
 import argparse
+import fcntl
 import logging
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -284,6 +286,22 @@ def run_postgres(
                         raise
 
 
+@contextmanager
+def run_lock(temp_dir: str) -> Generator[None]:
+    """Lock TEMP_DIR for one run; runs sharing it would delete and append to each other's downloads.
+
+    The OS releases the lock when the file closes or the process exits, including when it is killed.
+    """
+    Path(temp_dir).mkdir(parents=True, exist_ok=True)
+    with open(Path(temp_dir) / ".pipeline.lock", "a") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            logger.error(f"Another run is using TEMP_DIR {temp_dir}; exiting.")
+            sys.exit(1)
+        yield
+
+
 def main(cfg: Config | None = None) -> None:
     """Main pipeline entry point."""
     logging.basicConfig(
@@ -294,99 +312,99 @@ def main(cfg: Config | None = None) -> None:
     args = parse_args()
     config = cfg if cfg is not None else Config.from_env()
 
-    downloader = Downloader(config)
-
     # Handle --list mode
     if args.list:
-        available = downloader.get_available_directories()
+        available = Downloader(config).get_available_directories()
         print("Available months:")
         for month in available:
             print(f"  {month}")
         return
 
-    is_parquet = config.output_format == "parquet"
+    with run_lock(config.temp_dir):
+        downloader = Downloader(config)
+        is_parquet = config.output_format == "parquet"
 
-    if not is_parquet and not config.database_url:
-        logger.error("DATABASE_URL not set (required for postgres output)")
-        sys.exit(1)
+        if not is_parquet and not config.database_url:
+            logger.error("DATABASE_URL not set (required for postgres output)")
+            sys.exit(1)
 
-    db = None
-    parquet = None
+        db = None
+        parquet = None
 
-    if not is_parquet:
-        from database import Database
+        if not is_parquet:
+            from database import Database
 
-        db = Database(config.database_url, retry_attempts=config.retry_attempts)
-        db.ensure_schema()
+            db = Database(config.database_url, retry_attempts=config.retry_attempts)
+            db.ensure_schema()
 
-    try:
-        if args.month:
-            available = downloader.get_available_directories()
-            if args.month not in available:
-                logger.error(f"Month {args.month} not available. Use --list to see options.")
-                sys.exit(1)
-            directory = args.month
-        else:
-            directory = downloader.get_latest_directory()
+        try:
+            if args.month:
+                available = downloader.get_available_directories()
+                if args.month not in available:
+                    logger.error(f"Month {args.month} not available. Use --list to see options.")
+                    sys.exit(1)
+                directory = args.month
+            else:
+                directory = downloader.get_latest_directory()
 
-        if is_parquet:
-            from parquet_writer import ParquetWriter
+            if is_parquet:
+                from parquet_writer import ParquetWriter
 
-            parquet = ParquetWriter(
-                config.parquet_output_dir, source_month=directory, typed=config.parquet_typed_output
-            )
-            logger.info(f"Parquet mode: output to {config.parquet_output_dir}")
+                parquet = ParquetWriter(
+                    config.parquet_output_dir, source_month=directory, typed=config.parquet_typed_output
+                )
+                logger.info(f"Parquet mode: output to {config.parquet_output_dir}")
 
-        # Handle --force mode (database only)
-        if args.force and db:
-            logger.info(f"Force mode: clearing processed files for {directory}")
-            db.clear_processed_files(directory)
+            # Handle --force mode (database only)
+            if args.force and db:
+                logger.info(f"Force mode: clearing processed files for {directory}")
+                db.clear_processed_files(directory)
 
-        all_files = downloader.get_directory_files(directory)
-        unsupported = [name for name in all_files if get_zip_file_type(name) is None]
-        if unsupported:
-            logger.warning("Skipping unsupported source files: %s", ", ".join(unsupported))
+            all_files = downloader.get_directory_files(directory)
+            unsupported = [name for name in all_files if get_zip_file_type(name) is None]
+            if unsupported:
+                logger.warning("Skipping unsupported source files: %s", ", ".join(unsupported))
 
-        if db:
-            processed = db.get_processed_files(directory)
-            pending_files = [f for f in all_files if f not in processed]
-        else:
-            pending_files = list(all_files)
+            if db:
+                processed = db.get_processed_files(directory)
+                pending_files = [f for f in all_files if f not in processed]
+            else:
+                pending_files = list(all_files)
 
-        if not pending_files:
-            logger.info("All files already processed!")
-            return
+            if not pending_files:
+                logger.info("All files already processed!")
+                return
 
-        logger.info(f"Processing {len(pending_files)} files from {directory}")
+            logger.info(f"Processing {len(pending_files)} files from {directory}")
 
-        pending_files.sort(key=get_file_priority)
+            pending_files.sort(key=get_file_priority)
 
-        if parquet is not None:
-            run_parquet(pending_files, directory, downloader, parquet, config)
-        else:
-            assert db is not None
-            run_postgres(pending_files, directory, downloader, db, config)
+            if parquet is not None:
+                run_parquet(pending_files, directory, downloader, parquet, config)
+            else:
+                assert db is not None
+                run_postgres(pending_files, directory, downloader, db, config)
 
-        if is_parquet:
-            assert parquet is not None
-            parquet.close()
-            manifest = parquet.write_manifest(source_month=directory)
-            total_rows = manifest["totals"]["rows"]
-            total_size = manifest["totals"]["sizeBytes"] / 1024 / 1024 / 1024
-            logger.info(f"Parquet export complete: {total_rows:,} rows, {total_size:.2f} GB")
+            if is_parquet:
+                assert parquet is not None
+                parquet.close()
+                manifest = parquet.write_manifest(source_month=directory)
+                total_rows = manifest["totals"]["rows"]
+                total_size = manifest["totals"]["sizeBytes"] / 1024 / 1024 / 1024
+                logger.info(f"Parquet export complete: {total_rows:,} rows, {total_size:.2f} GB")
 
-        logger.info("Done!")
+            logger.info("Done!")
 
-    except Exception as e:
-        logger.error(f"Failed: {e}")
-        sys.exit(1)
+        except Exception as e:
+            logger.error(f"Failed: {e}")
+            sys.exit(1)
 
-    finally:
-        if parquet is not None:
-            parquet.abort()
-        if db:
-            db.disconnect()
-        downloader.cleanup()
+        finally:
+            if parquet is not None:
+                parquet.abort()
+            if db:
+                db.disconnect()
+            downloader.cleanup()
 
 
 if __name__ == "__main__":
