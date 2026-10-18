@@ -67,11 +67,11 @@ def count_rows(db: Database, table: str) -> int:
 
 def load_source_fixtures(db: Database) -> None:
     for name in PROCESSING_ORDER:
-        for batch, table, columns in process_file(FIXTURES_DIR / name, batch_size=500000):
+        for batch, table, columns in process_file(FIXTURES_DIR / name, batch_size=1000):
             db.bulk_upsert(batch, table, columns)
 
 
 def apply_recipe(db: Database, name: str) -> None:
     with db.connect().cursor() as cur:
-        cur.execute((RECIPES_DIR / f"{name}.sql").read_text())
+        cur.execute((RECIPES_DIR / f"{name}.sql").read_text(encoding="utf-8"))
     db.connect().commit()

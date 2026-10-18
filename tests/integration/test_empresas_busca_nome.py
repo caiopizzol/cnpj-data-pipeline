@@ -94,16 +94,22 @@ class TestRecipeEmpresasBuscaNome:
         expected = {
             "pk_empresas_busca_nome",
             "idx_empresas_busca_nome_cnpj",
-            "idx_empresas_busca_nome_razao_prefix",
+            "idx_empresas_busca_nome_razao_prefix_c",
+            "idx_empresas_busca_nome_razao_trgm",
+            "idx_empresas_busca_nome_fantasia_trgm",
             "idx_empresas_busca_nome_uf_razao",
-            "idx_empresas_busca_nome_uf_razao_prefix",
+            "idx_empresas_busca_nome_uf_razao_prefix_c",
             "idx_empresas_busca_nome_uf_municipio_razao",
+            "idx_empresas_busca_nome_uf_municipio_razao_prefix_c",
+            "idx_empresas_busca_nome_uf_municipio_codigo_razao",
+            "idx_empresas_busca_nome_uf_municipio_codigo_razao_prefix_c",
             "idx_empresas_busca_nome_uf_cnae_razao",
+            "idx_empresas_busca_nome_uf_cnae_razao_prefix_c",
         }
         missing = expected - indexes
         assert not missing, f"missing expected indexes: {missing}"
-        definition = definitions["idx_empresas_busca_nome_uf_razao_prefix"]
-        assert "USING btree (uf, razao_social text_pattern_ops, cnpj_basico, cnpj_ordem)" in definition
+        definition = definitions["idx_empresas_busca_nome_uf_razao_prefix_c"]
+        assert 'USING btree (uf, razao_social COLLATE "C", cnpj_basico, cnpj_ordem)' in definition
 
     def test_no_derived_columns_leaked(self, test_db: Database) -> None:
         """The recipe filters rows but does not synthesize labels or
@@ -127,7 +133,7 @@ class TestRecipeEmpresasBuscaNome:
     def test_idempotent(self, test_db: Database) -> None:
         """Re-running the recipe should drop+recreate without error and
         produce the same row count."""
-        sql = self.RECIPE_PATH.read_text()
+        sql = self.RECIPE_PATH.read_text(encoding="utf-8")
         count_before = count_rows(test_db, "empresas_busca_nome")
 
         with test_db.connect().cursor() as cur:

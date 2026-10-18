@@ -38,7 +38,7 @@ def database(name: str, template: str | None = None) -> Generator[Database]:
         try:
             if template is None:
                 with db.connect().cursor() as cur:
-                    cur.execute((ROOT / "initial.sql").read_text())
+                    cur.execute((ROOT / "initial.sql").read_text(encoding="utf-8"))
                 db.connect().commit()
             yield db
         finally:
