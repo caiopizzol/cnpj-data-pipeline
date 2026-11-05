@@ -62,6 +62,21 @@ class TestGetFileType:
             result = get_file_type(filename)
             assert result == expected_type, f"Expected {expected_type} for {filename}, got {result}"
 
+    def test_ecf_file_types(self) -> None:
+        """Test that ECF tax regime CSV filenames map to REGIMETRIBUTARIOCSV."""
+        test_cases = [
+            "Imunes e Isentas.csv",
+            "imunes e isentas.csv",
+            "Lucro Arbitrado.csv",
+            "Lucro Presumido 2019.csv",
+            "Lucro Presumido 2024.csv",
+            "Lucro Real.csv",
+        ]
+
+        for filename in test_cases:
+            result = get_file_type(filename)
+            assert result == "REGIMETRIBUTARIOCSV", f"Failed for filename: {filename}"
+
     def test_unknown_file_type(self) -> None:
         """Test that unknown filename returns None."""
         unknown_files = ["README.txt", "config.json", "random_file.csv", "F.K03200$W.UNKNOWN.CSV.D51213"]
