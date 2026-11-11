@@ -49,9 +49,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # A release created with GITHUB_TOKEN doesn't start other workflows, so this calls the image build directly.
+  # `!cancelled()` keeps it running when the AI-notes step fails after the release exists.
   docker:
     needs: release
-    if: ${{ needs.release.outputs.release_created == 'true' }}
+    if: ${{ !cancelled() && needs.release.outputs.release_created == 'true' }}
     permissions:
       contents: read
       packages: write
