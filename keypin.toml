@@ -1,0 +1,14 @@
+# This project's keys for keypin (https://github.com/caiopizzol/keypin). Names and places, never values.
+# `bunx bun@1.4.4 x keypin@0.5.0 publish ANTHROPIC_API_KEY` writes the release workflow's secret.
+[1password]
+account = "my.1password.com"
+
+[keys.ANTHROPIC_API_KEY]
+rotate_every = "365d"
+
+[keys.ANTHROPIC_API_KEY.prod]
+from = "op://App Secrets/cnpj-data-pipeline anthropic api key/password"
+
+[[keys.ANTHROPIC_API_KEY.prod.publish]]
+to = "github-actions"
+repo = "caiopizzol/cnpj-data-pipeline"
