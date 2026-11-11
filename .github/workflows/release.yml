@@ -15,12 +15,17 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Release Please
         id: release
         uses: googleapis/release-please-action@v4
-        with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
       - uses: actions/checkout@v6
         if: ${{ steps.release.outputs.release_created == 'true' }}
@@ -41,4 +46,15 @@ jobs:
           model: claude-haiku-4-5
           style: concise
           update-release: 'true'
-          github-token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # A release created with GITHUB_TOKEN doesn't start other workflows, so this calls the image build directly.
+  docker:
+    needs: release
+    if: ${{ needs.release.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      tag: ${{ needs.release.outputs.tag_name }}
