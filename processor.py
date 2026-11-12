@@ -21,27 +21,36 @@ def _output_columns(file_type: str) -> list[str]:
     return OUTPUT_COLUMNS.get(file_type, COLUMNS[file_type])
 
 
+# ECF tax regime CSVs arrive as UTF-8 with a comma-separated header row,
+# unlike the headerless ISO-8859-1 semicolon-delimited monthly cadastral files.
+_HEADER_UTF8_FILE_TYPES = {"REGIMETRIBUTARIOCSV"}
+
+
+def _csv_separator(file_type: str) -> str:
+    return "," if file_type in _HEADER_UTF8_FILE_TYPES else ";"
+
+
 class LayoutDriftError(ValueError):
     """Raised when a source CSV has a column count that doesn't match what
-    the pipeline expects for its file type. The source is headerless, so
-    column names are assigned by position."""
+    the pipeline expects for its file type."""
 
 
 def check_layout(utf8_file: Path, file_type: str) -> None:
     """Verify the CSV's column count matches the expected schema.
 
-    RFB CSVs are headerless, so Polars assigns column names by position.
-    Check the first CSV record's field count before binding those names.
-    A blank first record is a mismatch; an empty file is left to Polars.
-    This does not detect reordered columns, field-format errors, or
-    differences in later records.
+    RFB cadastral CSVs are headerless and ECF CSVs carry a header row; in both
+    cases Polars binds ``COLUMNS[file_type]`` by position. Check the first CSV
+    record's field count before binding those names. A blank first record is a
+    mismatch; an empty file is left to Polars. This does not detect reordered
+    columns, field-format errors, or differences in later records.
 
-    A real CSV parser is used (csv.reader with ';' delimiter) instead of a
-    naive split so quoted-field edge cases don't false-positive.
+    A real CSV parser is used (csv.reader with the file type's delimiter)
+    instead of a naive split so quoted-field edge cases don't false-positive.
     """
     expected = len(COLUMNS[file_type])
+    delimiter = _csv_separator(file_type)
     with open(utf8_file, encoding="utf-8", newline="") as f:
-        reader = csv.reader(f, delimiter=";")
+        reader = csv.reader(f, delimiter=delimiter)
         try:
             first_row = next(reader)
         except StopIteration:
@@ -95,9 +104,11 @@ def process_file(
     table_name = FILE_MAPPINGS[file_type]
     input_columns = COLUMNS[file_type]
     output_columns = _output_columns(file_type)
+    has_header = file_type in _HEADER_UTF8_FILE_TYPES
+    separator = _csv_separator(file_type)
 
-    # Convert to UTF-8 before passing the file to Polars.
-    utf8_file = convert_encoding(file_path)
+    # Cadastral CSVs are ISO-8859-1 and need conversion; ECF CSVs are already UTF-8.
+    utf8_file = file_path if has_header else convert_encoding(file_path)
 
     try:
         check_layout(utf8_file, file_type)
@@ -105,8 +116,8 @@ def process_file(
         try:
             reader = pl.read_csv_batched(
                 utf8_file,
-                separator=";",
-                has_header=False,
+                separator=separator,
+                has_header=has_header,
                 new_columns=input_columns,
                 encoding="utf8",
                 infer_schema_length=0,
@@ -128,7 +139,8 @@ def process_file(
                     df = apply_typed_casts(df, file_type)
                 yield df, table_name, output_columns
     finally:
-        utf8_file.unlink(missing_ok=True)
+        if not has_header:
+            utf8_file.unlink(missing_ok=True)
 
 
 def transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
@@ -182,6 +194,49 @@ def transform(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     if file_type == "SOCIOCSV":
         df = _add_socio_id(df)
 
+    # Regimes Tributarios (ECF): strip CNPJ formatting, derive 8-char
+    # cnpj_basico for joins with cadastral tables, and restore missing
+    # leading zeros on numeric SCP CNPJs while keeping '0' as the non-SCP
+    # sentinel required by the composite primary key.
+    if file_type == "REGIMETRIBUTARIOCSV":
+        df = _transform_regime_tributario(df)
+
+    return df
+
+
+def _transform_regime_tributario(df: pl.DataFrame) -> pl.DataFrame:
+    if "ano" in df.columns:
+        df = df.with_columns(pl.col("ano").str.strip_chars().alias("ano"))
+
+    if "cnpj" in df.columns:
+        cleaned_cnpj = pl.col("cnpj").str.strip_chars().str.replace_all(r"[./-]", "").str.to_uppercase()
+        df = df.with_columns(cleaned_cnpj.alias("cnpj"))
+        df = df.with_columns(pl.col("cnpj").str.slice(0, 8).alias("cnpj_basico"))
+
+    if "cnpj_da_scp" in df.columns:
+        cleaned_scp = (
+            pl.col("cnpj_da_scp").fill_null("0").str.strip_chars().str.replace_all(r"[./-]", "").str.to_uppercase()
+        )
+        df = df.with_columns(
+            pl.when((cleaned_scp == "") | (cleaned_scp == "0"))
+            .then(pl.lit("0"))
+            .when(cleaned_scp.str.contains(r"^\d{1,13}$"))
+            .then(cleaned_scp.str.zfill(14))
+            .otherwise(cleaned_scp)
+            .alias("cnpj_da_scp")
+        )
+
+    if "forma_de_tributacao" in df.columns:
+        df = df.with_columns(pl.col("forma_de_tributacao").str.strip_chars().alias("forma_de_tributacao"))
+
+    if "quantidade_de_escrituracoes" in df.columns:
+        df = df.with_columns(
+            pl.col("quantidade_de_escrituracoes").str.strip_chars().alias("quantidade_de_escrituracoes")
+        )
+
+    output_cols = OUTPUT_COLUMNS["REGIMETRIBUTARIOCSV"]
+    if all(c in df.columns for c in output_cols):
+        return df.select(output_cols)
     return df
 
 
@@ -304,6 +359,13 @@ _FORMAT_RULES: dict[str, list[tuple[str, str, str]]] = {
         ("opcao_pelo_simples", r"^[SN]$", "S ou N"),
         ("opcao_pelo_mei", r"^[SN]$", "S ou N"),
     ],
+    "REGIMETRIBUTARIOCSV": [
+        ("ano", r"^\d{4}$", "4 dígitos"),
+        ("cnpj", r"^[0-9A-Z]{14}$", "14 caracteres alfanuméricos"),
+        ("cnpj_basico", r"^[0-9A-Z]{8}$", "8 caracteres alfanuméricos"),
+        ("cnpj_da_scp", r"^(0|[0-9A-Z]{14})$", "0 ou 14 caracteres alfanuméricos"),
+        ("quantidade_de_escrituracoes", r"^[1-9]\d*$", "inteiro positivo"),
+    ],
 }
 
 
@@ -384,5 +446,10 @@ def apply_typed_casts(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
 
     if file_type == "ESTABELE" and "identificador_matriz_filial" in df.columns:
         df = df.with_columns(pl.col("identificador_matriz_filial").cast(pl.Int32, strict=False))
+
+    if file_type == "REGIMETRIBUTARIOCSV":
+        for col in ("ano", "quantidade_de_escrituracoes"):
+            if col in df.columns:
+                df = df.with_columns(pl.col(col).cast(pl.Int32, strict=False))
 
     return df

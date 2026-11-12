@@ -62,6 +62,21 @@ class TestGetFileType:
             result = get_file_type(filename)
             assert result == expected_type, f"Expected {expected_type} for {filename}, got {result}"
 
+    def test_ecf_file_types(self) -> None:
+        """Test that ECF tax regime CSV filenames map to REGIMETRIBUTARIOCSV."""
+        test_cases = [
+            "Imunes e Isentas.csv",
+            "imunes e isentas.csv",
+            "Lucro Arbitrado.csv",
+            "Lucro Presumido 2019.csv",
+            "Lucro Presumido 2024.csv",
+            "Lucro Real.csv",
+        ]
+
+        for filename in test_cases:
+            result = get_file_type(filename)
+            assert result == "REGIMETRIBUTARIOCSV", f"Failed for filename: {filename}"
+
     def test_unknown_file_type(self) -> None:
         """Test that unknown filename returns None."""
         unknown_files = ["README.txt", "config.json", "random_file.csv", "F.K03200$W.UNKNOWN.CSV.D51213"]
@@ -263,6 +278,65 @@ class TestTransform:
         assert result["cep"][4] == "       0"
         assert result["cep"][5] == "0000ABCD"
         assert result["cep"][6] is None
+
+    def test_transform_regime_tributario_normalizes_cnpj_and_scp(self) -> None:
+        """ECF cnpj masks are stripped, cnpj_basico is sliced, and short numeric SCPs are zero-padded."""
+        df = pl.DataFrame(
+            {
+                "ano": [" 2024 ", "2023", "2022", "2021"],
+                "cnpj": [
+                    "00.000.049/0001-44",
+                    "12.abc.678/0001-99",
+                    "00.394.460/0058-87",
+                    "11.222.333/0001-81",
+                ],
+                "cnpj_da_scp": [
+                    "0",
+                    None,
+                    "3477793000122",  # 13-digit numeric SCP missing leading zero
+                    "00.394.460/0058-87",  # formatted 14-digit SCP
+                ],
+                "forma_de_tributacao": [
+                    " LUCRO REAL ",
+                    "LUCRO PRESUMIDO",
+                    "LUCRO ARBITRADO",
+                    "ISENTO DO IRPJ",
+                ],
+                "quantidade_de_escrituracoes": [" 1 ", "2", "1", "1"],
+            }
+        )
+
+        result = transform(df, "REGIMETRIBUTARIOCSV")
+
+        assert result.columns == [
+            "ano",
+            "cnpj",
+            "cnpj_basico",
+            "cnpj_da_scp",
+            "forma_de_tributacao",
+            "quantidade_de_escrituracoes",
+        ]
+        assert result["ano"].to_list() == ["2024", "2023", "2022", "2021"]
+        assert result["cnpj"].to_list() == [
+            "00000049000144",
+            "12ABC678000199",
+            "00394460005887",
+            "11222333000181",
+        ]
+        assert result["cnpj_basico"].to_list() == ["00000049", "12ABC678", "00394460", "11222333"]
+        assert result["cnpj_da_scp"].to_list() == [
+            "0",
+            "0",
+            "03477793000122",
+            "00394460005887",
+        ]
+        assert result["forma_de_tributacao"].to_list() == [
+            "LUCRO REAL",
+            "LUCRO PRESUMIDO",
+            "LUCRO ARBITRADO",
+            "ISENTO DO IRPJ",
+        ]
+        assert result["quantidade_de_escrituracoes"].to_list() == ["1", "2", "1", "1"]
 
 
 class TestSocioId:
@@ -537,6 +611,29 @@ class TestValidate:
 
         assert result.equals(df)
 
+    def test_validate_regime_tributario_rules(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Report malformed ECF fields without mutating or dropping them."""
+        df = pl.DataFrame(
+            {
+                "ano": ["2024", "24"],
+                "cnpj": ["00000049000144", "1234"],
+                "cnpj_basico": ["00000049", "1234"],
+                "cnpj_da_scp": ["0", "INVALID_SCP"],
+                "forma_de_tributacao": ["LUCRO REAL", "LUCRO PRESUMIDO"],
+                "quantidade_de_escrituracoes": ["1", "0"],
+            }
+        )
+
+        with caplog.at_level("WARNING"):
+            result = validate(df, "REGIMETRIBUTARIOCSV")
+
+        assert result.equals(df)
+        assert "ano: 1 invalid" in caplog.text
+        assert "cnpj: 1 invalid" in caplog.text
+        assert "cnpj_basico: 1 invalid" in caplog.text
+        assert "cnpj_da_scp: 1 invalid" in caplog.text
+        assert "quantidade_de_escrituracoes: 1 invalid" in caplog.text
+
 
 class TestConvertEncoding:
     """Test encoding conversion from ISO-8859-1 to UTF-8."""
@@ -682,6 +779,59 @@ class TestProcessFile:
         assert total_rows == 150
         assert len(results) >= 1
 
+    @pytest.mark.parametrize("typed", [False, True])
+    def test_processes_ecf_csv_with_header_and_keeps_source_file(self, tmp_path: Path, typed: bool) -> None:
+        """ECF CSVs are UTF-8 comma-delimited with a header row and must not be deleted after reading."""
+        ecf_file = tmp_path / "Lucro Presumido 2024.csv"
+        ecf_file.write_text(
+            "ano,cnpj,cnpj_da_scp,forma_de_tributacao,quantidade_de_escrituracoes\n"
+            "2024,00.000.049/0001-44,0,LUCRO PRESUMIDO,1\n"
+            "2024,00.394.460/0058-87,3477793000122,LUCRO PRESUMIDO,2\n",
+            encoding="utf-8",
+        )
+
+        results = list(process_file(ecf_file, typed=typed))
+
+        assert ecf_file.exists()
+        assert len(results) == 1
+        df, table_name, columns = results[0]
+        assert table_name == "regimes_tributarios"
+        assert columns == [
+            "ano",
+            "cnpj",
+            "cnpj_basico",
+            "cnpj_da_scp",
+            "forma_de_tributacao",
+            "quantidade_de_escrituracoes",
+        ]
+        assert df.columns == columns
+        assert df["cnpj"].to_list() == ["00000049000144", "00394460005887"]
+        assert df["cnpj_basico"].to_list() == ["00000049", "00394460"]
+        assert df["cnpj_da_scp"].to_list() == ["0", "03477793000122"]
+        if typed:
+            assert df["ano"].dtype == pl.Int32
+            assert df["quantidade_de_escrituracoes"].dtype == pl.Int32
+            assert df["ano"].to_list() == [2024, 2024]
+            assert df["quantidade_de_escrituracoes"].to_list() == [1, 2]
+        else:
+            assert df["ano"].dtype == pl.Utf8
+            assert df["quantidade_de_escrituracoes"].dtype == pl.Utf8
+            assert df["ano"].to_list() == ["2024", "2024"]
+            assert df["quantidade_de_escrituracoes"].to_list() == ["1", "2"]
+
+    def test_handles_header_only_ecf_csv(self, tmp_path: Path) -> None:
+        """An ECF CSV containing only the header row yields no batches."""
+        ecf_file = tmp_path / "Lucro Real.csv"
+        ecf_file.write_text(
+            "ano,cnpj,cnpj_da_scp,forma_de_tributacao,quantidade_de_escrituracoes\n",
+            encoding="utf-8",
+        )
+
+        results = list(process_file(ecf_file))
+
+        assert results == []
+        assert ecf_file.exists()
+
 
 class TestTypedCasts:
     """apply_typed_casts brings Parquet output to type-parity with Postgres.
@@ -733,6 +883,14 @@ class TestTypedCasts:
         assert out["identificador_matriz_filial"][0] == 1
         assert out["identificador_matriz_filial"][1] == 2
         assert out["identificador_matriz_filial"][2] is None
+
+    def test_regime_tributario_numeric_columns_cast_to_int32(self) -> None:
+        df = pl.DataFrame({"ano": ["2024", None], "quantidade_de_escrituracoes": ["1", "3"]})
+        out = apply_typed_casts(df, "REGIMETRIBUTARIOCSV")
+        assert out["ano"].dtype == pl.Int32
+        assert out["quantidade_de_escrituracoes"].dtype == pl.Int32
+        assert out["ano"].to_list() == [2024, None]
+        assert out["quantidade_de_escrituracoes"].to_list() == [1, 3]
 
     def test_noop_on_reference_table(self) -> None:
         """Reference tables have no date or numeric columns to cast."""
@@ -824,3 +982,15 @@ class TestLayoutDriftDetection:
         bad.write_text("12345678;S;20200101;0;N;0;0;BOGUS\n", encoding="ISO-8859-1")
         with pytest.raises(LayoutDriftError):
             list(process_file(bad))
+
+    def test_ecf_layout_drift_raises_on_comma_delimited_header(self, tmp_path: Path) -> None:
+        """ECF CSVs use comma delimiter and expect 5 columns."""
+        bad_ecf = tmp_path / "Lucro Real.csv"
+        bad_ecf.write_text(
+            "ano,cnpj,cnpj_da_scp,forma_de_tributacao,quantidade_de_escrituracoes,extra\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(LayoutDriftError) as exc:
+            list(process_file(bad_ecf))
+        assert "expected 5" in str(exc.value)
+        assert "got 6" in str(exc.value)

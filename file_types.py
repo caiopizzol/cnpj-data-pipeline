@@ -12,7 +12,15 @@ FILE_MAPPINGS = {
     "ESTABELE": "estabelecimentos",
     "SOCIOCSV": "socios",
     "SIMPLESCSV": "dados_simples",
+    "REGIMETRIBUTARIOCSV": "regimes_tributarios",
 }
+
+ECF_CSV_PATTERNS = (
+    "IMUNES E ISENTAS",
+    "LUCRO ARBITRADO",
+    "LUCRO PRESUMIDO",
+    "LUCRO REAL",
+)
 
 # Column names by file type
 COLUMNS = {
@@ -85,6 +93,13 @@ COLUMNS = {
         "data_opcao_pelo_mei",
         "data_exclusao_do_mei",
     ],
+    "REGIMETRIBUTARIOCSV": [
+        "ano",
+        "cnpj",
+        "cnpj_da_scp",
+        "forma_de_tributacao",
+        "quantidade_de_escrituracoes",
+    ],
 }
 
 # Output column lists for tables whose target schema includes columns that
@@ -94,8 +109,18 @@ COLUMNS = {
 # SOCIOCSV: socio_id is a deterministic UUID derived in transform from the
 # canonical identity tuple. It is the primary key of socios; the masked CPF
 # alone is not unique (issue #78).
+# REGIMETRIBUTARIOCSV: cnpj_basico is the 8-character company root extracted
+# from the unmasked 14-character cnpj to join with cadastral tables (issue #60).
 OUTPUT_COLUMNS = {
     "SOCIOCSV": ["socio_id"] + COLUMNS["SOCIOCSV"],
+    "REGIMETRIBUTARIOCSV": [
+        "ano",
+        "cnpj",
+        "cnpj_basico",
+        "cnpj_da_scp",
+        "forma_de_tributacao",
+        "quantidade_de_escrituracoes",
+    ],
 }
 
 
@@ -106,6 +131,9 @@ def get_file_type(filename: str) -> str | None:
     # Special case for Simples files that have different naming pattern
     if "SIMPLES" in filename_upper:
         return "SIMPLESCSV"
+
+    if any(pattern in filename_upper for pattern in ECF_CSV_PATTERNS):
+        return "REGIMETRIBUTARIOCSV"
 
     for pattern in FILE_MAPPINGS:
         if pattern in filename_upper:
@@ -118,7 +146,7 @@ def get_file_type(filename: str) -> str | None:
 DEPENDENCY_GROUPS = [
     ["CNAECSV", "MOTICSV", "MUNICCSV", "NATJUCSV", "PAISCSV", "QUALSCSV"],  # references
     ["EMPRECSV"],  # empresas
-    ["ESTABELE", "SOCIOCSV", "SIMPLESCSV"],  # depends on empresas
+    ["ESTABELE", "SOCIOCSV", "SIMPLESCSV", "REGIMETRIBUTARIOCSV"],  # depends on empresas
 ]
 
 # Flat processing order derived from dependency groups (for sorting)
@@ -136,6 +164,10 @@ ZIP_PREFIX_MAP = [
     ("EMPRES", "EMPRECSV"),
     ("ESTABELE", "ESTABELE"),
     ("SOCIO", "SOCIOCSV"),
+    ("ENTIDADES-IMUNES-E-ISENTAS", "REGIMETRIBUTARIOCSV"),
+    ("ENTIDADES-LUCRO-ARBITRADO", "REGIMETRIBUTARIOCSV"),
+    ("ENTIDADES-LUCRO-PRESUMIDO", "REGIMETRIBUTARIOCSV"),
+    ("ENTIDADES-LUCRO-REAL", "REGIMETRIBUTARIOCSV"),
 ]
 
 
@@ -171,7 +203,10 @@ def group_files_by_dependency(files: list[str]) -> list[list[str]]:
 
 
 # SIMPLES CSV member names use several suffixes, so match their shared stem.
-CNPJ_FILE_PATTERNS = ["SIMPLES" if name == "SIMPLESCSV" else name for name in FILE_MAPPINGS]
+CNPJ_FILE_PATTERNS = [
+    *(["SIMPLES" if name == "SIMPLESCSV" else name for name in FILE_MAPPINGS if name != "REGIMETRIBUTARIOCSV"]),
+    *ECF_CSV_PATTERNS,
+]
 
 # Reference tables (must be processed first)
 REFERENCE_FILES = {

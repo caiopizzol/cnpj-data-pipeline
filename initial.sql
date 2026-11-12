@@ -128,6 +128,18 @@ CREATE TABLE IF NOT EXISTS dados_simples (
     data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS regimes_tributarios (
+    ano INTEGER NOT NULL,
+    cnpj VARCHAR(14) NOT NULL,
+    cnpj_basico VARCHAR(8) NOT NULL,
+    cnpj_da_scp VARCHAR(14) NOT NULL,
+    forma_de_tributacao TEXT NOT NULL,
+    quantidade_de_escrituracoes INTEGER NOT NULL,
+    data_criacao TIMESTAMP DEFAULT NOW() NOT NULL,
+    data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL,
+    PRIMARY KEY (ano, cnpj, cnpj_da_scp, forma_de_tributacao)
+);
+
 -- ============================================================================
 -- Tracking Table
 -- ============================================================================
@@ -150,3 +162,5 @@ CREATE INDEX IF NOT EXISTS idx_estabelecimentos_cnae ON estabelecimentos(cnae_fi
 CREATE INDEX IF NOT EXISTS idx_socios_cnpj_basico ON socios(cnpj_basico);
 CREATE INDEX IF NOT EXISTS idx_socios_lookup
     ON socios(cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio);
+CREATE INDEX IF NOT EXISTS idx_regimes_tributarios_cnpj_basico ON regimes_tributarios(cnpj_basico);
+CREATE INDEX IF NOT EXISTS idx_regimes_tributarios_ano ON regimes_tributarios(ano);
