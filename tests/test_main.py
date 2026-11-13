@@ -62,6 +62,19 @@ class TestGetFilePriority:
         """Unknown file types should sort after all known types."""
         assert get_file_priority("UNKNOWN.csv") == 999
         assert get_file_priority("UNKNOWN.csv") > get_file_priority("SIMPLESCSV.D51213")
+        assert get_file_priority("UNKNOWN.csv") > get_file_priority("entidades-lucro-real.zip")
+
+    def test_ecf_files_sort_after_empresas(self) -> None:
+        """ECF ZIP and CSV files should rank after empresas."""
+        empresas = get_file_priority("EMPRECSV.D51213")
+        for filename in (
+            "entidades-imunes-e-isentas.zip",
+            "entidades-lucro-arbitrado.zip",
+            "entidades-lucro-presumido.zip",
+            "entidades-lucro-real.zip",
+            "Lucro Real.csv",
+        ):
+            assert empresas < get_file_priority(filename)
 
 
 class TestGroupFilesByDependency:
@@ -95,6 +108,19 @@ class TestGroupFilesByDependency:
         groups = group_files_by_dependency(files)
         assert len(groups[0]) == 1
         assert all(len(g) == 0 for g in groups[1:])
+
+    def test_groups_ecf_files_in_dependent_group(self) -> None:
+        """ECF ZIP archives should be placed in dependency group 2."""
+        files = [
+            "entidades-imunes-e-isentas.zip",
+            "entidades-lucro-arbitrado.zip",
+            "entidades-lucro-presumido.zip",
+            "entidades-lucro-real.zip",
+        ]
+        groups = group_files_by_dependency(files)
+        assert groups[0] == []
+        assert groups[1] == []
+        assert groups[2] == files
 
 
 class TestParseArgs:
